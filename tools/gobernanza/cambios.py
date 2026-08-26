@@ -67,6 +67,8 @@ def verificar_formato_cambios(raiz: Path) -> list[Infraccion]:
 
 def verificar_cambio_acompanado(raiz: Path, ficheros_tocados: list[str]) -> list[Infraccion]:
     """Si el commit toca criterios o prosa maestra, exige documento de cambio."""
+    # git emite las rutas con "/", pero quien llame a esta funcion desde
+    # Windows puede pasarlas con "\": se normalizan antes de comparar.
     tocados = [f.replace("\\", "/") for f in ficheros_tocados]
 
     vigilados = [f for f in tocados if f.startswith(PREFIJOS_VIGILADOS)]
@@ -74,7 +76,8 @@ def verificar_cambio_acompanado(raiz: Path, ficheros_tocados: list[str]) -> list
         return []
 
     hay_documento = any(
-        f.startswith(f"{CARPETA}/") and not f.endswith(PLANTILLA) for f in tocados
+        f.startswith(f"{CARPETA}/") and f.rsplit("/", 1)[-1] != PLANTILLA
+        for f in tocados
     )
     if hay_documento:
         return []

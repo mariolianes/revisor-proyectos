@@ -97,3 +97,26 @@ def test_tocar_la_prosa_maestra_tambien_exige_documento_de_cambio(repo: Path):
     infracciones = verificar_cambio_acompanado(repo, tocados)
     assert len(infracciones) == 1
     assert infracciones[0].regla == "R5"
+
+
+def test_arrastrar_solo_la_plantilla_no_cuenta_como_documento_de_cambio(repo: Path):
+    tocados = [
+        "criteria/v2026-2027/formato.yaml",
+        "docs/changes/PLANTILLA.md",
+    ]
+    infracciones = verificar_cambio_acompanado(repo, tocados)
+    assert len(infracciones) == 1
+    assert infracciones[0].regla == "R5"
+
+
+def test_normaliza_barras_invertidas_al_detectar_ficheros_vigilados(repo: Path):
+    tocados = [r"criteria\v2026-2027\formato.yaml"]
+    infracciones = verificar_cambio_acompanado(repo, tocados)
+    assert len(infracciones) == 1
+    assert infracciones[0].regla == "R5"
+
+
+def test_r5_pasa_sobre_el_repositorio_real():
+    raiz = Path(__file__).resolve().parents[2]
+    infracciones = verificar_formato_cambios(raiz)
+    assert infracciones == [], "\n".join(i.detalle for i in infracciones)
