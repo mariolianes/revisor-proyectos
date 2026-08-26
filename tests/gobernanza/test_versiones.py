@@ -62,3 +62,22 @@ def test_r4_rechaza_anadir_un_fichero_a_una_version_congelada(repo: Path):
     infracciones = verificar_r4(repo)
     assert len(infracciones) == 1
     assert "nuevo.yaml" in infracciones[0].detalle
+
+
+def test_congelar_dos_veces_la_misma_version_lanza_excepcion(repo: Path):
+    congelar(repo, "v2026-2027")
+    with pytest.raises(RuntimeError):
+        congelar(repo, "v2026-2027")
+
+
+def test_resellar_no_borra_la_evidencia_de_una_alteracion(repo: Path):
+    congelar(repo, "v2026-2027")
+    (repo / "criteria" / "v2026-2027" / "dimensiones.yaml").write_text(
+        "- codigo: D05\n  nombre: cambiado\n  fuente: maestro#8-dimensiones\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError):
+        congelar(repo, "v2026-2027")
+    infracciones = verificar_r4(repo)
+    assert len(infracciones) == 1
+    assert "dimensiones.yaml" in infracciones[0].detalle

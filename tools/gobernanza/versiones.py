@@ -16,7 +16,7 @@ SELLO = ".congelada"
 
 
 def _hash_fichero(ruta: Path) -> str:
-    return hashlib.sha256(ruta.read_bytes()).hexdigest()[:16]
+    return hashlib.sha256(ruta.read_bytes()).hexdigest()
 
 
 def _yaml_de(carpeta: Path) -> dict[str, str]:
@@ -24,12 +24,26 @@ def _yaml_de(carpeta: Path) -> dict[str, str]:
 
 
 def congelar(raiz: Path, version: str) -> None:
-    """Sella una version de criterios. Operacion deliberadamente irreversible."""
+    """Sella una version de criterios por primera y unica vez.
+
+    Si la version no existe, lanza FileNotFoundError. Si ya esta congelada,
+    no reescribe el sello: lanza RuntimeError, porque volver a sellar
+    borraria sin dejar rastro la prueba de que una version usada en
+    correcciones aprobadas fue alterada. Ambos son errores de uso del
+    programador, no infracciones de gobernanza.
+    """
     carpeta = raiz / "criteria" / version
     if not carpeta.is_dir():
         raise FileNotFoundError(f"No existe la version de criterios: {carpeta}")
+    sello = carpeta / SELLO
+    if sello.is_file():
+        raise RuntimeError(
+            f"La version {version} ya esta congelada. Una version usada en "
+            f"correcciones aprobadas no se vuelve a sellar. Si necesitas "
+            f"cambiar algo, crea la version siguiente."
+        )
     contenido = json.dumps(_yaml_de(carpeta), indent=2, ensure_ascii=False)
-    (carpeta / SELLO).write_text(contenido + "\n", encoding="utf-8")
+    sello.write_text(contenido + "\n", encoding="utf-8")
 
 
 def verificar_r4(raiz: Path) -> list[Infraccion]:
@@ -81,7 +95,8 @@ def verificar_r4(raiz: Path) -> list[Infraccion]:
                 detalle=(
                     f"'{nombre}' se ha anadido a la version congelada {version}. "
                     f"Un criterio nuevo va en una version nueva, no en una "
-                    f"cerrada."
+                    f"cerrada. Copia criteria/{version}/ a la siguiente, anade "
+                    f"alli el fichero y registra el cambio en docs/changes/."
                 ),
             ))
 
