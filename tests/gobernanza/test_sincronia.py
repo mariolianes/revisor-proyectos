@@ -92,3 +92,26 @@ def test_r2_avisa_si_falta_el_registro_de_sincronia(repo: Path):
     infracciones = verificar_r2(repo)
     assert len(infracciones) == 1
     assert ".sincronia.json" in infracciones[0].detalle
+
+
+def test_r2_detecta_un_ancla_referenciada_que_falta_en_el_registro(repo: Path):
+    escribir_sincronia(repo)
+    criterios = repo / "criteria" / "v2026-2027"
+    (criterios / "privacidad.yaml").write_text(
+        "- codigo: D06\n  fuente: maestro#19-privacidad\n",
+        encoding="utf-8",
+    )
+    infracciones = verificar_r2(repo)
+    assert len(infracciones) == 1
+    assert infracciones[0].regla == "R2"
+    assert "maestro#19-privacidad" in infracciones[0].detalle
+
+
+def test_r2_detecta_un_ancla_sobrante_en_el_registro(repo: Path):
+    escribir_sincronia(repo)
+    ruta = repo / "criteria" / "v2026-2027" / "dimensiones.yaml"
+    ruta.write_text("", encoding="utf-8")
+    infracciones = verificar_r2(repo)
+    assert len(infracciones) == 1
+    assert infracciones[0].regla == "R2"
+    assert "maestro#8-dimensiones" in infracciones[0].detalle

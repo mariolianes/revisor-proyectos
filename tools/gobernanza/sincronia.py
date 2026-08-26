@@ -113,7 +113,8 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
                 fichero=FICHERO_SINCRONIA,
                 detalle=(
                     f"'{ancla}' se referencia desde criteria/ pero no esta en el "
-                    f"registro. Sella tras revisar el derivado."
+                    f"registro. Sella tras revisar el derivado con "
+                    f"'python tools/verificar_gobernanza.py --sellar'."
                 ),
             ))
         elif anterior != h:
@@ -124,7 +125,8 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
                     f"La seccion '{ancla}' ha cambiado en docs/maestro/ y su "
                     f"derivado en criteria/ no se ha revisado. Comprueba si el "
                     f"cambio afecta a los criterios que la citan, ajustalos si "
-                    f"procede, y sella con '--sellar'."
+                    f"procede, y sella con "
+                    f"'python tools/verificar_gobernanza.py --sellar'."
                 ),
             ))
 
@@ -134,7 +136,8 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
             fichero=FICHERO_SINCRONIA,
             detalle=(
                 f"'{ancla}' esta en el registro pero ya no la referencia ningun "
-                f"criterio. Si era intencionado, sella para limpiarlo."
+                f"criterio. Si era intencionado, sella para limpiarlo con "
+                f"'python tools/verificar_gobernanza.py --sellar'."
             ),
         ))
 
