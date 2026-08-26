@@ -700,10 +700,29 @@ Posible formato : `CODIGO_CICLO_FASE_FECHA_VERSION.ext`. Ejemplo: `AF023_E2_2026
 <!-- ancla: maestro#19-privacidad -->
 ## 19. Privacidad, seguridad y trazabilidad
 
+> **Modificado por D-001 el 2026-08-26.** La versión original de este apartado
+> presuponía un sistema estrictamente local. La arquitectura acordada es otra y
+> se describe aquí.
+
+Circuito de datos del sistema:
+
+- La ficha del alumno, los criterios versionados, la corrección por
+  dimensiones, las evidencias citadas, el semáforo, la nota interna, el
+  feedback aprobado y el registro de auditoría se almacenan en Supabase.
+- El PDF de la entrega y el texto completo del trabajo **no se almacenan**: ni
+  en Supabase, ni en el repositorio.
+- Una evidencia citada es la referencia al apartado y la página más un
+  fragmento literal de 1.500 caracteres como máximo. El límite lo verifica el
+  backend e impide que la suma de evidencias reconstruya el trabajo.
+- Durante el análisis, el texto de la entrega, ya anonimizado, se transmite al
+  proveedor de análisis. No se almacena allí.
+- Las credenciales técnicas residen en el backend local, nunca en el frontend.
+
+Las cautelas de tratamiento se mantienen íntegras:
+
 - Utilizar códigos de alumno en la configuración y en los archivos del sistema siempre que sea posible.
 - Eliminar o evitar DNI, teléfonos, domicilios, firmas, correos y datos de terceros que no sean necesarios.
 - Mantener separadas las observaciones personales del texto que pueda convertirse en feedback.
-- Guardar las credenciales técnicas en variables seguras, nunca dentro de documentos o scripts compartidos.
 - Registrar versión de criterios, fecha de ejecución, archivo de entrada y persona que aprueba.
 - Conservar copias de seguridad de criterios, plantillas, fichas e histórico.
 - No usar entregas reales hasta confirmar las condiciones de tratamiento aplicables y superar la calibración con material anonimizado.
@@ -768,7 +787,9 @@ criterios o ejemplos, no en instrucciones improvisadas dentro de cada ejecución
 - Análisis estructurado con evidencias y alertas.
 - Dos salidas internas editables.
 - Aprobación humana obligatoria.
-- Historial local sencillo y recuperación de errores.
+- Aplicación con interfaz web local, backend en el equipo del docente y
+  persistencia en Supabase (D-001).
+- Historial consultable y recuperación de errores.
 
 ### 21.2 Fuera de la primera versión
 
