@@ -56,6 +56,9 @@ PATRON_TELEFONO = re.compile(
 EXENTOS = {
     "tools/gobernanza/privacidad.py",
     "tests/gobernanza/test_privacidad.py",
+    # Comprueba que la CLI agrega la infraccion R6, y para ello necesita un
+    # DNI de ejemplo en su cuerpo.
+    "tests/gobernanza/test_cli.py",
 }
 PREFIJOS_EXENTOS = ("docs/superpowers/",)
 
