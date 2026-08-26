@@ -136,6 +136,17 @@ def test_detecta_un_telefono_con_prefijo_internacional(repo: Path):
     assert "telefono" in infracciones[0].detalle
 
 
+def test_no_confunde_dos_numeros_pegados_por_un_guion_con_un_telefono(repo: Path):
+    # "612-345678" es un 3-6, no una de las tres agrupaciones reales de un
+    # telefono espanol (9 seguidos, 3-3-3 o 3-2-2-2). Un separador suelto
+    # entre dos tramos de digitos que no forman ninguna de esas agrupaciones
+    # no debe detectarse como telefono.
+    (repo / "docs" / "ficha.md").write_text(
+        "Ver lineas 612-345678 del registro.\n", encoding="utf-8"
+    )
+    assert verificar_r6(repo, ["docs/ficha.md"]) == []
+
+
 def test_detecta_un_dni_en_un_csv(repo: Path):
     (repo / "notas.csv").write_text(
         "nombre,dni\nAlumno,12345678Z\n", encoding="utf-8"

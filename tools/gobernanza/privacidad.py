@@ -35,12 +35,19 @@ EXTENSIONES_DE_TEXTO = {
 PATRON_DNI = re.compile(r"\b\d{8}-?[A-HJ-NP-TV-Za-hj-np-tv-z]\b")
 PATRON_CORREO = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b")
 # Movil o fijo espanol: empieza por 6, 7, 8 o 9 y tiene nueve digitos, con
-# prefijo internacional +34 opcional y separadores de espacio o guion entre
-# grupos. Los limites excluyen tambien letras y guion bajo (no solo digitos y
-# guion), para que una secuencia de nueve digitos embebida en un hash
-# hexadecimal -que tiene letras alrededor- no dispare el patron.
+# prefijo internacional +34 opcional. Los limites excluyen tambien letras y
+# guion bajo (no solo digitos y guion), para que una secuencia de nueve
+# digitos embebida en un hash hexadecimal -que tiene letras alrededor- no
+# dispare el patron. Solo se reconocen las agrupaciones reales con las que
+# se escribe un telefono espanol: nueve digitos seguidos, 3-3-3 (612 345
+# 678) o 3-2-2-2 (612 34 56 78); un separador suelto en cualquier otra
+# posicion -como en "612-345678", que es un 3-6- no forma un telefono.
 PATRON_TELEFONO = re.compile(
-    r"(?<![\w-])(?:\+34[ -]?)?[6789](?:[ -]?\d){8}(?![\w-])"
+    r"(?<![\w-])(?:\+34[ -]?)?"
+    r"(?:[6789]\d{8}"
+    r"|[6789]\d{2}[ -]\d{3}[ -]\d{3}"
+    r"|[6789]\d{2}[ -]\d{2}[ -]\d{2}[ -]\d{2})"
+    r"(?![\w-])"
 )
 
 # Ficheros y arboles que hablan de estos patrones sin contener datos reales:
