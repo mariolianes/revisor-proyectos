@@ -46,7 +46,8 @@ Un fichero por regla. Cada uno se entiende y se prueba solo.
 - Create: `README.md`
 - Create: `requirements-dev.txt`
 - Create: `pytest.ini`
-- Create: `tools/gobernanza/__init__.py`
+- Create: `tools/__init__.py` (vacío)
+- Create: `tools/gobernanza/__init__.py` (vacío)
 - Create: `tools/gobernanza/resultado.py`
 - Test: `tests/gobernanza/test_resultado.py`
 
@@ -2226,6 +2227,9 @@ EXTENSIONES_PROHIBIDAS = {".pdf", ".doc", ".docx", ".odt", ".rtf", ".pptx"}
 
 CARPETAS_IGNORADAS = {
     ".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv", "dist",
+    # Scratch git-ignored de las herramientas de trabajo: no forma parte del
+    # repositorio versionado y contiene copias de planes con ejemplos.
+    ".superpowers",
 }
 
 # Solo se inspecciona el contenido de texto plano.
