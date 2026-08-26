@@ -30,7 +30,16 @@ Alcance acotado:
 - Evidencia citada: referencia a apartado y página más un fragmento de 1.500
   caracteres como máximo, verificado en el backend.
 
-**Arrastra:** corrección pendiente del §19 y §21.1 del Documento Maestro.
+**Arrastra:** el §19 y el §21.1 del Documento Maestro quedaron corregidos en
+el commit `305c78d`, con su documento de cambio
+`docs/changes/2026-08-26-supabase-corrige-maestro.md`.
+
+**Queda abierto:** la etapa 4 de la hoja de ruta del §22 sigue describiendo el
+prototipo como «Aplicación mínima local», en contradicción con lo que ahora
+dicen el §19 y el §21.1. Esta decisión acota su alcance a esos dos apartados y
+no se ha tocado el §22 de oficio. Pendiente de que el docente decida si esa
+fila se redacta de nuevo, si se amplía el alcance de D-001 o si describe bien
+un hito intermedio ya superado y se deja como está.
 
 ## D-002 · OpenAI como proveedor de análisis, tras adaptador intercambiable
 

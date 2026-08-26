@@ -27,8 +27,10 @@ alerta. No elige.
 *Verificada.*
 
 **R2 · La prosa manda.** El YAML se deriva del Markdown, nunca al revés. Si una
-sección cambia, hay que revisar su derivado y sellar con `--sellar`.
-*Verificada.*
+sección cambia, hay que revisar su derivado y sellar con `--sellar`. Ojo al
+alcance: R2 solo vigila las secciones que algún criterio cita como `fuente:`,
+no el Maestro entero, así que editar una sección que ningún criterio deriva no
+hace saltar nada y eso no significa que se haya comprobado. *Verificada.*
 
 **R3 · Lo pendiente se marca, no se inventa.** `estado: PENDIENTE_OFICIAL`, con
 `bloquea` y entrada en `docs/PENDIENTE_OFICIAL.md`. Un criterio pendiente no
@@ -55,10 +57,14 @@ solo. *Pendiente: se implementa con el backend.*
 3. Escribir docs/changes/AAAA-MM-DD-<asunto>.md
 4. Anotar   docs/decisions.md                    si es decisión, no ajuste
 5. Ejecutar python tools/verificar_gobernanza.py --sellar
-6. Commit
+6. Commit, incluyendo criteria/vAAAA-AAAA/.sincronia.json
 ```
 
 El orden importa. Editar el YAML primero es exactamente lo que R2 impide.
+
+El sellado del paso 5 reescribe `criteria/vAAAA-AAAA/.sincronia.json`. Si se
+queda fuera del commit, R2 volverá a protestar sobre un repositorio que se
+cree recién sellado.
 
 ## Puesta en marcha
 

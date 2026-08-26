@@ -20,6 +20,13 @@ identificativos, separación de las observaciones personales, registro mínimo
 del §19.1, copias de seguridad y la prohibición de usar entregas reales antes
 de la calibración.
 
+Se añade una sola frase que no es del docente: «Las cautelas de tratamiento se
+mantienen íntegras:», que encabeza esa lista conservada. Es redacción nueva, y
+solo de estructura: sin ella el apartado quedaba con dos listas de viñetas
+seguidas sin rótulo y no se leía que la segunda sigue vigente. No altera
+ningún criterio. Queda señalada aquí para que el docente la adopte como suya o
+la cambie por la suya.
+
 En el §21.1, la viñeta «Historial local sencillo y recuperación de errores»
 pasa a ser dos: «Aplicación con interfaz web local, backend en el equipo del
 docente y persistencia en Supabase (D-001)» e «Historial consultable y
