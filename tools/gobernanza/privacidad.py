@@ -10,7 +10,9 @@ from pathlib import Path
 
 from tools.gobernanza.resultado import Infraccion
 
-EXTENSIONES_PROHIBIDAS = {".pdf", ".doc", ".docx", ".odt", ".rtf", ".pptx"}
+EXTENSIONES_PROHIBIDAS = {
+    ".pdf", ".doc", ".docx", ".odt", ".rtf", ".pptx", ".xls", ".xlsx", ".ods",
+}
 
 CARPETAS_IGNORADAS = {
     ".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "venv", "dist",
@@ -20,14 +22,26 @@ CARPETAS_IGNORADAS = {
 }
 
 # Solo se inspecciona el contenido de texto plano.
-EXTENSIONES_DE_TEXTO = {".md", ".yaml", ".yml", ".json", ".py", ".txt", ".ts", ".tsx", ".sql"}
+EXTENSIONES_DE_TEXTO = {
+    ".md", ".yaml", ".yml", ".json", ".py", ".txt", ".ts", ".tsx", ".sql",
+    ".csv", ".tsv",
+}
 
 # El DNI espanol lleva 8 digitos y una letra de control; se exige limite de
 # palabra a ambos lados para no capturar hashes ni identificadores largos.
-PATRON_DNI = re.compile(r"\b\d{8}[A-HJ-NP-TV-Z]\b")
+# Admite un guion opcional antes de la letra y la letra en minuscula, que son
+# formas habituales de escribirlo a mano. El rango de letras excluye I, Ñ, O
+# y U, que el algoritmo del DNI no usa.
+PATRON_DNI = re.compile(r"\b\d{8}-?[A-HJ-NP-TV-Za-hj-np-tv-z]\b")
 PATRON_CORREO = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b")
-# Movil o fijo espanol: empieza por 6, 7, 8 o 9 y tiene nueve digitos.
-PATRON_TELEFONO = re.compile(r"(?<![\d-])[6789]\d{8}(?![\d-])")
+# Movil o fijo espanol: empieza por 6, 7, 8 o 9 y tiene nueve digitos, con
+# prefijo internacional +34 opcional y separadores de espacio o guion entre
+# grupos. Los limites excluyen tambien letras y guion bajo (no solo digitos y
+# guion), para que una secuencia de nueve digitos embebida en un hash
+# hexadecimal -que tiene letras alrededor- no dispare el patron.
+PATRON_TELEFONO = re.compile(
+    r"(?<![\w-])(?:\+34[ -]?)?[6789](?:[ -]?\d){8}(?![\w-])"
+)
 
 # Ficheros y arboles que hablan de estos patrones sin contener datos reales:
 # el propio verificador, sus tests, y los planes y specs, que incluyen
@@ -94,6 +108,8 @@ def verificar_r6(raiz: Path, ficheros: list[str]) -> list[Infraccion]:
             (PATRON_CORREO, "un correo electronico"),
             (PATRON_TELEFONO, "un telefono"),
         ):
+            # Se usa .search(), no .finditer(): basta una senal por tipo para
+            # bloquear el commit, no hace falta enumerar todas las apariciones.
             encontrado = patron.search(texto)
             if encontrado:
                 linea = texto[:encontrado.start()].count("\n") + 1
