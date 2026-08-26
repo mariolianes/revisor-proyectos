@@ -1,0 +1,23 @@
+# Semaforo pedagogico. Derivado del §12.1 del Documento Maestro.
+# El semaforo resume el estado; no sustituye la rubrica, la nota ni la
+# explicacion. Un mismo color puede responder a causas diferentes.
+
+- codigo: VERDE
+  significado: Cumple la fase y puede avanzar
+  accion: Mantener fortalezas y aplicar ajustes menores
+  fuente: maestro#12-errores-y-semaforo
+
+- codigo: AMBAR
+  significado: Avanza, pero existen correcciones prioritarias
+  accion: Aplicar cambios antes de cerrar la siguiente fase
+  fuente: maestro#12-errores-y-semaforo
+
+- codigo: ROJO
+  significado: Carencia estructural o academica que exige reconduccion
+  accion: Revision docente y plan de correccion
+  fuente: maestro#12-errores-y-semaforo
+
+- codigo: GRIS
+  significado: No evaluable por falta, fuera de plazo, archivo ilegible o criterio bloqueado
+  accion: Resolver incidencia; no emitir juicio academico automatico
+  fuente: maestro#12-errores-y-semaforo

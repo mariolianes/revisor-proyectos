@@ -1,0 +1,80 @@
+# Que debe existir en cada fase. Derivado del §9 del Documento Maestro.
+# NO EDITAR sin cambiar antes la prosa.
+
+TEMA:
+  evaluable: false
+  debe_existir:
+    - titulo_o_frase_provisional
+    - problema_necesidad_u_oportunidad
+    - relacion_con_el_ciclo
+    - intencion_del_alumno
+    - acceso_probable_a_informacion
+  fuente: maestro#9-matriz-entregas
+
+E1:
+  evaluable: true
+  finalidad: Comprobar que el proyecto tiene una direccion viable
+  debe_existir:
+    - portada_y_titulo_provisional
+    - presentacion_del_tema
+    - justificacion_vinculada_al_ciclo
+    - objetivo_general_y_especificos
+    - modalidad_e_indice_provisional
+    - primeras_fuentes_o_datos
+  no_corresponde_aun:
+    - resultados_definitivos
+    - conclusiones_cerradas
+    - bibliografia_completa
+    - desarrollo_exhaustivo
+  fuente: maestro#9-matriz-entregas
+
+E2:
+  evaluable: true
+  finalidad: Convertir la idea en un proyecto con contenido sustancial
+  debe_existir:
+    - entrega_anterior_corregida_e_integrada
+    - introduccion_justificacion_objetivos_revisados
+    - contexto_y_marco_teorico_util
+    - metodologia_o_procedimiento
+    - desarrollo_aplicado_inicial
+    - datos_ejemplos_o_evidencias
+    - bibliografia_actualizada
+  alerta_caracteristica: Subir solo los capitulos nuevos o repetir la version anterior sin progreso real
+  fuente: maestro#9-matriz-entregas
+
+E3:
+  evaluable: true
+  finalidad: Proyecto practicamente completo, detectar los ultimos problemas
+  debe_existir:
+    - todo_lo_anterior_corregido
+    - desarrollo_completo
+    - resultados_interpretacion_o_viabilidad
+    - conclusiones_provisionales
+    - bibliografia_casi_completa
+    - presentacion_formal_cercana_a_definitiva
+  regla_clave: No es la entrega final; debe estar casi terminada para que el ultimo feedback cierre, no construya
+  fuente: maestro#9-matriz-entregas
+
+FINAL:
+  evaluable: true
+  finalidad: Depositar el documento definitivo, completo y defendible
+  debe_existir:
+    - todos_los_apartados_completos
+    - conclusiones_definitivas
+    - citas_y_bibliografia_revisadas
+    - tablas_graficos_e_imagenes_identificados
+    - indice_y_paginas_actualizados
+    - formato_uniforme_y_pdf_correcto
+    - presentacion_depositada
+  fuente: maestro#9-matriz-entregas
+
+DEFENSA:
+  evaluable: true
+  valoracion: manual
+  observa:
+    - comprension
+    - seleccion_de_ideas
+    - claridad
+    - capacidad_para_justificar_decisiones
+    - respuestas_a_preguntas
+  fuente: maestro#9-matriz-entregas

@@ -1,0 +1,49 @@
+# Requisitos de formato verificables sobre el PDF.
+# Derivado de docs/maestro/. NO EDITAR sin cambiar antes la prosa.
+
+extension:
+  minimo_paginas_contenido: 20
+  excluye: [portada, indice, anexos]
+  fuente: guia#6-evaluacion-continua
+
+tipografia:
+  familia: Arial
+  cuerpo: 11
+  tolerancia_cuerpo: 0.5
+  fuente: maestro#6-estandar-academico
+
+interlineado:
+  valor: 1.5
+  tolerancia: 0.1
+  fuente: maestro#6-estandar-academico
+
+alineacion:
+  valor: justificado
+  fuente: maestro#6-estandar-academico
+
+margenes:
+  centimetros: 2.5
+  tolerancia: 0.5
+  fuente: maestro#6-estandar-academico
+
+archivo:
+  formato: PDF
+  generado_desde_original: true
+  admite_escaneado: false
+  fuente: indice#6-formato-y-control
+
+paginas_en_blanco:
+  permitidas: false
+  fuente: indice#6-formato-y-control
+
+imagenes:
+  requiere_numeracion: true
+  requiere_titulo: true
+  requiere_fuente_si_ajena: true
+  requiere_mencion_en_texto: true
+  fuente: indice#6-formato-y-control
+
+indice_paginado:
+  titulos_coinciden_con_documento: true
+  paginas_actualizadas: true
+  fuente: indice#6-formato-y-control
