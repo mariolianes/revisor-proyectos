@@ -1,0 +1,7 @@
+# Fechas del curso. PENDIENTE de la programacion didactica oficial.
+
+calendario:
+  estado: PENDIENTE_OFICIAL
+  bloquea: [control_de_plazo, entrega_fuera_de_plazo]
+  hitos: [TEMA, E1, E2, E3, FINAL, DEFENSA]
+  fuente: maestro#14-fuentes-y-criterios

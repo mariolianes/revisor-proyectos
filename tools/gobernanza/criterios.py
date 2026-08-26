@@ -105,3 +105,68 @@ def verificar_r1(raiz: Path) -> list[Infraccion]:
                 ))
 
     return infracciones
+
+
+CLAVES_DE_VALOR_PROHIBIDAS = ("valor", "valores", "fechas", "porcentajes")
+
+
+def _pendientes_documentados(raiz: Path) -> set[str]:
+    """Claves listadas en docs/PENDIENTE_OFICIAL.md como '- **clave** —'."""
+    ruta = raiz / "docs" / "PENDIENTE_OFICIAL.md"
+    if not ruta.is_file():
+        return set()
+    texto = ruta.read_text(encoding="utf-8")
+    return set(re.findall(r"^- \*\*([a-z0-9_]+)\*\* —", texto, re.M))
+
+
+def verificar_r3(raiz: Path) -> list[Infraccion]:
+    """Comprueba que lo pendiente esta marcado, acotado y documentado."""
+    documentados = _pendientes_documentados(raiz)
+    infracciones: list[Infraccion] = []
+    carpeta = raiz / "criteria"
+    if not carpeta.is_dir():
+        return infracciones
+
+    for ruta in sorted(carpeta.rglob("*.yaml")):
+        relativa = ruta.relative_to(raiz).as_posix()
+        for entrada in entradas_de(ruta):
+            if entrada.get("estado") != "PENDIENTE_OFICIAL":
+                continue
+
+            nombre = _identificar(entrada)
+
+            if "bloquea" not in entrada:
+                infracciones.append(Infraccion(
+                    regla="R3",
+                    fichero=relativa,
+                    detalle=(
+                        f"'{nombre}' esta PENDIENTE_OFICIAL pero no declara "
+                        f"'bloquea'. Indica que juicios no pueden emitirse sin "
+                        f"este dato, o '[]' si no bloquea ninguno."
+                    ),
+                ))
+
+            inventados = [c for c in CLAVES_DE_VALOR_PROHIBIDAS if c in entrada]
+            if inventados:
+                infracciones.append(Infraccion(
+                    regla="R3",
+                    fichero=relativa,
+                    detalle=(
+                        f"'{nombre}' esta PENDIENTE_OFICIAL pero ya trae "
+                        f"{inventados}. Un criterio pendiente no lleva valor: "
+                        f"eso es inventarlo. Retira el valor o retira el estado."
+                    ),
+                ))
+
+            if nombre not in documentados:
+                infracciones.append(Infraccion(
+                    regla="R3",
+                    fichero=relativa,
+                    detalle=(
+                        f"'{nombre}' esta PENDIENTE_OFICIAL pero no aparece en "
+                        f"docs/PENDIENTE_OFICIAL.md. Anadelo alli con la forma "
+                        f"'- **{nombre}** — que falta y de quien se espera.'"
+                    ),
+                ))
+
+    return infracciones

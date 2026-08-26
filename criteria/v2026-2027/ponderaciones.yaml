@@ -1,0 +1,9 @@
+# Reparto de la calificacion. PENDIENTE de la programacion didactica oficial.
+# El Maestro propone 20% por componente como modelo provisional; ese numero
+# NO se escribe aqui hasta que sea oficial. Ver docs/PENDIENTE_OFICIAL.md.
+
+ponderaciones:
+  estado: PENDIENTE_OFICIAL
+  bloquea: [nota_final, nota_propuesta]
+  componentes: [E1, E2, E3, FINAL, DEFENSA]
+  fuente: maestro#10-evaluacion-continua
