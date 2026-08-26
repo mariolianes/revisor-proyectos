@@ -36,7 +36,7 @@ El Documento Maestro (§19, §21.1) especifica un sistema estrictamente local. S
 
 La decisión se toma con conocimiento de la contradicción y **obliga a corregir el §19 y el §21.1 del Documento Maestro**, no a ignorarlos. Se acota su alcance así:
 
-- **Sí se almacena:** fichas de alumno y proyecto, criterios versionados, correcciones por dimensión, evidencias citadas, semáforo, nota interna, feedback aprobado y registro de auditoría. Una evidencia citada es la referencia al apartado y la página, más un fragmento literal de **300 caracteres como máximo**. El límite es una restricción del sistema, verificada en el backend, no una recomendación: impide que la suma de evidencias reconstruya el trabajo del alumno dentro de la base de datos.
+- **Sí se almacena:** fichas de alumno y proyecto, criterios versionados, correcciones por dimensión, evidencias citadas, semáforo, nota interna, feedback aprobado y registro de auditoría. Una evidencia citada es la referencia al apartado y la página, más un fragmento literal de **1.500 caracteres como máximo**, holgura suficiente para reproducir un párrafo completo y justificar con solvencia cualquier observación. El límite es una restricción del sistema, verificada en el backend, no una recomendación: existe para que la suma de evidencias no acabe reconstruyendo el trabajo entero dentro de la base de datos.
 - **No se almacena, ni en Storage ni en tablas:** el PDF de la entrega, ni el texto completo del trabajo del alumno.
 
 ### D-002 · OpenAI tras adaptador intercambiable
@@ -45,7 +45,7 @@ El análisis académico lo realiza la API de OpenAI. El backend define un puerto
 
 Esta decisión fija el proveedor, no su implementación. En esta fase solo se construye el puerto y el adaptador simulado; el adaptador de OpenAI se implementa cuando exista la matriz de criterios cerrada (véase §10).
 
-Consecuencia que debe constar con claridad: **el texto de la entrega se envía a OpenAI para ser analizado.** Que no se almacene en Supabase no significa que no salga del equipo. Esta afirmación debe reflejarse tal cual en cualquier información que se dé sobre el tratamiento de datos, y el §19 del Maestro debe recogerla.
+Característica del sistema, a efectos de arquitectura: el texto de la entrega, ya anonimizado según §4.2, se transmite a OpenAI para su análisis. No se almacena allí ni en Supabase, pero sí sale del equipo durante el procesamiento. Quien mantenga este sistema debe conocerlo para no alterar por descuido el circuito de datos.
 
 La clave de la API reside únicamente en el backend local. Nunca en el frontend.
 
@@ -54,6 +54,12 @@ La clave de la API reside únicamente en el backend local. Nunca en el frontend.
 Se elige PyMuPDF por ser la herramienta más capaz para las comprobaciones objetivas que exigen el §6.2 del Maestro y la lista de control del Índice comentado.
 
 Limitación registrada: PyMuPDF se distribuye bajo AGPL. Para uso interno no supone restricción. Una eventual distribución o comercialización exigiría licencia comercial, o migrar a pdfplumber, de licencia permisiva y algo menos preciso en tipografía.
+
+### D-004 · Canal de devolución del feedback — PENDIENTE
+
+El §10 del Maestro establece que el alumno recibe feedback pero no necesariamente la calificación numérica de cada fase. El sistema respeta esa separación, pero no está definido **cómo** llega el feedback aprobado al alumno ni qué marca exactamente el estado `COMUNICADO`: si el docente lo copia manualmente en el Aula Virtual y lo registra después, o si existe algún paso intermedio.
+
+Queda abierta y debe cerrarse antes de implementar la transición a `COMUNICADO`. Hasta entonces, ese estado se modela pero no se activa.
 
 ## 4. Arquitectura
 
