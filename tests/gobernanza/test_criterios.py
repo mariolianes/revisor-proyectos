@@ -55,6 +55,28 @@ def test_entradas_de_aplana_un_mapa_con_listas_anidadas(tmp_path: Path):
     }
 
 
+def test_entradas_de_no_desciende_en_una_lista_anidada_de_una_entrada_ya_identificada(
+    tmp_path: Path,
+):
+    ruta = tmp_path / "m.yaml"
+    ruta.write_text(
+        "E1:\n"
+        "  evaluable: true\n"
+        "  fuente: maestro#9-matriz-entregas\n"
+        "  debe_existir:\n"
+        "    - portada_y_titulo_provisional\n"
+        "    - presentacion_del_tema\n",
+        encoding="utf-8",
+    )
+    entradas = entradas_de(ruta)
+    assert len(entradas) == 1
+    assert entradas[0]["fuente"] == "maestro#9-matriz-entregas"
+    assert entradas[0]["debe_existir"] == [
+        "portada_y_titulo_provisional",
+        "presentacion_del_tema",
+    ]
+
+
 def test_r1_acepta_un_criterio_con_fuente_existente(repo: Path):
     (repo / "criteria" / "v2026-2027" / "dimensiones.yaml").write_text(
         "- codigo: D05\n"

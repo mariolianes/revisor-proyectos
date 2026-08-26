@@ -4,7 +4,7 @@
 extension:
   minimo_paginas_contenido: 20
   excluye: [portada, indice, anexos]
-  fuente: guia#6-evaluacion-continua
+  fuente: maestro#6-estandar-academico
 
 tipografia:
   familia: Arial
