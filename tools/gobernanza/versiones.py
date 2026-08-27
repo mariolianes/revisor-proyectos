@@ -82,8 +82,10 @@ def verificar_r4(raiz: Path) -> list[Infraccion]:
                     detalle=(
                         f"'{nombre}' ha cambiado, pero la version {version} esta "
                         f"congelada. Deshaz el cambio y crea una nueva version: "
-                        f"copia criteria/{version}/ a la siguiente, modifica alli "
-                        f"y registra el cambio en docs/changes/."
+                        f"copia solo los *.yaml de criteria/{version}/ a la "
+                        f"carpeta de la version siguiente -el sello .congelada "
+                        f"no se copia, o la version nueva naceria cerrada-, "
+                        f"modifica alli y registra el cambio en docs/changes/."
                     ),
                 ))
 
@@ -95,8 +97,10 @@ def verificar_r4(raiz: Path) -> list[Infraccion]:
                 detalle=(
                     f"'{nombre}' se ha anadido a la version congelada {version}. "
                     f"Un criterio nuevo va en una version nueva, no en una "
-                    f"cerrada. Copia criteria/{version}/ a la siguiente, anade "
-                    f"alli el fichero y registra el cambio en docs/changes/."
+                    f"cerrada. Copia solo los *.yaml de criteria/{version}/ a la "
+                    f"carpeta de la version siguiente -el sello .congelada no se "
+                    f"copia, o la version nueva naceria cerrada-, anade alli el "
+                    f"fichero y registra el cambio en docs/changes/."
                 ),
             ))
 

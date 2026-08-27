@@ -37,7 +37,9 @@ hace saltar nada y eso no significa que se haya comprobado. *Verificada.*
 lleva valor. *Verificada.*
 
 **R4 · Los criterios se versionan y se congelan.** Una versión usada en una
-corrección aprobada no se modifica: se crea la siguiente. *Verificada.*
+corrección aprobada no se modifica: se crea la siguiente. Se cierra con
+`--congelar <version>`; hasta que alguien la congele, R4 no vigila nada.
+*Verificada.*
 
 **R5 · Un fichero por cambio.** Tocar `criteria/` o `docs/maestro/` exige un
 documento en `docs/changes/`. *Verificada.*
@@ -65,6 +67,36 @@ El orden importa. Editar el YAML primero es exactamente lo que R2 impide.
 El sellado del paso 5 reescribe `criteria/vAAAA-AAAA/.sincronia.json`. Si se
 queda fuera del commit, R2 volverá a protestar sobre un repositorio que se
 cree recién sellado.
+
+## Cuándo se congela una versión y cómo se abre la siguiente
+
+Una versión de criterios se congela **el día en que se aprueba la primera
+corrección hecha con ella**. A partir de ahí, esa carpeta es la prueba de con
+qué criterio exacto se corrigió a un alumno, y no se toca nunca más.
+
+```
+python tools/verificar_gobernanza.py --congelar v2026-2027
+```
+
+El sello es `criteria/vAAAA-AAAA/.congelada`, y va al commit como cualquier
+otro fichero. R4 compara desde entonces cada `*.yaml` de esa carpeta con el
+sello: si alguno cambia, desaparece o se añade, protesta.
+
+Para cambiar un criterio de una versión ya congelada se abre la siguiente:
+
+```
+1. Crear   criteria/vAAAA-AAAA/                    la carpeta de la version nueva
+2. Copiar  solo los *.yaml de la version anterior  NUNCA la carpeta entera
+3. Editar  la prosa primero y el YAML nuevo despues
+4. Escribir docs/changes/AAAA-MM-DD-<asunto>.md
+5. Ejecutar python tools/verificar_gobernanza.py --sellar
+```
+
+El paso 2 es literal. Una copia recursiva arrastra `.congelada`, con lo que la
+versión nueva nace congelada y la primera edición vuelve a hacer saltar a R4,
+que ya no puede ayudar: `--congelar` se niega a resellar una versión sellada,
+justamente para que nadie borre la prueba de que una versión usada fue
+alterada.
 
 ## Puesta en marcha
 

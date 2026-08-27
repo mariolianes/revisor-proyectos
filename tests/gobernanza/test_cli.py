@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.verificar_gobernanza import ejecutar
+from tools.verificar_gobernanza import ejecutar, main
 
 
 @pytest.fixture
@@ -53,3 +53,38 @@ def test_r5_solo_se_evalua_sobre_los_ficheros_indicados(repo: Path):
         repo, ficheros=["criteria/v2026-2027/dimensiones.yaml"], solo_staged=False
     )
     assert [i for i in infracciones if i.regla == "R5"]
+
+
+def test_congelar_desde_la_cli_crea_el_sello(repo: Path, capsys):
+    codigo = main(["--congelar", "v2026-2027"], raiz=repo)
+    assert codigo == 0
+    assert (repo / "criteria" / "v2026-2027" / ".congelada").is_file()
+    salida = capsys.readouterr().out
+    assert "congelada" in salida
+    # El consejo tiene que ser copiar solo los YAML: una copia recursiva
+    # arrastraria el sello y la version nueva naceria cerrada.
+    assert "*.yaml" in salida
+
+
+def test_congelar_una_version_inexistente_no_crea_nada(repo: Path, capsys):
+    codigo = main(["--congelar", "v2099-2100"], raiz=repo)
+    assert codigo == 1
+    assert not (repo / "criteria" / "v2099-2100").exists()
+    assert "No se ha congelado nada" in capsys.readouterr().out
+
+
+def test_congelar_dos_veces_desde_la_cli_se_niega(repo: Path, capsys):
+    assert main(["--congelar", "v2026-2027"], raiz=repo) == 0
+    capsys.readouterr()
+    assert main(["--congelar", "v2026-2027"], raiz=repo) == 1
+    assert "ya esta congelada" in capsys.readouterr().out
+
+
+def test_congelar_no_ejecuta_las_reglas_ni_sella(repo: Path):
+    # Congelar es una accion, no una verificacion: no debe tocar el registro
+    # de sincronia ni confundirse con --sellar.
+    antes = (repo / "criteria" / ".sincronia.json")
+    marca = antes.read_text(encoding="utf-8") if antes.is_file() else None
+    main(["--congelar", "v2026-2027"], raiz=repo)
+    despues = antes.read_text(encoding="utf-8") if antes.is_file() else None
+    assert marca == despues

@@ -3,8 +3,9 @@
     python tools/verificar_gobernanza.py              todo el arbol
     python tools/verificar_gobernanza.py --staged     solo lo que se va a commitear
     python tools/verificar_gobernanza.py --sellar     regenera el registro de R2
+    python tools/verificar_gobernanza.py --congelar v2026-2027   cierra una version
 
-Codigos de salida: 0 conforme, 1 hay infracciones.
+Codigos de salida: 0 conforme, 1 hay infracciones, 2 no se ha podido ejecutar.
 """
 
 import argparse
@@ -25,7 +26,7 @@ from tools.gobernanza.criterios import verificar_r1, verificar_r3  # noqa: E402
 from tools.gobernanza.privacidad import verificar_r6  # noqa: E402
 from tools.gobernanza.resultado import Infraccion, formatear  # noqa: E402
 from tools.gobernanza.sincronia import escribir_sincronia, verificar_r2  # noqa: E402
-from tools.gobernanza.versiones import verificar_r4  # noqa: E402
+from tools.gobernanza.versiones import congelar, verificar_r4  # noqa: E402
 
 
 def ficheros_en_staging(raiz: Path) -> list[str]:
@@ -60,15 +61,38 @@ def ejecutar(raiz: Path, ficheros: list[str], solo_staged: bool) -> list[Infracc
     return infracciones
 
 
-def main() -> int:
+def main(argv: list[str] | None = None, raiz: Path | None = None) -> int:
+    """Punto de entrada de la CLI.
+
+    'argv' y 'raiz' existen para que las pruebas puedan ejercitar las
+    banderas sobre un repositorio de mentira; en uso normal se toman de la
+    linea de ordenes y de la ubicacion de este fichero.
+    """
     parser = argparse.ArgumentParser(description="Verificador de gobernanza.")
     parser.add_argument("--staged", action="store_true",
                         help="verificar solo los ficheros en staging")
     parser.add_argument("--sellar", action="store_true",
                         help="regenerar el registro de sincronia de R2")
-    args = parser.parse_args()
+    parser.add_argument("--congelar", metavar="VERSION",
+                        help=("cerrar una version de criterios ya usada en "
+                              "correcciones aprobadas, por ejemplo v2026-2027"))
+    args = parser.parse_args(argv)
 
-    raiz = Path(__file__).resolve().parents[1]
+    if raiz is None:
+        raiz = Path(__file__).resolve().parents[1]
+
+    if args.congelar:
+        try:
+            congelar(raiz, args.congelar)
+        except (FileNotFoundError, RuntimeError) as motivo:
+            print(f"No se ha congelado nada. {motivo}")
+            return 1
+        print(f"Version {args.congelar} congelada.")
+        print("A partir de ahora sus criterios no se tocan. Para cambiar algo, "
+              "crea la version siguiente")
+        print("copiando solo los *.yaml de "
+              f"criteria/{args.congelar}/ a la carpeta nueva.")
+        return 0
 
     if args.sellar:
         escribir_sincronia(raiz)
