@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
+  }
+
+  body {
+    @apply bg-papel text-tinta font-base antialiased;
+  }
+
+  /* Rejilla estricta: todo se alinea a una columna de 8px. */
+  :root {
+    --unidad: 8px;
+  }
+}
+
+@layer components {
+  /* El texto normativo se lee a medida de lectura, nunca a todo lo ancho. */
+  .prosa {
+    @apply max-w-lectura text-[15px] leading-[1.65];
+  }
+
+  .prosa h2 {
+    @apply text-[13px] font-semibold uppercase tracking-[0.12em] text-gris mt-8 mb-3;
+  }
+
+  .prosa p {
+    @apply mb-4;
+  }
+
+  /* Una sola tinta, y solo para la relacion seccion <-> criterio. */
+  .senal {
+    @apply text-senal;
+  }
+
+  .regla-fina {
+    @apply border-t border-grisclaro;
+  }
+}
