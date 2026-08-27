@@ -10,7 +10,10 @@ programa —para Arial 11 a 1,5 líneas sale un ratio cercano a 1,73, no a
 
 Limitación conocida de los márgenes: se miden sobre todo el texto de la
 página, así que un encabezado o un pie reducen el margen superior o el
-inferior medidos. El izquierdo y el derecho no se ven afectados.
+inferior medidos. El izquierdo y el derecho no se ven afectados. Los cuatro
+se miden además sobre el texto de todas las páginas del documento, portada
+incluida: no hay forma de distinguir, solo mirando el PDF, qué página es
+portada y cuál no lo es.
 """
 
 import re
@@ -27,7 +30,8 @@ PUNTOS_POR_CM = 72 / 2.54
 # mayúsculas y un «+» delante, y el estilo pegado detrás.
 PREFIJO_SUBCONJUNTO = re.compile(r"^[A-Z]{6}\+")
 SUFIJO_ESTILO = re.compile(
-    r"(MT|PS|PSMT)?[-,](Bold|Italic|Oblique|Regular|Light|Medium|BoldItalic|BoldMT|ItalicMT)"
+    r"(MT|PS|PSMT)?[-,]"
+    r"(BoldItalic|BoldOblique|BoldMT|ItalicMT|Bold|Italic|Oblique|Regular|Roman|Light|Medium)"
     r"(MT|PS)?$",
     re.I,
 )
@@ -83,7 +87,10 @@ def medir_texto(documento: pymupdf.Document) -> MedidasDeTexto:
     """
     por_estilo: Counter[tuple[str, float]] = Counter()
     ratios: list[float] = []
-    margenes: list[tuple[float, float, float, float]] = []
+    margenes_izquierdos: list[float] = []
+    margenes_derechos: list[float] = []
+    margen_superior_cm: float | None = None
+    margen_inferior_cm: float | None = None
     lineas_totales = 0
     lineas_al_borde = 0
 
@@ -97,16 +104,22 @@ def medir_texto(documento: pymupdf.Document) -> MedidasDeTexto:
                 estilo = (normalizar_familia(span["font"]), round(span["size"] * 2) / 2)
                 por_estilo[estilo] += len(span["text"])
 
-        izquierdas = [linea["bbox"][0] for linea in lineas]
+        # El margen es una barrera que ninguna línea cruza: izquierdo y
+        # derecho se acumulan línea a línea de todo el documento antes de
+        # tomar la mediana, para que una portada corta no pese lo mismo que
+        # catorce páginas de cuerpo. Superior e inferior son el mínimo
+        # alcanzado en todo el documento, no una mediana por página.
+        for linea in lineas:
+            margenes_izquierdos.append(linea["bbox"][0] / PUNTOS_POR_CM)
+            margenes_derechos.append((pagina.rect.width - linea["bbox"][2]) / PUNTOS_POR_CM)
+            superior = linea["bbox"][1] / PUNTOS_POR_CM
+            inferior = (pagina.rect.height - linea["bbox"][3]) / PUNTOS_POR_CM
+            if margen_superior_cm is None or superior < margen_superior_cm:
+                margen_superior_cm = superior
+            if margen_inferior_cm is None or inferior < margen_inferior_cm:
+                margen_inferior_cm = inferior
+
         derechas = [linea["bbox"][2] for linea in lineas]
-        superiores = [linea["bbox"][1] for linea in lineas]
-        inferiores = [linea["bbox"][3] for linea in lineas]
-        margenes.append((
-            min(izquierdas) / PUNTOS_POR_CM,
-            (pagina.rect.width - max(derechas)) / PUNTOS_POR_CM,
-            min(superiores) / PUNTOS_POR_CM,
-            (pagina.rect.height - max(inferiores)) / PUNTOS_POR_CM,
-        ))
 
         # Una página de una sola línea no dice nada de la alineación: esa
         # línea es a la vez el máximo y el único candidato, así que contaría
@@ -140,10 +153,14 @@ def medir_texto(documento: pymupdf.Document) -> MedidasDeTexto:
         cuerpo_dominante=cuerpo,
         proporcion_cuerpo_dominante=caracteres / total,
         ratio_interlineado=statistics.median(ratios) if ratios else None,
-        margen_izquierdo_cm=statistics.median(m[0] for m in margenes) if margenes else None,
-        margen_derecho_cm=statistics.median(m[1] for m in margenes) if margenes else None,
-        margen_superior_cm=statistics.median(m[2] for m in margenes) if margenes else None,
-        margen_inferior_cm=statistics.median(m[3] for m in margenes) if margenes else None,
+        margen_izquierdo_cm=(
+            statistics.median(margenes_izquierdos) if margenes_izquierdos else None
+        ),
+        margen_derecho_cm=(
+            statistics.median(margenes_derechos) if margenes_derechos else None
+        ),
+        margen_superior_cm=margen_superior_cm,
+        margen_inferior_cm=margen_inferior_cm,
         proporcion_lineas_al_margen_derecho=(
             lineas_al_borde / lineas_totales if lineas_totales else None
         ),
