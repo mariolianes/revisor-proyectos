@@ -61,6 +61,23 @@ def ejecutar(raiz: Path, ficheros: list[str], solo_staged: bool) -> list[Infracc
     return infracciones
 
 
+def _preparar_salida() -> None:
+    """Evita que una consola antigua tumbe el verificador por una tilde.
+
+    Los mensajes van en castellano con sus acentos. Si la consola usa una
+    codificacion que no admite algun caracter -el guion largo no esta en
+    cp850, por ejemplo- imprimirlo lanzaria UnicodeEncodeError y el
+    verificador diria que no ha podido ejecutarse por un motivo que no tiene
+    nada que ver con la gobernanza. Se prefiere perder un caracter a perder
+    el informe. Si el flujo de salida no admite reconfigurarse -es lo que
+    pasa bajo pytest- se deja como esta.
+    """
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
+
+
 def main(argv: list[str] | None = None, raiz: Path | None = None) -> int:
     """Punto de entrada de la CLI. Devuelve el codigo de salida.
 
@@ -69,12 +86,13 @@ def main(argv: list[str] | None = None, raiz: Path | None = None) -> int:
     git no responde o falta una dependencia, quien commitea tiene que saber
     que no se ha comprobado nada, no ponerse a buscar un criterio mal escrito.
     """
+    _preparar_salida()
     try:
         return _resolver(argv, raiz)
     except Exception as fallo:  # noqa: BLE001 - se traduce a codigo 2 a proposito
         print("No se ha podido ejecutar el verificador de gobernanza.")
         print(f"Motivo: {type(fallo).__name__}: {fallo}")
-        print("Esto no es una infraccion: es que la comprobacion no ha llegado "
+        print("Esto no es una infracción: es que la comprobación no ha llegado "
               "a hacerse.")
         return 2
 
@@ -90,9 +108,9 @@ def _resolver(argv: list[str] | None, raiz: Path | None) -> int:
     parser.add_argument("--staged", action="store_true",
                         help="verificar solo los ficheros en staging")
     parser.add_argument("--sellar", action="store_true",
-                        help="regenerar el registro de sincronia de R2")
+                        help="regenerar el registro de sincronía de R2")
     parser.add_argument("--congelar", metavar="VERSION",
-                        help=("cerrar una version de criterios ya usada en "
+                        help=("cerrar una versión de criterios ya usada en "
                               "correcciones aprobadas, por ejemplo v2026-2027"))
     args = parser.parse_args(argv)
 
@@ -105,17 +123,17 @@ def _resolver(argv: list[str] | None, raiz: Path | None) -> int:
         except (FileNotFoundError, RuntimeError) as motivo:
             print(f"No se ha congelado nada. {motivo}")
             return 1
-        print(f"Version {args.congelar} congelada.")
+        print(f"Versión {args.congelar} congelada.")
         print("A partir de ahora sus criterios no se tocan. Para cambiar algo, "
-              "crea la version siguiente")
+              "crea la versión siguiente")
         print("copiando solo los *.yaml de "
               f"criteria/{args.congelar}/ a la carpeta nueva.")
         return 0
 
     if args.sellar:
         escribir_sincronia(raiz)
-        print("Registro de sincronia regenerado.")
-        print("Hazlo solo despues de comprobar que los criterios reflejan la prosa.")
+        print("Registro de sincronía regenerado.")
+        print("Hazlo solo después de comprobar que los criterios reflejan la prosa.")
         return 0
 
     infracciones = ejecutar(raiz, ficheros=[], solo_staged=args.staged)

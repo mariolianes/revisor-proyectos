@@ -34,13 +34,13 @@ def congelar(raiz: Path, version: str) -> None:
     """
     carpeta = raiz / "criteria" / version
     if not carpeta.is_dir():
-        raise FileNotFoundError(f"No existe la version de criterios: {carpeta}")
+        raise FileNotFoundError(f"No existe la versión de criterios: {carpeta}")
     sello = carpeta / SELLO
     if sello.is_file():
         raise RuntimeError(
-            f"La version {version} ya esta congelada. Una version usada en "
+            f"La versión {version} ya está congelada. Una versión usada en "
             f"correcciones aprobadas no se vuelve a sellar. Si necesitas "
-            f"cambiar algo, crea la version siguiente."
+            f"cambiar algo, crea la versión siguiente."
         )
     contenido = json.dumps(_yaml_de(carpeta), indent=2, ensure_ascii=False)
     sello.write_text(contenido + "\n", encoding="utf-8")
@@ -69,10 +69,10 @@ def verificar_r4(raiz: Path) -> list[Infraccion]:
                     regla="R4",
                     fichero=relativa,
                     detalle=(
-                        f"'{nombre}' ha desaparecido de la version congelada "
-                        f"{version}. Una version usada en correcciones aprobadas "
+                        f"'{nombre}' ha desaparecido de la versión congelada "
+                        f"{version}. Una versión usada en correcciones aprobadas "
                         f"no se altera. Restaura el fichero y crea una nueva "
-                        f"version si necesitas cambiar algo."
+                        f"versión si necesitas cambiar algo."
                     ),
                 ))
             elif actual[nombre] != h:
@@ -80,12 +80,12 @@ def verificar_r4(raiz: Path) -> list[Infraccion]:
                     regla="R4",
                     fichero=relativa,
                     detalle=(
-                        f"'{nombre}' ha cambiado, pero la version {version} esta "
-                        f"congelada. Deshaz el cambio y crea una nueva version: "
+                        f"'{nombre}' ha cambiado, pero la versión {version} está "
+                        f"congelada. Deshaz el cambio y crea una nueva versión: "
                         f"copia solo los *.yaml de criteria/{version}/ a la "
-                        f"carpeta de la version siguiente -el sello .congelada "
-                        f"no se copia, o la version nueva naceria cerrada-, "
-                        f"modifica alli y registra el cambio en docs/changes/."
+                        f"carpeta de la versión siguiente -el sello .congelada "
+                        f"no se copia, o la versión nueva nacería cerrada-, "
+                        f"modifica allí y registra el cambio en docs/changes/."
                     ),
                 ))
 
@@ -95,11 +95,11 @@ def verificar_r4(raiz: Path) -> list[Infraccion]:
                 regla="R4",
                 fichero=relativa,
                 detalle=(
-                    f"'{nombre}' se ha anadido a la version congelada {version}. "
-                    f"Un criterio nuevo va en una version nueva, no en una "
+                    f"'{nombre}' se ha añadido a la versión congelada {version}. "
+                    f"Un criterio nuevo va en una versión nueva, no en una "
                     f"cerrada. Copia solo los *.yaml de criteria/{version}/ a la "
-                    f"carpeta de la version siguiente -el sello .congelada no se "
-                    f"copia, o la version nueva naceria cerrada-, anade alli el "
+                    f"carpeta de la versión siguiente -el sello .congelada no se "
+                    f"copia, o la versión nueva nacería cerrada-, añade allí el "
                     f"fichero y registra el cambio en docs/changes/."
                 ),
             ))

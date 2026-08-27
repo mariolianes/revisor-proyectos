@@ -43,7 +43,7 @@ def test_r4_rechaza_modificar_una_version_congelada(repo: Path):
     assert len(infracciones) == 1
     assert infracciones[0].regla == "R4"
     assert "dimensiones.yaml" in infracciones[0].detalle
-    assert "nueva version" in infracciones[0].detalle
+    assert "nueva versión" in infracciones[0].detalle
 
 
 def test_r4_rechaza_borrar_un_fichero_de_una_version_congelada(repo: Path):

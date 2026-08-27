@@ -77,7 +77,7 @@ def test_congelar_dos_veces_desde_la_cli_se_niega(repo: Path, capsys):
     assert main(["--congelar", "v2026-2027"], raiz=repo) == 0
     capsys.readouterr()
     assert main(["--congelar", "v2026-2027"], raiz=repo) == 1
-    assert "ya esta congelada" in capsys.readouterr().out
+    assert "ya está congelada" in capsys.readouterr().out
 
 
 def test_congelar_no_ejecuta_las_reglas_ni_sella(repo: Path):
@@ -103,7 +103,7 @@ def test_un_fallo_no_controlado_devuelve_dos_y_no_se_confunde_con_una_infraccion
     assert codigo == 2
     salida = capsys.readouterr().out
     assert "No se ha podido ejecutar" in salida
-    assert "no es una infraccion" in salida
+    assert "no es una infracción" in salida
 
 
 def test_el_hook_distingue_el_codigo_2_de_una_infraccion():

@@ -98,9 +98,9 @@ def verificar_r6(raiz: Path, ficheros: list[str]) -> list[Infraccion]:
                 regla="R6",
                 fichero=relativa,
                 detalle=(
-                    f"Documento ofimatico en el repositorio. Las entregas de "
-                    f"alumnos no se versionan. Sacalo del repositorio y, si "
-                    f"llego a commitearse, limpia el historial."
+                    f"Documento ofimático en el repositorio. Las entregas de "
+                    f"alumnos no se versionan. Sácalo del repositorio y, si "
+                    f"llegó a commitearse, limpia el historial."
                 ),
             ))
             continue
@@ -115,8 +115,8 @@ def verificar_r6(raiz: Path, ficheros: list[str]) -> list[Infraccion]:
 
         for patron, etiqueta in (
             (PATRON_DNI, "un DNI"),
-            (PATRON_CORREO, "un correo electronico"),
-            (PATRON_TELEFONO, "un telefono"),
+            (PATRON_CORREO, "un correo electrónico"),
+            (PATRON_TELEFONO, "un teléfono"),
         ):
             # Se usa .search(), no .finditer(): basta una senal por tipo para
             # bloquear el commit, no hace falta enumerar todas las apariciones.
@@ -127,9 +127,9 @@ def verificar_r6(raiz: Path, ficheros: list[str]) -> list[Infraccion]:
                     regla="R6",
                     fichero=relativa,
                     detalle=(
-                        f"Linea {linea}: parece {etiqueta}. El sistema trabaja "
-                        f"con codigos anonimos de alumno. Si es un dato real, "
-                        f"retiralo; si es un ejemplo, usa un codigo tipo AF023."
+                        f"Línea {linea}: parece {etiqueta}. El sistema trabaja "
+                        f"con códigos anónimos de alumno. Si es un dato real, "
+                        f"retíralo; si es un ejemplo, usa un código tipo AF023."
                     ),
                 ))
 

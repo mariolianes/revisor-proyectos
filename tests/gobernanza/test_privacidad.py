@@ -52,7 +52,7 @@ def test_detecta_un_telefono_espanol(repo: Path):
     (repo / "docs" / "ficha.md").write_text("Telefono 612345678\n", encoding="utf-8")
     infracciones = verificar_r6(repo, ["docs/ficha.md"])
     assert len(infracciones) == 1
-    assert "telefono" in infracciones[0].detalle
+    assert "teléfono" in infracciones[0].detalle
 
 
 def test_no_confunde_un_codigo_anonimo_con_un_dato_personal(repo: Path):
@@ -115,7 +115,7 @@ def test_detecta_un_telefono_con_espacios(repo: Path):
     )
     infracciones = verificar_r6(repo, ["docs/ficha.md"])
     assert len(infracciones) == 1
-    assert "telefono" in infracciones[0].detalle
+    assert "teléfono" in infracciones[0].detalle
 
 
 def test_detecta_un_telefono_con_guiones(repo: Path):
@@ -124,7 +124,7 @@ def test_detecta_un_telefono_con_guiones(repo: Path):
     )
     infracciones = verificar_r6(repo, ["docs/ficha.md"])
     assert len(infracciones) == 1
-    assert "telefono" in infracciones[0].detalle
+    assert "teléfono" in infracciones[0].detalle
 
 
 def test_detecta_un_telefono_con_prefijo_internacional(repo: Path):
@@ -133,7 +133,7 @@ def test_detecta_un_telefono_con_prefijo_internacional(repo: Path):
     )
     infracciones = verificar_r6(repo, ["docs/ficha.md"])
     assert len(infracciones) == 1
-    assert "telefono" in infracciones[0].detalle
+    assert "teléfono" in infracciones[0].detalle
 
 
 def test_no_confunde_dos_numeros_pegados_por_un_guion_con_un_telefono(repo: Path):

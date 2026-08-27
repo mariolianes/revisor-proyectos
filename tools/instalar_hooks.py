@@ -15,9 +15,9 @@ no_puedo_ejecutarlo() {
     echo ""
     echo "Commit detenido: no se ha podido ejecutar el verificador de gobernanza."
     echo "$1"
-    echo "Esto no es una infraccion: es que la herramienta no ha llegado a"
-    echo "arrancar. Revisa la instalacion segun 'Puesta en marcha' de"
-    echo "GOVERNANCE.md; si usas un entorno virtual, activalo antes."
+    echo "Esto no es una infracción: es que la herramienta no ha llegado a"
+    echo "arrancar. Revisa la instalación según 'Puesta en marcha' de"
+    echo "GOVERNANCE.md; si usas un entorno virtual, actívalo antes."
     exit 1
 }
 
@@ -31,7 +31,7 @@ python tools/verificar_gobernanza.py --staged
 estado=$?
 
 if [ $estado -eq 127 ]; then
-    no_puedo_ejecutarlo "El interprete de Python no se ha podido ejecutar."
+    no_puedo_ejecutarlo "El intérprete de Python no se ha podido ejecutar."
 fi
 
 if [ $estado -eq 2 ]; then
@@ -41,7 +41,7 @@ fi
 if [ $estado -ne 0 ]; then
     echo ""
     echo "Commit detenido: hay infracciones de gobernanza."
-    echo "Corrigelas, o usa 'git commit --no-verify' si sabes lo que haces."
+    echo "Corrígelas, o usa 'git commit --no-verify' si sabes lo que haces."
     exit 1
 fi
 exit 0
@@ -52,7 +52,7 @@ def main() -> int:
     raiz = Path(__file__).resolve().parents[1]
     carpeta = raiz / ".git" / "hooks"
     if not carpeta.is_dir():
-        print(f"No encuentro {carpeta}. ¿Estas en un repositorio git?")
+        print(f"No encuentro {carpeta}. ¿Estás en un repositorio git?")
         return 1
 
     ruta = carpeta / "pre-commit"

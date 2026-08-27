@@ -135,8 +135,8 @@ def verificar_r1(raiz: Path) -> list[Infraccion]:
                     regla="R1",
                     fichero=relativa,
                     detalle=(
-                        f"'{nombre}' no declara de donde sale: sin campo 'fuente'. "
-                        f"Anade 'fuente: documento#ancla' apuntando a la seccion "
+                        f"'{nombre}' no declara de dónde sale: sin campo 'fuente'. "
+                        f"Añade 'fuente: documento#ancla' apuntando a la sección "
                         f"de docs/maestro/ que lo respalda."
                     ),
                 ))
@@ -147,9 +147,9 @@ def verificar_r1(raiz: Path) -> list[Infraccion]:
                     regla="R1",
                     fichero=relativa,
                     detalle=(
-                        f"'{nombre}' tiene una fuente con formato invalido: "
+                        f"'{nombre}' tiene una fuente con formato inválido: "
                         f"'{fuente}'. Se espera 'documento#ancla', donde documento "
-                        f"es maestro, indice o guia."
+                        f"es maestro, índice o guía."
                     ),
                 ))
                 continue
@@ -201,8 +201,8 @@ def verificar_r3(raiz: Path) -> list[Infraccion]:
                     regla="R3",
                     fichero=relativa,
                     detalle=(
-                        f"'{nombre}' esta PENDIENTE_OFICIAL pero no declara "
-                        f"'bloquea'. Indica que juicios no pueden emitirse sin "
+                        f"'{nombre}' está PENDIENTE_OFICIAL pero no declara "
+                        f"'bloquea'. Indica qué juicios no pueden emitirse sin "
                         f"este dato, o '[]' si no bloquea ninguno."
                     ),
                 ))
@@ -213,7 +213,7 @@ def verificar_r3(raiz: Path) -> list[Infraccion]:
                     regla="R3",
                     fichero=relativa,
                     detalle=(
-                        f"'{nombre}' esta PENDIENTE_OFICIAL pero ya trae "
+                        f"'{nombre}' está PENDIENTE_OFICIAL pero ya trae "
                         f"{inventados}. Un criterio pendiente no lleva valor: "
                         f"eso es inventarlo. Retira el valor o retira el estado."
                     ),
@@ -224,9 +224,9 @@ def verificar_r3(raiz: Path) -> list[Infraccion]:
                     regla="R3",
                     fichero=relativa,
                     detalle=(
-                        f"'{nombre}' esta PENDIENTE_OFICIAL pero no aparece en "
-                        f"docs/PENDIENTE_OFICIAL.md. Anadelo alli con la forma "
-                        f"'- **{nombre}** — que falta y de quien se espera.'"
+                        f"'{nombre}' está PENDIENTE_OFICIAL pero no aparece en "
+                        f"docs/PENDIENTE_OFICIAL.md. Añádelo allí con la forma "
+                        f"'- **{nombre}** — qué falta y de quién se espera.'"
                     ),
                 ))
 

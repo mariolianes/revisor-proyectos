@@ -102,9 +102,9 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
             regla="R2",
             fichero=FICHERO_SINCRONIA,
             detalle=(
-                f"No existe el registro de sincronia ({FICHERO_SINCRONIA}). "
-                "Generalo con 'python tools/verificar_gobernanza.py --sellar' "
-                "despues de comprobar que los criterios reflejan la prosa."
+                f"No existe el registro de sincronía ({FICHERO_SINCRONIA}). "
+                "Genéralo con 'python tools/verificar_gobernanza.py --sellar' "
+                "después de comprobar que los criterios reflejan la prosa."
             ),
         )]
 
@@ -118,7 +118,7 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
                 regla="R2",
                 fichero=FICHERO_SINCRONIA,
                 detalle=(
-                    f"'{ancla}' se referencia desde criteria/ pero no esta en el "
+                    f"'{ancla}' se referencia desde criteria/ pero no está en el "
                     f"registro. Sella tras revisar el derivado con "
                     f"'python tools/verificar_gobernanza.py --sellar'."
                 ),
@@ -128,9 +128,9 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
                 regla="R2",
                 fichero=FICHERO_SINCRONIA,
                 detalle=(
-                    f"La seccion '{ancla}' ha cambiado en docs/maestro/ y su "
+                    f"La sección '{ancla}' ha cambiado en docs/maestro/ y su "
                     f"derivado en criteria/ no se ha revisado. Comprueba si el "
-                    f"cambio afecta a los criterios que la citan, ajustalos si "
+                    f"cambio afecta a los criterios que la citan, ajústalos si "
                     f"procede, y sella con "
                     f"'python tools/verificar_gobernanza.py --sellar'."
                 ),
@@ -141,11 +141,11 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
             regla="R2",
             fichero=FICHERO_SINCRONIA,
             detalle=(
-                f"'{ancla}' esta en el registro pero ningun criterio la "
+                f"'{ancla}' está en el registro pero ningún criterio la "
                 f"referencia con ese nombre. O se ha retirado el criterio que "
                 f"la citaba, o el ancla se ha renombrado en docs/maestro/ y el "
                 f"criterio sigue citando el nombre viejo -en ese caso R1 "
-                f"protesta tambien, y lo que hay que arreglar es la 'fuente', "
+                f"protesta también, y lo que hay que arreglar es la 'fuente', "
                 f"no el registro-. Si era intencionado, sella para limpiarlo "
                 f"con 'python tools/verificar_gobernanza.py --sellar'."
             ),

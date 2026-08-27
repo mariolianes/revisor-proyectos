@@ -57,8 +57,8 @@ def verificar_formato_cambios(raiz: Path) -> list[Infraccion]:
                     regla="R5",
                     fichero=relativa,
                     detalle=(
-                        f"Falta la seccion '## {seccion}'. Copia "
-                        f"{CARPETA}/{PLANTILLA} y rellenala entera."
+                        f"Falta la sección '## {seccion}'. Copia "
+                        f"{CARPETA}/{PLANTILLA} y rellénala entera."
                     ),
                 ))
 
