@@ -1,0 +1,176 @@
+import subprocess
+from pathlib import Path
+
+from backend.servicios.repositorio import leer_seccion
+from backend.servicios.transaccion import CambioDeValor, guardar
+
+# Copiadas de tests/backend/conftest.py: ni tests/ ni tests/backend/ tienen
+# __init__.py -y no deben tenerlo, colisionaria con el paquete backend real-,
+# asi que "from tests.backend.conftest import ..." no resuelve como modulo.
+# Son ocho lineas y no las usa nadie mas.
+
+
+def contenido_de(raiz: Path) -> dict[str, bytes]:
+    """Instantánea byte a byte del árbol, para comprobar que un fallo no deja rastro."""
+    instantanea = {}
+    for ruta in sorted(raiz.rglob("*")):
+        if ruta.is_file() and ".git" not in ruta.parts:
+            instantanea[ruta.relative_to(raiz).as_posix()] = ruta.read_bytes()
+    return instantanea
+
+
+def commits_de(raiz: Path) -> list[str]:
+    salida = subprocess.run(
+        ["git", "log", "--format=%H"], cwd=raiz, capture_output=True, text=True, check=True
+    )
+    return salida.stdout.split()
+
+
+TEXTO_NUEVO = (
+    "## 6. Estándar académico\n\n"
+    "El contenido principal tendrá un mínimo de 25 páginas, excluidas portada,\n"
+    "índice y anexos. La tipografía será Arial 11.\n"
+)
+
+
+def _guardar_valido(repo: Path, **extra):
+    seccion = leer_seccion(repo, "maestro#6-estandar-academico")
+    argumentos = dict(
+        raiz=repo,
+        ancla="maestro#6-estandar-academico",
+        texto_nuevo=TEXTO_NUEVO,
+        cambios=[CambioDeValor(
+            fichero="criteria/v2026-2027/formato.yaml",
+            identificador="extension",
+            clave="minimo_paginas_contenido",
+            valor_nuevo="25",
+        )],
+        motivo="La programación didáctica sube el mínimo a 25 páginas.",
+        fuente="Programación didáctica 2026-2027, apartado 4.2",
+        hash_esperado=seccion.hash,
+    )
+    argumentos.update(extra)
+    return guardar(**argumentos)
+
+
+def test_el_caso_feliz_deja_prosa_yaml_cambio_y_commit(repo: Path):
+    resultado = _guardar_valido(repo)
+    assert resultado.exito, resultado.mensaje
+    assert resultado.commit
+
+    maestro = (repo / "docs/maestro/01-documento-maestro.md").read_text(encoding="utf-8")
+    assert "mínimo de 25 páginas" in maestro
+
+    formato = (repo / "criteria/v2026-2027/formato.yaml").read_text(encoding="utf-8")
+    assert "minimo_paginas_contenido: 25" in formato
+
+    cambios = list((repo / "docs/changes").glob("*-*.md"))
+    assert len(cambios) == 1
+    documento = cambios[0].read_text(encoding="utf-8")
+    assert "La programación didáctica sube el mínimo" in documento
+    assert "Programación didáctica 2026-2027" in documento
+
+
+def test_el_documento_de_cambio_lleva_las_cinco_secciones(repo: Path):
+    _guardar_valido(repo)
+    documento = next((repo / "docs/changes").glob("*-*.md")).read_text(encoding="utf-8")
+    from tools.gobernanza.cambios import SECCIONES_OBLIGATORIAS
+    for seccion in SECCIONES_OBLIGATORIAS:
+        assert f"## {seccion}" in documento
+
+
+def test_el_registro_de_sincronia_queda_sellado(repo: Path):
+    _guardar_valido(repo)
+    from tools.verificar_gobernanza import ejecutar
+    assert [i for i in ejecutar(repo, [], False) if i.regla == "R2"] == []
+
+
+def test_sin_motivo_no_se_guarda_nada(repo: Path):
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo, motivo="   ")
+    assert not resultado.exito
+    assert "motivo" in resultado.mensaje
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_sin_fuente_no_se_guarda_nada(repo: Path):
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo, fuente="")
+    assert not resultado.exito
+    assert "fuente" in resultado.mensaje
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_si_la_seccion_cambio_por_fuera_se_aborta(repo: Path):
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo, hash_esperado="0000000000000000")
+    assert not resultado.exito
+    assert "ha cambiado" in resultado.mensaje
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_si_el_arbol_esta_sucio_se_aborta(repo: Path):
+    (repo / "suelto.txt").write_text("algo sin comitear\n", encoding="utf-8")
+    commits = commits_de(repo)
+    resultado = _guardar_valido(repo)
+    assert not resultado.exito
+    assert "sin comitear" in resultado.mensaje
+    assert commits_de(repo) == commits
+
+
+def test_si_una_regla_salta_se_revierte_todo(repo: Path):
+    """Un cambio que deja un criterio apuntando a un ancla inexistente.
+
+    NOTA: el brief proponía disparar esto sustituyendo el cuerpo de la
+    sección sin tocar su marca de ancla. Se comprobó -en rojo, ejecutando el
+    test- que ese escenario nunca dispara ninguna de las seis reglas: la
+    marca de ancla la conserva siempre '_sustituir_seccion', y
+    'escribir_sincronia' se llama justo antes de verificar, así que R2 nunca
+    puede fallar contra su propio sello recién escrito. Se sustituye por un
+    escenario que sí viola R1 de verdad: un 'cambio' que deja la 'fuente' de
+    un criterio apuntando a un ancla que no existe. El resto del test -que
+    se revierte todo, byte a byte y sin commit- es idéntico en espíritu.
+    """
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = guardar(
+        raiz=repo,
+        ancla="maestro#6-estandar-academico",
+        texto_nuevo=TEXTO_NUEVO,
+        cambios=[CambioDeValor(
+            fichero="criteria/v2026-2027/formato.yaml",
+            identificador="extension",
+            clave="fuente",
+            valor_nuevo="maestro#no-existe",
+        )],
+        motivo="Prueba de reversión",
+        fuente="Prueba",
+        hash_esperado=leer_seccion(repo, "maestro#6-estandar-academico").hash,
+    )
+    assert not resultado.exito
+    assert resultado.infracciones
+    assert any(i["regla"] == "R1" for i in resultado.infracciones)
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_un_ancla_inexistente_se_rechaza(repo: Path):
+    antes = contenido_de(repo)
+    resultado = guardar(
+        raiz=repo, ancla="maestro#no-existe", texto_nuevo="x",
+        cambios=[], motivo="m", fuente="f", hash_esperado="x",
+    )
+    assert not resultado.exito
+    assert contenido_de(repo) == antes
+
+
+def test_un_cambio_sobre_un_fichero_fuera_de_criteria_se_rechaza(repo: Path):
+    antes = contenido_de(repo)
+    resultado = _guardar_valido(repo, cambios=[CambioDeValor(
+        fichero="../fuera.yaml", identificador="x", clave="y", valor_nuevo="1",
+    )])
+    assert not resultado.exito
+    assert "no es un fichero de criterios" in resultado.mensaje
+    assert contenido_de(repo) == antes
