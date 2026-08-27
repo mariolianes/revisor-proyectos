@@ -30,6 +30,12 @@ lo que hacen es constar.
 - **tutorias** — procedimiento de tutorías, correcciones y plazos de respuesta. Se espera del centro.
 - **casos_especiales** — reglas para retrasos, cambios de tema y recuperación. Se espera del centro.
 - **canal_devolucion** — cómo llega el feedback aprobado al alumno y qué marca exactamente el estado COMUNICADO. Decisión D-004, pendiente del docente.
+- **equivalencia_interlineado** — a qué distancia entre líneas base
+  corresponde el «1,5» que exige el §6.2. Un PDF no guarda el valor elegido
+  en el procesador de textos, sino la separación real, y la conversión
+  depende de la fuente: para Arial 11 a 1,5 líneas el ratio ronda 1,73. Hasta
+  fijarlo, la comprobación del interlineado se emite como `NO_VERIFICABLE`
+  con el ratio medido a la vista. Se espera del banco de calibración del §20.
 
 ## Qué hacer cuando llegue uno
 
