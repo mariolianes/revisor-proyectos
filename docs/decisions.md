@@ -89,3 +89,64 @@ existencia de un criterio, versionar ponderaciones y medir la calibración
 del §20.
 
 **Arrastra:** reglas R1 y R2 de `GOVERNANCE.md`.
+
+## D-006 · El editor no ofrece ningún atajo al procedimiento
+
+**Fecha:** 2026-08-27 · **Estado:** Validada · **Responsable:** Marcos
+
+El editor de criterios no tiene modo experto, ni botón de guardar sin motivo,
+ni opción de posponer el documento de cambio. Guardar una edición exige indicar
+por qué se cambia y qué fuente lo respalda, y el guardado ejecuta las seis
+reglas antes de comitear.
+
+Se descartaron dos alternativas. Un editor libre que avisara después: un aviso
+que se puede posponer se pospone siempre, y en unos meses la prosa y los
+criterios habrían dejado de decir lo mismo sin que nadie se enterara. Y un
+editor de solo lectura, que no resolvía el problema que lo originó.
+
+La comodidad está en que el camino correcto sea cómodo, no en que exista un
+atajo. Quien mantenga esto encontrará una función que no existe: **no existe a
+propósito.**
+
+## D-007 · La propuesta automática solo se hace cuando la correspondencia es literal
+
+**Fecha:** 2026-08-27 · **Estado:** Validada · **Responsable:** Marcos
+
+Al cambiar la prosa, el editor propone actualizar un criterio derivado **solo**
+cuando su valor es un número que aparece textualmente una sola vez en el texto
+anterior, ha dejado de aparecer en el nuevo, y hay un único candidato ocupando
+su mismo lugar, identificado por las palabras que lo precedían. En cualquier
+otro caso muestra el criterio marcado para revisión manual, con el motivo
+escrito para el docente.
+
+La restricción es deliberada y más estrecha de lo que sería técnicamente
+posible. Inferir de más significaría fabricar un criterio que nadie decidió
+conscientemente, que es exactamente lo que R1 impide. Durante la construcción
+se comprobó: una versión menos restrictiva llegaba a proponer el número de una
+subsección como mínimo de páginas de un trabajo.
+
+**Límite conocido:** si una reescritura conserva las palabras previas al valor
+pero cambia el sujeto de la frase, la propuesta puede ser errónea. Requiere que
+el arranque sobreviva literal, así que es estrecho, pero está ahí.
+
+## D-008 · El valor de un criterio se escribe sobre el árbol del fichero, no sobre su texto
+
+**Fecha:** 2026-08-27 · **Estado:** Validada · **Responsable:** Marcos
+
+Cuando el editor actualiza el valor de un criterio, localiza el nodo por su
+ruta dentro del árbol del fichero YAML y lo modifica ahí, conservando
+comentarios y formato. No busca la clave por coincidencia de texto.
+
+La decisión se tomó tras cuatro rondas de correcciones sobre búsqueda textual.
+Cada una cerró una forma del mismo fallo y destapó la siguiente: reescribir el
+criterio equivocado cuando dos comparten nombre de clave, comerse el primer
+elemento de una lista, confundir un comentario con un valor, y elegir una clave
+anidada en lugar de la correcta. Todas producían lo mismo: un criterio
+corrompido y un mensaje diciendo que el cambio se había guardado y verificado.
+Una de ellas, además, borraba silenciosamente un comentario del fichero.
+
+La raíz era estructural. Un patrón de texto sabe encontrar `clave:` pero no
+distingue una clave propia del criterio de otra igual en su subárbol, porque
+eso es estructura y no texto.
+
+**Arrastra:** la dependencia `ruamel.yaml`, fijada en `requirements-dev.txt`.
