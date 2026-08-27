@@ -407,10 +407,70 @@ def _valores_derivados(raiz: Path, ancla: str) -> set[tuple[str, str, str]]:
     }
 
 
+def _sin_decidir(raiz: Path, ancla: str,
+                 cambios: list[CambioDeValor]) -> list[tuple[str, str, str]]:
+    """Los valores que derivan de la sección sobre los que no se ha decidido."""
+    decididos = {(c.fichero, c.identificador, c.clave) for c in cambios}
+    return sorted(_valores_derivados(raiz, ancla) - decididos)
+
+
 def _todo_revisado(raiz: Path, ancla: str, cambios: list[CambioDeValor]) -> bool:
     """Si el docente ha decidido sobre cada valor que deriva de la sección."""
-    decididos = {(c.fichero, c.identificador, c.clave) for c in cambios}
-    return _valores_derivados(raiz, ancla) <= decididos
+    return not _sin_decidir(raiz, ancla, cambios)
+
+
+# --------------------------------------------------------------------------
+# El mensaje que ve el docente cuando deja criterios sin decidir.
+#
+# R2 protesta, y hace bien. Pero su texto está escrito para quien trabaja
+# desde la consola y termina diciendo que se selle con el verificador. Ese
+# comando sella TODAS las anclas sin mirar ninguna: usarlo aquí dejaría el
+# repositorio «conforme» con la norma diciendo una cosa y los criterios otra,
+# y para siempre, porque el guardado siguiente ya no encontraría nada de qué
+# quejarse. Es exactamente el atajo que este editor existe para no ofrecer, y
+# enseñarlo justo en el momento en que no hay que usarlo era recomendarlo.
+#
+# Así que en este caso -y solo en este, que la transacción reconoce porque
+# acaba de calcular qué quedó sin decidir- el detalle de la regla se sustituye
+# por el del editor: cuántos criterios faltan, cuáles, y que vuelva al diálogo
+# a decidirlos. Las demás infracciones, incluidas las de R2 que no vengan de
+# aquí, se siguen enseñando tal como las escribe el verificador.
+# --------------------------------------------------------------------------
+
+
+def _es_del_ancla(infraccion, ancla: str) -> bool:
+    """Si esa infracción de R2 habla de la sección que no se ha sellado."""
+    # El verificador cita el ancla entre comillas simples. Se busca así, y no
+    # suelta, para que 'maestro#6-estandar' no case con la infracción de
+    # 'maestro#6-estandar-academico'.
+    return infraccion.regla == "R2" and f"'{ancla}'" in infraccion.detalle
+
+
+def _detalle_de_lo_sin_decidir(sin_decidir: list[tuple[str, str, str]]) -> str:
+    lista = ", ".join(
+        f"{identificador}.{clave} de {fichero}"
+        for fichero, identificador, clave in sin_decidir
+    )
+    return (
+        f"Esta sección no se ha podido dar por revisada porque quedan "
+        f"criterios sin decidir: {lista}. Vuelve al diálogo de guardado y "
+        f"decide cada uno: corrige su valor, o marca que lo has revisado y "
+        f"no cambia."
+    )
+
+
+def _mensaje_de_lo_sin_decidir(sin_decidir: list[tuple[str, str, str]]) -> str:
+    cuantos = len(sin_decidir)
+    if cuantos == 1:
+        cuenta = "Queda 1 criterio sin decidir"
+    else:
+        cuenta = f"Quedan {cuantos} criterios sin decidir"
+    return (
+        f"{cuenta}, así que la sección no se puede dar por revisada y el "
+        f"cambio no se ha guardado. No se ha tocado nada. Vuelve al diálogo "
+        f"y decide cada uno: corrige su valor, o marca que lo has revisado y "
+        f"no cambia."
+    )
 
 
 def _sellar(raiz: Path, anclas: set[str]) -> None:
@@ -601,7 +661,8 @@ def _guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeVal
     # escribir daría la respuesta sobre otro árbol: un cambio de 'fuente'
     # mueve un criterio de sección, y entonces «están todos revisados» sería
     # cierto sobre una lista distinta de la que él tenía delante.
-    revisado_del_todo = _todo_revisado(raiz, ancla, cambios)
+    sin_decidir = _sin_decidir(raiz, ancla, cambios)
+    revisado_del_todo = not sin_decidir
 
     # A partir de aquí se escribe. Todo lo que se toque se guarda para revertir.
     documento = raiz / "docs" / "maestro" / _fichero_de(ancla)
@@ -678,17 +739,39 @@ def _guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeVal
         infracciones = ejecutar(raiz, [], False)
         if infracciones:
             revertir()
-            return Resultado(
-                exito=False,
-                infracciones=[
-                    {"regla": i.regla, "fichero": i.fichero, "detalle": i.detalle}
-                    for i in infracciones
-                ],
-                mensaje=(
+            # Si la única razón por la que R2 protesta es que esta sección se
+            # ha quedado sin sellar porque faltan criterios por decidir, el
+            # docente no tiene que leer el texto de la regla -que le mandaría
+            # a sellarlo todo a ciegas- sino qué le falta por decidir.
+            def es_del_sello(infraccion) -> bool:
+                return bool(sin_decidir) and _es_del_ancla(infraccion, ancla)
+
+            del_sello = sum(1 for i in infracciones if es_del_sello(i))
+            mostradas = [
+                {
+                    "regla": i.regla,
+                    "fichero": i.fichero,
+                    "detalle": (
+                        _detalle_de_lo_sin_decidir(sin_decidir)
+                        if es_del_sello(i) else i.detalle
+                    ),
+                }
+                for i in infracciones
+            ]
+            if del_sello:
+                mensaje = _mensaje_de_lo_sin_decidir(sin_decidir)
+                otras = len(infracciones) - del_sello
+                if otras:
+                    mensaje += (
+                        f" Además hay {otras} infracción(es) de gobernanza que "
+                        f"no vienen de esto; las tienes abajo."
+                    )
+            else:
+                mensaje = (
                     f"El cambio no se ha guardado: {len(infracciones)} "
                     f"infracción(es) de gobernanza."
-                ),
-            )
+                )
+            return Resultado(exito=False, infracciones=mostradas, mensaje=mensaje)
 
         # Solo se comitea lo que ha tocado esta transacción, no el árbol
         # entero: el hueco de guarda ya comprobó que no había nada más

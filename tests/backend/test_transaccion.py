@@ -751,3 +751,87 @@ def test_dos_guardados_a_la_vez_no_se_pisan(repo: Path, monkeypatch):
     maestro = (repo / "docs/maestro/01-documento-maestro.md").read_text(encoding="utf-8")
     assert "mínimo de 25 páginas" in maestro
 
+
+
+# --- Fix round 6: el rechazo no recomienda el atajo que la regla prohibe ---
+
+
+def test_lo_sin_decidir_se_dice_con_palabras_del_editor_y_no_nombra_ningun_comando(
+    repo: Path,
+):
+    """El rechazo por criterios sin decidir no puede recomendar '--sellar'.
+
+    Ese comando sella todas las anclas sin revisar ninguna: si el docente lo
+    ejecutara aquí, el repositorio quedaría conforme con la norma diciendo
+    una cosa y los criterios otra, y para siempre. Pasarle crudo el texto de
+    R2 -escrito para la consola, y que termina en ese comando- era
+    recomendárselo justo en el momento en que no debe usarlo.
+
+    Lo que ve es cuántos criterios le faltan y que vuelva al diálogo.
+    """
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = guardar(
+        raiz=repo,
+        ancla="maestro#6-estandar-academico",
+        texto_nuevo=(
+            "## 6. Estándar académico\n\n"
+            "El contenido principal tendrá un mínimo de 35 páginas, excluidas\n"
+            "portada, índice y anexos. La tipografía será Times New Roman 12.\n"
+        ),
+        cambios=[],
+        motivo="Prueba: cambiar la prosa sin decidir sobre los criterios",
+        fuente="Prueba",
+        hash_esperado=leer_seccion(repo, "maestro#6-estandar-academico").hash,
+    )
+
+    assert not resultado.exito
+    assert "sin decidir" in resultado.mensaje
+    assert "3 criterios" in resultado.mensaje
+    assert "diálogo" in resultado.mensaje
+
+    # Ni en el mensaje ni en ninguna infracción aparece el comando.
+    todo = resultado.mensaje + " ".join(i["detalle"] for i in resultado.infracciones)
+    assert "--sellar" not in todo
+    assert "verificar_gobernanza" not in todo
+
+    # La infracción sigue siendo de R2 y sigue estando: lo que cambia es lo
+    # que dice, no que se oculte que la regla ha saltado.
+    assert any(i["regla"] == "R2" for i in resultado.infracciones)
+
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_solo_se_reescribe_la_infraccion_de_la_seccion_que_se_esta_editando():
+    """Lo que se sustituye es el detalle de ESTA sección, no el de R2 entera.
+
+    Una infracción de R2 sobre otra sección -o de cualquier otra regla- no la
+    ha provocado este guardado, así que sigue enseñándose con el texto que
+    escribe el verificador. Y el reconocimiento se hace sobre el ancla entre
+    comillas: si se buscara suelto, 'maestro#6-estandar' se daría por dueño
+    de la infracción de 'maestro#6-estandar-academico', que es otra sección.
+    """
+    from backend.servicios.transaccion import _es_del_ancla
+    from tools.gobernanza.resultado import Infraccion
+
+    propia = Infraccion(
+        regla="R2",
+        fichero="criteria/.sincronia.json",
+        detalle="La sección 'maestro#6-estandar-academico' ha cambiado.",
+    )
+    otra_ancla = Infraccion(
+        regla="R2",
+        fichero="criteria/.sincronia.json",
+        detalle="La sección 'maestro#8-dimensiones' ha cambiado.",
+    )
+    otra_regla = Infraccion(
+        regla="R1",
+        fichero="criteria/v2026-2027/formato.yaml",
+        detalle="La sección 'maestro#6-estandar-academico' no existe.",
+    )
+
+    assert _es_del_ancla(propia, "maestro#6-estandar-academico")
+    assert not _es_del_ancla(otra_ancla, "maestro#6-estandar-academico")
+    assert not _es_del_ancla(otra_regla, "maestro#6-estandar-academico")
+    # El prefijo de otra ancla no se apropia de la infracción ajena.
+    assert not _es_del_ancla(propia, "maestro#6-estandar")
