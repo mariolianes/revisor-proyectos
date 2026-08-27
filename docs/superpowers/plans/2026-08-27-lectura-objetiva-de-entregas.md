@@ -637,20 +637,10 @@ def test_un_pdf_sin_paginas_da_error_legible(tmp_path: Path) -> None:
     a mano. Un PDF así llega cuando una exportación se queda a medias."""
     vacio = tmp_path / "vacio.pdf"
     vacio.write_bytes(
-        b"%PDF-1.4
-"
-        b"1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-"
-        b"2 0 obj
-<< /Type /Pages /Kids [] /Count 0 >>
-endobj
-"
-        b"trailer
-<< /Root 1 0 R /Size 3 >>
-%%EOF
-"
+        b"%PDF-1.4\n"
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n"
+        b"trailer\n<< /Root 1 0 R /Size 3 >>\n%%EOF\n"
     )
 
     with pytest.raises(PdfIlegible) as fallo:
