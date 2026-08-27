@@ -30,11 +30,16 @@ alerta. No elige.
 sección cambia, hay que revisar su derivado y sellar con `--sellar`. Ojo al
 alcance: R2 solo vigila las secciones que algún criterio cita como `fuente:`,
 no el Maestro entero, así que editar una sección que ningún criterio deriva no
-hace saltar nada y eso no significa que se haya comprobado. *Verificada.*
+hace saltar nada y eso no significa que se haya comprobado. Hoy ningún criterio
+cita `guia#...`, con lo que la guía de desarrollo entera queda fuera de esa
+vigilancia. *Verificada.*
 
 **R3 · Lo pendiente se marca, no se inventa.** `estado: PENDIENTE_OFICIAL`, con
 `bloquea` y entrada en `docs/PENDIENTE_OFICIAL.md`. Un criterio pendiente no
-lleva valor. *Verificada.*
+lleva valor. Ojo al alcance: la lista de claves que delatan un valor inventado
+es corta —`valor`, `valores`, `fechas`, `porcentajes`—, de modo que `niveles`,
+`peso`, `porcentaje` o `minimo` colados en un criterio pendiente pasarían sin
+protesta. *Verificada.*
 
 **R4 · Los criterios se versionan y se congelan.** Una versión usada en una
 corrección aprobada no se modifica: se crea la siguiente. Se cierra con
@@ -62,7 +67,15 @@ solo. *Pendiente: se implementa con el backend.*
 6. Commit, incluyendo criteria/.sincronia.json
 ```
 
-El orden importa. Editar el YAML primero es exactamente lo que R2 impide.
+El orden importa, pero **ninguna regla lo comprueba**. R2 solo guarda el hash
+del texto de las secciones de prosa: nunca lee el contenido del YAML, así que
+cambiar `minimo_paginas_contenido: 20` por `25` sin tocar el Maestro no le hace
+saltar. La única guarda real de ese paso es R5, y lo que exige es papeleo —un
+documento en `docs/changes/`—, no coherencia: la prosa y su derivado pueden
+quedar diciendo cosas distintas sobre cuántas páginas debe escribir un alumno y
+el verificador seguirá dando conforme. Cerrar el hueco pediría sellar también
+el contenido de los YAML, o comprobar cada cifra contra la sección que cita;
+está sin decidir y hoy no se hace.
 
 El sellado del paso 5 reescribe `criteria/.sincronia.json`. Si se queda fuera
 del commit, R2 volverá a protestar sobre un repositorio que se cree recién
