@@ -16,3 +16,23 @@ class Pagina(BaseModel):
     en_blanco: bool
     ancho_pt: float
     alto_pt: float
+
+
+class MedidasDeTexto(BaseModel):
+    """Tipografía, interlineado, márgenes y alineación, tal como se miden.
+
+    Los campos opcionales son `None` cuando el documento no da material para
+    medirlos —un escaneado no tiene tipografía, una sola línea no define un
+    interlineado—. Nunca llevan un valor supuesto: un dato ausente que
+    parece presente es peor que un hueco declarado.
+    """
+
+    familia_dominante: str
+    cuerpo_dominante: float
+    proporcion_cuerpo_dominante: float
+    ratio_interlineado: float | None = None
+    margen_izquierdo_cm: float | None = None
+    margen_derecho_cm: float | None = None
+    margen_superior_cm: float | None = None
+    margen_inferior_cm: float | None = None
+    proporcion_lineas_al_margen_derecho: float | None = None

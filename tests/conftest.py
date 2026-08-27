@@ -162,3 +162,65 @@ def pdf_escaneado(tmp_path: Path) -> Path:
     documento.save(ruta)
     documento.close()
     return ruta
+
+
+@pytest.fixture
+def pdf_cuerpo_mezclado(tmp_path: Path) -> Path:
+    """Mucho texto a cuerpo 11 y un titular a 20: el dominante es el 11."""
+    documento = pymupdf.open()
+    pagina = documento.new_page()
+    pagina.insert_text((IZQUIERDA, 80.0), "TITULO", fontname="helv", fontsize=20.0)
+    y = PRIMERA_LINEA + 30
+    for _ in range(8):
+        pagina.insert_text(
+            (IZQUIERDA, y),
+            "Linea larga del cuerpo del trabajo con bastante texto.",
+            fontname="helv",
+            fontsize=11.0,
+        )
+        y += 19.0
+    ruta = tmp_path / "mezclado.pdf"
+    documento.save(ruta)
+    documento.close()
+    return ruta
+
+
+@pytest.fixture
+def pdf_alineado_izquierda(tmp_path: Path) -> Path:
+    """Cinco líneas de longitudes muy distintas en una misma página.
+
+    Es lo que se ve en un texto alineado a la izquierda: cada línea acaba
+    donde acaba su última palabra.
+    """
+    return escribir_pdf(
+        tmp_path / "izquierda.pdf",
+        [[
+            "Una linea francamente larga que ocupa casi todo el ancho util.",
+            "Otra bastante mas corta.",
+            "Mediana, ni corta ni larga del todo.",
+            "Brevisima.",
+            "Y una ultima de longitud intermedia para cerrar.",
+        ]],
+    )
+
+
+@pytest.fixture
+def pdf_justificado(tmp_path: Path) -> Path:
+    """Cuatro líneas que acaban en el mismo borde derecho y una corta.
+
+    Es lo que distingue el texto justificado: todas las líneas menos la
+    última de cada párrafo terminan exactamente en el margen.
+    """
+    documento = pymupdf.open()
+    pagina = documento.new_page()
+    y = PRIMERA_LINEA
+    for _ in range(4):
+        pagina.insert_text(
+            (IZQUIERDA, y), "Linea que llega al margen.", fontname="helv", fontsize=11.0
+        )
+        y += 19.0
+    pagina.insert_text((IZQUIERDA, y), "Corta.", fontname="helv", fontsize=11.0)
+    ruta = tmp_path / "justificado.pdf"
+    documento.save(ruta)
+    documento.close()
+    return ruta
