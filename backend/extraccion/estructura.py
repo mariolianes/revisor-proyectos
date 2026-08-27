@@ -11,6 +11,15 @@ acertaría muchas veces; pero cuando fallara produciría una cuenta de
 páginas equivocada con aspecto de dato medido, y sobre esa cuenta se decide
 si un trabajo cumple la extensión mínima. Un hueco declarado es
 recuperable; un número inventado, no.
+
+Limitación conocida y aceptada: si los anexos empiezan a media página,
+compartiendo página con el final del contenido, la heurística de
+encabezado (que solo mira las dos primeras líneas de cada página) no los
+ve, y el conteo de páginas de contenido sale ligeramente inflado. No se
+amplía esa ventana a propósito: ampliarla agravaría los falsos positivos de
+un encabezado de anexo mencionado a mitad de párrafo, y el caso realista ya
+queda cubierto porque un trabajo con anexos casi siempre los declara en el
+índice, que es lo primero que se consulta.
 """
 
 import re
@@ -31,6 +40,16 @@ ENCABEZADOS_DE_ANEXOS = ("anexo", "anexos", "apendice", "apendices")
 # El índice está al principio: buscarlo más allá de aquí solo produce
 # falsos positivos con menciones dentro del texto.
 PAGINAS_EN_QUE_BUSCAR_EL_INDICE = 6
+
+# Un índice puede repartirse en varias páginas cuando hay muchos
+# subapartados. Solo la primera lleva el encabezado; las siguientes se
+# reconocen por la forma de sus líneas: cuántas casan con LINEA_DE_INDICE,
+# como mínimo...
+MINIMO_LINEAS_DE_INDICE_EN_PAGINA = 2
+# ...y qué proporción de las líneas de la página deben ser esas
+# coincidencias. Medido sobre casos reales: las páginas de índice dan 0,67
+# y 1,00; las de contenido dan 0,00.
+PROPORCION_MINIMA_DE_LINEAS_DE_INDICE = 0.60
 
 
 def _plano(texto: str) -> str:
@@ -60,20 +79,71 @@ def _buscar_indice(paginas: list[list[str]]) -> int | None:
     return None
 
 
-def _buscar_anexos(paginas: list[list[str]], desde: int) -> int | None:
-    """Primera página cuyo encabezado anuncia los anexos, o None."""
+def _parece_pagina_de_indice(lineas: list[str]) -> bool:
+    """Si una página, más allá de la primera, sigue siendo del índice.
+
+    Solo la primera página lleva el encabezado «Índice»; las siguientes se
+    reconocen por la forma de sus líneas: si la mayoría son entradas con
+    pinta de "título ... número", es una continuación de la tabla, no
+    contenido.
+    """
+    if not lineas:
+        return False
+    coincidencias = sum(1 for linea in lineas if LINEA_DE_INDICE.match(linea))
+    return (
+        coincidencias >= MINIMO_LINEAS_DE_INDICE_EN_PAGINA
+        and coincidencias / len(lineas) >= PROPORCION_MINIMA_DE_LINEAS_DE_INDICE
+    )
+
+
+def _ultima_pagina_del_indice(paginas: list[list[str]], primera: int) -> int:
+    """Hasta dónde llega el índice, mirando a partir de su primera página."""
+    ultima = primera
+    for numero in range(primera + 1, len(paginas) + 1):
+        if not _parece_pagina_de_indice(paginas[numero - 1]):
+            break
+        ultima = numero
+    return ultima
+
+
+def _buscar_anexos_por_encabezado(paginas: list[list[str]], desde: int) -> int | None:
+    """Última página, tras el índice, cuyo encabezado anuncia los anexos.
+
+    Se toma la última aparición y no la primera: los anexos van al final, y
+    un apartado que solo menciona "anexo" a mitad del trabajo (p. ej.
+    "Anexo de cálculos" dentro del desarrollo) no debe llevarse por delante
+    el contenido real.
+    """
+    encontrada = None
     for numero, lineas in enumerate(paginas, start=1):
         if numero <= desde:
             continue
         for linea in lineas[:2]:
             plano = _plano(linea)
             if plano in ENCABEZADOS_DE_ANEXOS or plano.startswith("anexos "):
-                return numero
+                encontrada = numero
+                break
+    return encontrada
+
+
+def _anexos_declarados_en_indice(
+    entradas: list[EntradaDeIndice], total_paginas: int
+) -> int | None:
+    """La página de anexos que el propio índice declara, si la hay.
+
+    Lo que el autor escribió en su índice es un dato deliberado, no una
+    adivinanza: si el índice trae una entrada de anexos, esa página manda
+    sobre cualquier heurística de encabezado.
+    """
+    for entrada in entradas:
+        if _plano(entrada.titulo) in ENCABEZADOS_DE_ANEXOS:
+            if 1 <= entrada.pagina_declarada <= total_paginas:
+                return entrada.pagina_declarada
     return None
 
 
 def _leer_entradas(lineas: list[str]) -> list[EntradaDeIndice]:
-    """Las entradas de la página del índice, sin su propio encabezado."""
+    """Las entradas de una página del índice, sin su propio encabezado."""
     entradas = []
     for linea in lineas:
         if _plano(linea) in ENCABEZADOS_DE_INDICE:
@@ -90,9 +160,13 @@ def _leer_entradas(lineas: list[str]) -> list[EntradaDeIndice]:
 def _localizar(titulo: str, paginas: list[list[str]], desde: int) -> int | None:
     """Página donde ese título aparece como encabezado, o None.
 
-    Se busca solo en las primeras líneas de cada página y solo desde donde
-    acaba el índice: una mención del título dentro de un párrafo no es el
-    apartado.
+    Se busca en todas las líneas de la página y solo desde donde acaba el
+    índice. Una mención del título dentro de un párrafo no se confunde con
+    el encabezado del apartado porque la comparación exige que la línea
+    entera sea idéntica al título, no que lo contenga; por eso no hace
+    falta limitarse a las primeras líneas de cada página, y limitarse
+    dejaba sin encontrar cualquier apartado que no empezara al principio de
+    la página.
     """
     buscado = _plano(titulo)
     if not buscado:
@@ -100,7 +174,7 @@ def _localizar(titulo: str, paginas: list[list[str]], desde: int) -> int | None:
     for numero, lineas in enumerate(paginas, start=1):
         if numero <= desde:
             continue
-        for linea in lineas[:3]:
+        for linea in lineas:
             if _plano(linea) == buscado:
                 return numero
     return None
@@ -113,16 +187,26 @@ def medir_estructura(documento: pymupdf.Document) -> MedidasDeEstructura:
     if indice is None:
         return MedidasDeEstructura()
 
-    entradas = _leer_entradas(paginas[indice - 1])
-    anexos = _buscar_anexos(paginas, indice)
-    contenido = indice + 1 if indice < len(paginas) else None
+    ultima_pagina_indice = _ultima_pagina_del_indice(paginas, indice)
+
+    entradas: list[EntradaDeIndice] = []
+    for numero in range(indice, ultima_pagina_indice + 1):
+        entradas += _leer_entradas(paginas[numero - 1])
+
+    anexos = _anexos_declarados_en_indice(entradas, len(paginas))
+    if anexos is None:
+        anexos = _buscar_anexos_por_encabezado(paginas, ultima_pagina_indice)
+
+    contenido = (
+        ultima_pagina_indice + 1 if ultima_pagina_indice < len(paginas) else None
+    )
 
     no_encontrados: list[str] = []
     descuadrados: list[str] = []
     for entrada in entradas:
         if _plano(entrada.titulo) in ENCABEZADOS_DE_ANEXOS:
             continue
-        entrada.pagina_encontrada = _localizar(entrada.titulo, paginas, indice)
+        entrada.pagina_encontrada = _localizar(entrada.titulo, paginas, ultima_pagina_indice)
         if entrada.pagina_encontrada is None:
             no_encontrados.append(entrada.titulo)
         elif entrada.pagina_encontrada != entrada.pagina_declarada:
