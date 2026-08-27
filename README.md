@@ -39,6 +39,10 @@ procedimiento:
 
     editor.cmd
 
+Hace falta tener instalados Python y Node.js, y que ambos sean accesibles
+desde la línea de comandos (`python` y `npm` en el PATH). Si falta alguno,
+`editor.cmd` lo avisa y dice qué instalar.
+
 Abre `http://127.0.0.1:8000` en el navegador. La primera vez compila el
 frontend, lo que tarda un poco.
 

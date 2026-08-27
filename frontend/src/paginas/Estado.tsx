@@ -31,11 +31,8 @@ export function Estado() {
               )}
             </div>
             <p className="text-[13px] mt-2">{regla.vigila}</p>
-            <p className="text-[13px] text-gris mt-1">
-              <span className="uppercase tracking-[0.08em] text-[11px]">
-                No cubre:{" "}
-              </span>
-              {regla.limite}
+            <p className="text-[13px] mt-2 pt-2 border-t border-grisclaro">
+              No cubre: {regla.limite}
             </p>
           </li>
         ))}
