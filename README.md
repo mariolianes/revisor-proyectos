@@ -26,6 +26,7 @@ pertenecen siempre al profesor.
     python -m pip install -r requirements-dev.txt
     python tools/instalar_hooks.py
     python -m pytest
+    cd frontend && npm test
     python tools/verificar_gobernanza.py
 
 El segundo paso no es opcional: instala el hook de pre-commit que ejecuta el
@@ -39,13 +40,21 @@ procedimiento:
 
     editor.cmd
 
-Hace falta tener instalados Python y Node.js, y que ambos sean accesibles
-desde la línea de comandos (`python` y `npm` en el PATH). Si falta alguno,
-`editor.cmd` lo avisa y dice qué instalar.
+Hace falta tener instalado Python y que sea accesible desde la línea de
+comandos (`python` en el PATH). Node.js (`npm`) solo hace falta la primera
+vez, para compilar el frontend. Si falta alguno cuando toca, `editor.cmd` lo
+avisa y dice qué instalar.
 
 Abre `http://127.0.0.1:8000` en el navegador. La primera vez compila el
-frontend, lo que tarda un poco.
+frontend, lo que tarda un poco. Si ese puerto ya lo está usando otro
+programa, el editor no arranca y lo dice: hay que liberarlo antes.
 
 El editor no permite guardar un cambio sin motivo y sin fuente, y ejecuta las
-seis reglas antes de comitear. Si alguna salta, no se guarda nada: el
-repositorio queda como estaba.
+reglas antes de comitear. Si alguna salta, no se guarda nada: el repositorio
+queda como estaba.
+
+Cada criterio que deriva de la sección editada se decide en el diálogo de
+guardado, uno por uno: se escribe lo que pasa a decir, o se marca «lo he
+revisado y no cambia». Una sección con algún criterio sin decidir no se sella,
+así que R2 la sigue dando por pendiente de revisar y el guardado no pasa. No
+hay forma de posponerlo desde el editor, y esa es la idea.

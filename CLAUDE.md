@@ -24,11 +24,14 @@ Sistema de corrección de Proyectos Intermodulares. Antes de tocar nada, lee
 
 ```
 python -m pytest
+cd frontend && npm test
 python tools/verificar_gobernanza.py
 ```
 
-Ambos en verde, o el trabajo no está terminado. No anuncies que algo funciona
-sin haber visto la salida.
+Los tres en verde, o el trabajo no está terminado. No anuncies que algo
+funciona sin haber visto la salida. Los tests del frontend cuentan igual que
+los demás: la pantalla del editor es donde el docente decide qué dice cada
+criterio.
 
 ## Idioma
 

@@ -18,6 +18,15 @@ HOST = "127.0.0.1"
 PUERTO = 8000
 
 
+def _hay_alguien_escuchando(host: str, puerto: int) -> bool:
+    """Si algo ya acepta conexiones en ese puerto."""
+    try:
+        with socket.create_connection((host, puerto), timeout=0.3):
+            return True
+    except OSError:
+        return False
+
+
 def _abrir_navegador_cuando_escuche() -> None:
     """Abre el navegador en cuanto el puerto empieza a aceptar conexiones.
 
@@ -29,17 +38,27 @@ def _abrir_navegador_cuando_escuche() -> None:
     hilo aparte, es lo único determinista: el navegador no se abre hasta
     que una conexión real tiene éxito.
     """
-    while True:
-        try:
-            with socket.create_connection((HOST, PUERTO), timeout=0.2):
-                break
-        except OSError:
-            time.sleep(0.1)
+    while not _hay_alguien_escuchando(HOST, PUERTO):
+        time.sleep(0.1)
     webbrowser.open(f"http://{HOST}:{PUERTO}")
 
 
 if __name__ == "__main__":
     raiz = Path(__file__).resolve().parents[1]
+
+    # El sondeo del hilo no sabe distinguir «ya escucha el editor» de «ya
+    # escuchaba otra cosa»: si el puerto está ocupado por otro programa, se
+    # conecta con él y abre el navegador contra el servicio equivocado,
+    # mientras uvicorn falla por debajo. Se comprueba antes de arrancar nada
+    # y se dice qué puerto es, que es lo que hace falta para liberarlo.
+    if _hay_alguien_escuchando(HOST, PUERTO):
+        print(f"\nEl puerto {PUERTO} de {HOST} ya está ocupado por otro programa.")
+        print("El editor no se arranca para no abrir el navegador contra algo "
+              "que no es él.")
+        print(f"Cierra lo que esté usando el puerto {PUERTO} -puede ser otro "
+              "editor ya abierto- y vuelve a intentarlo.")
+        sys.exit(1)
+
     threading.Thread(target=_abrir_navegador_cuando_escuche, daemon=True).start()
 
     try:
