@@ -22,14 +22,23 @@ Limitaciones conocidas y aceptadas:
   mencionado a mitad de párrafo, y el caso realista ya queda cubierto
   porque un trabajo con anexos casi siempre los declara en el índice, que
   es lo primero que se consulta.
-- Un índice cuya continuación empiece por un encabezado repetido, del tipo
-  «Índice (cont.)», se corta ahí en vez de seguir: se exige que la primera
+- Un índice cuya continuación empiece por una línea que no case con
+  LINEA_DE_INDICE se corta ahí en vez de seguir: se exige que la primera
   línea de la página ya sea una entrada, precisamente para no confundir la
   continuación con un «Índice de figuras» o una tabla de presupuesto que
-  tienen la misma forma. El precio es que el contenido se calcularía
-  empezando una página antes de lo debido. No se relaja la condición
-  porque el caso que sí resuelve —un índice de figuras o una tabla detrás
-  del índice— es más frecuente que un encabezado de continuación repetido.
+  tienen la misma forma. El caso más probable no es un «Índice (cont.)»
+  deliberado, sino una cabecera o un pie repetido —el título del trabajo,
+  la numeración de página— que cualquier exportador de Word añade sin que
+  el autor lo piense como parte del índice. El precio no es solo que el
+  contenido se calcularía empezando una página antes de lo debido: las
+  entradas de esa página se pierden enteras y en silencio, ni en
+  `entradas_de_indice` ni en `titulos_no_encontrados`, así que ese apartado
+  no llega a verificarse. No se relaja la condición porque distinguir esa
+  cabecera de la de una tabla de importes no es posible en texto plano, y
+  entre los dos errores se prefiere este: no ver un descuadre que existe es
+  un falso negativo, deja el trabajo al profesor, que decide de todos
+  modos; acusar al alumno de un descuadre que no existe es un falso
+  positivo, y ese sí hace daño.
 """
 
 import re

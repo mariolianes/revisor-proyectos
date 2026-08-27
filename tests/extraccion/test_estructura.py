@@ -322,3 +322,45 @@ def test_una_tabla_de_presupuesto_no_se_confunde_con_continuacion_del_indice(
     titulos = [entrada.titulo for entrada in estructura.entradas_de_indice]
     assert titulos == ["1. Introduccion"]
     assert not any("Materiales" in titulo for titulo in estructura.titulos_no_encontrados)
+
+
+def test_una_cabecera_repetida_corta_el_indice_y_pierde_sus_entradas(
+    escribir_pdf, tmp_path: Path
+) -> None:
+    """Limitación aceptada, no un acierto: ver el docstring del módulo.
+
+    Una cabecera o un pie repetido en la segunda página del índice —el
+    título del trabajo, la numeración de página, lo que añade cualquier
+    exportador de Word— hace que esa página no case con la condición de
+    continuación (su primera línea no es una entrada) y el índice se corta
+    ahí. No es solo que el contenido se calcule una página antes de lo
+    debido: las entradas de esa página del índice desaparecen del todo, sin
+    dejar rastro en `entradas_de_indice` ni en `titulos_no_encontrados`, y
+    por tanto nunca se contrastan con el documento.
+
+    No se arregla porque no hay forma, en texto plano, de distinguir esa
+    cabecera de la de una tabla de importes —el falso positivo que se
+    cerró justo antes—, y entre no detectar un descuadre real y acusar de
+    uno inexistente, se prefiere lo primero.
+    """
+    ruta = escribir_pdf(
+        tmp_path / "cabecera-repetida.pdf",
+        [
+            ["PORTADA"],
+            ["INDICE", "1. Introduccion .... 3", "2. Objetivos .... 4"],
+            ["PROYECTO INTERMODULAR", "3. Desarrollo .... 5", "4. Conclusiones .... 6"],
+            ["1. Introduccion", "Texto."],
+            ["2. Objetivos", "Texto."],
+            ["3. Desarrollo", "Texto."],
+            ["4. Conclusiones", "Texto."],
+        ],
+    )
+
+    with abrir(ruta) as documento:
+        estructura = medir_estructura(documento)
+
+    titulos = [entrada.titulo for entrada in estructura.entradas_de_indice]
+    assert "3. Desarrollo" not in titulos
+    assert "4. Conclusiones" not in titulos
+    assert "3. Desarrollo" not in estructura.titulos_no_encontrados
+    assert "4. Conclusiones" not in estructura.titulos_no_encontrados
