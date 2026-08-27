@@ -36,3 +36,28 @@ class MedidasDeTexto(BaseModel):
     margen_superior_cm: float | None = None
     margen_inferior_cm: float | None = None
     proporcion_lineas_al_margen_derecho: float | None = None
+
+
+class EntradaDeIndice(BaseModel):
+    """Una línea del índice y dónde está de verdad ese apartado."""
+
+    titulo: str
+    pagina_declarada: int
+    pagina_encontrada: int | None = None
+
+
+class MedidasDeEstructura(BaseModel):
+    """Dónde empieza y acaba lo que cuenta como contenido.
+
+    Todo opcional por el mismo motivo de siempre: sin índice localizable no
+    se sabe dónde empieza el contenido, y esa cuenta se declara ausente en
+    lugar de estimarse.
+    """
+
+    pagina_del_indice: int | None = None
+    primera_pagina_de_contenido: int | None = None
+    primera_pagina_de_anexos: int | None = None
+    paginas_de_contenido: int | None = None
+    entradas_de_indice: list[EntradaDeIndice] = []
+    titulos_no_encontrados: list[str] = []
+    paginas_declaradas_incorrectas: list[str] = []

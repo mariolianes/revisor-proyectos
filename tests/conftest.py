@@ -224,3 +224,26 @@ def pdf_justificado(tmp_path: Path) -> Path:
     documento.save(ruta)
     documento.close()
     return ruta
+
+
+@pytest.fixture
+def pdf_con_indice(tmp_path: Path) -> Path:
+    """Portada, índice, tres apartados y un anexo.
+
+    Las páginas declaradas en el índice son correctas salvo la del tercer
+    apartado, que dice 5 estando en la 6. Es el fallo más común: se añade
+    contenido y no se actualiza el índice.
+    """
+    return escribir_pdf(
+        tmp_path / "con-indice.pdf",
+        [
+            ["PROYECTO INTERMODULAR", "Ciclo DAM", "Curso 2026-2027"],
+            ["INDICE", "1. Introduccion .... 3", "2. Objetivos .... 4",
+             "3. Desarrollo .... 5", "ANEXOS .... 7"],
+            ["1. Introduccion", "Texto de la introduccion del trabajo."],
+            ["2. Objetivos", "Texto de los objetivos del trabajo."],
+            ["Continuacion de los objetivos, que ocupan dos paginas."],
+            ["3. Desarrollo", "Texto del desarrollo del trabajo."],
+            ["ANEXOS", "Anexo I. Codigo fuente."],
+        ],
+    )
