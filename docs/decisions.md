@@ -67,15 +67,21 @@ superficie de las imágenes, origen del PDF.
 **Limitación:** licencia AGPL. Sin restricción para uso interno. Una eventual
 distribución exigiría licencia comercial o migrar a pdfplumber.
 
-## D-004 · Canal de devolución del feedback
+## D-004 · La devolución la hace el docente, y él la registra
 
-**Fecha:** 2026-08-26 · **Estado:** Pendiente · **Responsable:** Marcos
+**Fecha:** 2026-08-26 · **Decidida:** 2026-08-27 · **Estado:** Validada ·
+**Responsable:** Marcos
 
-No está definido cómo llega el feedback aprobado al alumno ni qué marca
-exactamente el estado `COMUNICADO`. Hasta cerrarla, ese estado se modela pero
-no se activa.
+El sistema entrega el texto aprobado listo para copiar. El docente lo pega en
+el Aula Virtual y vuelve a marcar que lo comunicó.
 
-**Bloquea:** la transición a `COMUNICADO`.
+`COMUNICADO` significa exactamente eso: que el docente afirma haber devuelto el
+feedback. El sistema no lo deduce ni lo comprueba, porque no puede. Se
+descartó automatizar el envío: el §21.2 lo deja fuera de esta versión, y un
+estado que el sistema pusiera solo diría que se disparó un envío, no que el
+alumno recibiera nada.
+
+**Desbloquea:** la transición a `COMUNICADO`.
 
 ## D-005 · La prosa manda sobre el destilado
 
@@ -150,3 +156,29 @@ distingue una clave propia del criterio de otra igual en su subárbol, porque
 eso es estructura y no texto.
 
 **Arrastra:** la dependencia `ruamel.yaml`, fijada en `requirements-dev.txt`.
+
+## D-009 · La carpeta de entregas se vigila, pero el docente confirma quién y qué fase
+
+**Fecha:** 2026-08-27 · **Estado:** Validada · **Responsable:** Marcos
+
+El sistema observa la carpeta de entregas y, cuando aparece un PDF nuevo,
+deduce del nombre del fichero de qué alumno y de qué fase es. Esa deducción es
+una propuesta: el docente la confirma de un gesto o la corrige. Si el nombre no
+encaja con la convención del §15.3, o el código no corresponde a ningún alumno
+registrado, o la fase no es la que toca, el sistema no adivina: presenta la
+ficha en blanco.
+
+**Contradice el §16.1 y el §21.2 del Documento Maestro**, que fijan recepción
+manual y sitúan la vigilancia de carpetas fuera de la primera versión. La
+decisión se toma sabiéndolo y obliga a corregir ambos apartados.
+
+Se descartó la recogida totalmente automática. El nombre del fichero lo pone el
+alumno, así que confiar en él habría convertido la condición de parada del
+§18.2 —«alumno o fase no coinciden»— de excepción en rutina. La vigilancia
+alcanza a encontrar el fichero; la identificación sigue siendo del docente.
+
+El fichero nunca se mueve, ni se renombra, ni se modifica: el §18.1 lo exige y
+aquí se cumple leyendo y nada más. La carpeta vive **fuera del repositorio**,
+porque R6 impide que un PDF entre en el árbol versionado.
+
+**Arrastra:** corrección del §16.1 y del §21.2 de `docs/maestro/`.

@@ -617,7 +617,7 @@ Posible formato : `CODIGO_CICLO_FASE_FECHA_VERSION.ext`. Ejemplo: `AF023_E2_2026
 > durante la construcción. Puede simplificarse o reorganizarse sin alterar los principios
 > académicos y de control humano.
 
-1. Recepción manual. El docente coloca o selecciona el archivo y la ficha. La primera versión no vigila carpetas automáticamente.
+1. Recepción asistida. El sistema vigila la carpeta de entregas y, al aparecer un archivo nuevo, propone alumno y fase deducidos de su nombre. El docente confirma la propuesta o la corrige; si el nombre no permite deducirlos, no se adivinan (D-009).
 2. Validación técnica. Se comprueba apertura, legibilidad, integridad y formato preferente PDF.
 3. Validación administrativa. Se verifica código, ciclo, modalidad, fase, plazo y correspondencia del archivo.
 4. Carga de contexto. Se seleccionan la versión del Documento Maestro, la matriz de fase y los criterios específicos.
@@ -789,11 +789,15 @@ criterios o ejemplos, no en instrucciones improvisadas dentro de cada ejecución
 - Aprobación humana obligatoria.
 - Aplicación con interfaz web local, backend en el equipo del docente y
   persistencia en Supabase (D-001).
+- Vigilancia de la carpeta de entregas, con identificación confirmada por el
+  docente en cada archivo (D-009).
 - Historial consultable y recuperación de errores.
 
 ### 21.2 Fuera de la primera versión
 
-- Vigilancia automática de carpetas.
+- Recogida automática de entregas sin confirmación del docente. La carpeta se
+  vigila (D-009), pero de quién es cada archivo y a qué fase corresponde lo
+  decide siempre una persona.
 - Corrección masiva por lotes.
 - Envío de correos o publicación en CESUR.
 - Integración directa con el Aula Virtual.
