@@ -55,11 +55,51 @@ def _numeros_aislados(texto: str) -> set[str]:
 def _candidatos_nuevos(texto_viejo: str, texto_nuevo: str) -> list[str]:
     """Números que aparecen en el texto nuevo y no aparecían en el viejo.
 
-    Son los que podrían ocupar el sitio que dejó libre el valor que ha
-    desaparecido. Si hay más de uno, no hay forma de saber cuál es el
-    correcto sin que lo diga el docente.
+    Cuenta cuántos números ha traído la sección, sin importar dónde: una
+    numeración de subapartado, un margen, cualquier cifra nueva de la
+    prosa cuenta igual. Por eso esta función NUNCA decide, por sí sola, qué
+    proponer -- solo sirve para elegir el motivo cuando el localizador de
+    `_candidato` (que sí mira el sitio exacto) no ha encontrado nada:
+    si no hay ningún número nuevo, el valor sencillamente desapareció; si
+    hay alguno, puede que sea el sustituto pero no se puede dar por hecho
+    sin verlo en su sitio.
     """
     return sorted(_numeros_aislados(texto_nuevo) - _numeros_aislados(texto_viejo))
+
+
+def _contexto(valor: str, texto: str) -> tuple[str, str] | None:
+    """Las tres palabras antes y después de la única aparición del valor."""
+    patron = rf"{_LIMITE_IZQUIERDO}{re.escape(valor)}{_LIMITE_DERECHO}"
+    encontrado = re.search(patron, texto)
+    if encontrado is None:
+        return None
+    antes = texto[:encontrado.start()].split()[-3:]
+    despues = texto[encontrado.end():].split()[:3]
+    return " ".join(antes), " ".join(despues)
+
+
+def _candidato(valor_viejo: str, texto_viejo: str, texto_nuevo: str) -> str | None:
+    """El número que ocupa en el texto nuevo el mismo sitio que ocupaba el viejo.
+
+    Esta es la ÚNICA vía por la que `proponer` puede devolver un valor: se
+    localiza el sitio exacto del valor viejo por las tres palabras que lo
+    precedían, y solo si ese mismo sitio tiene en el texto nuevo un único
+    número se propone. Un número nuevo que ha aparecido en cualquier OTRA
+    parte de la sección (una numeración de subapartado, un margen, la cifra
+    de otro criterio) no cuenta como candidato: no está en el sitio.
+    """
+    contexto = _contexto(valor_viejo, texto_viejo)
+    if contexto is None:
+        return None
+    antes, despues = contexto
+    if not antes:
+        return None
+
+    patron = rf"{re.escape(antes)}\s+(\d+(?:[.,]\d+)?)"
+    hallados = re.findall(patron, texto_nuevo)
+    if len(hallados) == 1:
+        return hallados[0]
+    return None
 
 
 def proponer(raiz: Path, ancla: str, texto_nuevo: str) -> list[Propuesta]:
@@ -106,9 +146,24 @@ def _evaluar(criterio, clave: str, valor: str, texto_viejo: str, texto_nuevo: st
             "literal. Revisa a mano si el cambio le afecta."
         ))
 
-    if _apariciones(valor, texto_nuevo) == 1:
+    # "Sigue apareciendo" cubre tanto el caso normal (una vez) como el caso
+    # en que ahora aparece dos o más veces: en ambos, el valor sigue en el
+    # texto, así que no ha "desaparecido" y no hay que proponer nada.
+    if _apariciones(valor, texto_nuevo) >= 1:
         return resultado(None, "El valor sigue apareciendo igual en el texto nuevo.")
 
+    # El localizador por contexto es la única vía para proponer: es lo que
+    # da derecho a decir "en el mismo sitio". Si no encuentra un candidato
+    # único ahí, no se propone nada -- da igual qué números nuevos haya
+    # sueltos por el resto de la sección.
+    candidato = _candidato(valor, texto_viejo, texto_nuevo)
+    if candidato is not None:
+        return resultado(candidato, (
+            f"El texto decía «{valor}» y ahora dice «{candidato}» en el mismo sitio."
+        ))
+
+    # El localizador no encontró nada: _candidatos_nuevos solo se usa aquí,
+    # para elegir QUÉ motivo dar, nunca para proponer un valor.
     candidatos = _candidatos_nuevos(texto_viejo, texto_nuevo)
     if not candidatos:
         return resultado(None, (
@@ -120,8 +175,8 @@ def _evaluar(criterio, clave: str, valor: str, texto_viejo: str, texto_nuevo: st
             "Hay más de un número que podría corresponder a este valor. "
             "Elige tú cuál."
         ))
-
-    candidato = candidatos[0]
-    return resultado(candidato, (
-        f"El texto decía «{valor}» y ahora dice «{candidato}» en el mismo sitio."
+    return resultado(None, (
+        "Ha aparecido un número nuevo en el texto, pero no ocupa el mismo "
+        "sitio que tenía este valor, así que no se puede dar por sentado que "
+        "sea su sustituto. Revísalo a mano."
     ))
