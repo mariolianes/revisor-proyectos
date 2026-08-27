@@ -234,3 +234,56 @@ def test_no_busca_el_indice_mas_alla_del_limite_de_paginas(
     assert estructura.primera_pagina_de_contenido is None
     assert estructura.paginas_de_contenido is None
     assert estructura.entradas_de_indice == []
+
+
+def test_un_indice_de_figuras_no_se_confunde_con_continuacion_del_indice(
+    escribir_pdf, tmp_path: Path
+) -> None:
+    """Un «Índice de figuras» detrás del índice tiene la misma forma, pero no es su continuación.
+
+    Empieza con su propio título, no con una entrada: no debe absorberse
+    como si fuera la segunda página del índice.
+    """
+    ruta = escribir_pdf(
+        tmp_path / "indice-de-figuras.pdf",
+        [
+            ["PORTADA"],
+            ["INDICE", "1. Introduccion .... 4"],
+            ["INDICE DE FIGURAS", "Figura 1. Diagrama .... 4", "Figura 2. Esquema .... 5"],
+            ["1. Introduccion", "Texto."],
+        ],
+    )
+
+    with abrir(ruta) as documento:
+        estructura = medir_estructura(documento)
+
+    assert estructura.primera_pagina_de_contenido == 3
+    titulos = [entrada.titulo for entrada in estructura.entradas_de_indice]
+    assert titulos == ["1. Introduccion"]
+    assert not any("Figura" in titulo for titulo in estructura.titulos_no_encontrados)
+
+
+def test_una_tabla_de_presupuesto_no_se_confunde_con_continuacion_del_indice(
+    escribir_pdf, tmp_path: Path
+) -> None:
+    """Una tabla de presupuesto detrás del índice tampoco es su continuación.
+
+    Empieza con su propia cabecera, no con una entrada de índice.
+    """
+    ruta = escribir_pdf(
+        tmp_path / "tabla-de-presupuesto.pdf",
+        [
+            ["PORTADA"],
+            ["INDICE", "1. Introduccion .... 4"],
+            ["PRESUPUESTO", "Materiales .... 120", "Mano de obra .... 300"],
+            ["1. Introduccion", "Texto."],
+        ],
+    )
+
+    with abrir(ruta) as documento:
+        estructura = medir_estructura(documento)
+
+    assert estructura.primera_pagina_de_contenido == 3
+    titulos = [entrada.titulo for entrada in estructura.entradas_de_indice]
+    assert titulos == ["1. Introduccion"]
+    assert not any("Materiales" in titulo for titulo in estructura.titulos_no_encontrados)

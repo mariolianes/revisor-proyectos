@@ -12,14 +12,24 @@ páginas equivocada con aspecto de dato medido, y sobre esa cuenta se decide
 si un trabajo cumple la extensión mínima. Un hueco declarado es
 recuperable; un número inventado, no.
 
-Limitación conocida y aceptada: si los anexos empiezan a media página,
-compartiendo página con el final del contenido, la heurística de
-encabezado (que solo mira las dos primeras líneas de cada página) no los
-ve, y el conteo de páginas de contenido sale ligeramente inflado. No se
-amplía esa ventana a propósito: ampliarla agravaría los falsos positivos de
-un encabezado de anexo mencionado a mitad de párrafo, y el caso realista ya
-queda cubierto porque un trabajo con anexos casi siempre los declara en el
-índice, que es lo primero que se consulta.
+Limitaciones conocidas y aceptadas:
+
+- Si los anexos empiezan a media página, compartiendo página con el final
+  del contenido, la heurística de encabezado (que solo mira las dos
+  primeras líneas de cada página) no los ve, y el conteo de páginas de
+  contenido sale ligeramente inflado. No se amplía esa ventana a propósito:
+  ampliarla agravaría los falsos positivos de un encabezado de anexo
+  mencionado a mitad de párrafo, y el caso realista ya queda cubierto
+  porque un trabajo con anexos casi siempre los declara en el índice, que
+  es lo primero que se consulta.
+- Un índice cuya continuación empiece por un encabezado repetido, del tipo
+  «Índice (cont.)», se corta ahí en vez de seguir: se exige que la primera
+  línea de la página ya sea una entrada, precisamente para no confundir la
+  continuación con un «Índice de figuras» o una tabla de presupuesto que
+  tienen la misma forma. El precio es que el contenido se calcularía
+  empezando una página antes de lo debido. No se relaja la condición
+  porque el caso que sí resuelve —un índice de figuras o una tabla detrás
+  del índice— es más frecuente que un encabezado de continuación repetido.
 """
 
 import re
@@ -86,8 +96,18 @@ def _parece_pagina_de_indice(lineas: list[str]) -> bool:
     reconocen por la forma de sus líneas: si la mayoría son entradas con
     pinta de "título ... número", es una continuación de la tabla, no
     contenido.
+
+    Pero esa forma no es exclusiva del índice: un «Índice de figuras» o una
+    tabla de presupuesto detrás del índice tienen la misma proporción de
+    líneas con puntos y un número al final. Lo que los distingue es cómo
+    empiezan: la continuación de un índice arranca directamente con la
+    siguiente entrada, mientras que un índice de figuras o una tabla
+    arrancan con su propio título o su propia cabecera. Por eso se exige
+    además que la primera línea de la página sea ya una entrada.
     """
     if not lineas:
+        return False
+    if not LINEA_DE_INDICE.match(lineas[0]):
         return False
     coincidencias = sum(1 for linea in lineas if LINEA_DE_INDICE.match(linea))
     return (
