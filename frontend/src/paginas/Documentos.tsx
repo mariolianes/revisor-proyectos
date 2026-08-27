@@ -13,10 +13,10 @@ export function Documentos({ alElegirSeccion }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    api.documentos().then(setDocumentos).catch((e) => setError(String(e)))
+    api.documentos().then(setDocumentos).catch((e: Error) => setError(e.message))
   }, [])
 
-  if (error) return <p className="text-senal">{error}</p>
+  if (error) return <p className="text-tinta">{error}</p>
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-12">

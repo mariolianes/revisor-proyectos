@@ -6,10 +6,20 @@ import type {
 const BASE = "/api"
 
 async function pedir<T>(ruta: string, opciones?: RequestInit): Promise<T> {
-  const respuesta = await fetch(`${BASE}${ruta}`, {
-    headers: { "Content-Type": "application/json" },
-    ...opciones,
-  })
+  let respuesta: Response
+  try {
+    respuesta = await fetch(`${BASE}${ruta}`, {
+      headers: { "Content-Type": "application/json" },
+      ...opciones,
+    })
+  } catch {
+    // fetch falla así cuando no hay nadie escuchando en el otro extremo:
+    // no es un error de la API, es que el servidor no está arrancado.
+    throw new Error(
+      "No se ha podido contactar con el servidor. Comprueba que esté " +
+      "arrancado en 127.0.0.1:8000.",
+    )
+  }
   if (!respuesta.ok) {
     const cuerpo = await respuesta.text()
     let mensaje = cuerpo

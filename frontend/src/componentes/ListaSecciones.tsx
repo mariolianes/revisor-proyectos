@@ -17,7 +17,7 @@ export function ListaSecciones({ documento, alElegir }: Props) {
         <li key={seccion.ancla} className="border-b border-grisclaro">
           <button
             onClick={() => alElegir(seccion.ancla)}
-            className="w-full text-left py-4 px-1 hover:bg-white transition-colors"
+            className="w-full text-left py-4 px-1 hover:bg-papel transition-colors"
           >
             <span className="block text-[15px]">{seccion.titulo}</span>
             <span className="block mt-1 text-[12px] uppercase tracking-[0.08em]">
