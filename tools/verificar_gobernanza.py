@@ -62,7 +62,25 @@ def ejecutar(raiz: Path, ficheros: list[str], solo_staged: bool) -> list[Infracc
 
 
 def main(argv: list[str] | None = None, raiz: Path | None = None) -> int:
-    """Punto de entrada de la CLI.
+    """Punto de entrada de la CLI. Devuelve el codigo de salida.
+
+    0 conforme, 1 hay infracciones, 2 no se ha podido ejecutar. El 2 existe
+    porque un fallo de la herramienta no es una infraccion de gobernanza: si
+    git no responde o falta una dependencia, quien commitea tiene que saber
+    que no se ha comprobado nada, no ponerse a buscar un criterio mal escrito.
+    """
+    try:
+        return _resolver(argv, raiz)
+    except Exception as fallo:  # noqa: BLE001 - se traduce a codigo 2 a proposito
+        print("No se ha podido ejecutar el verificador de gobernanza.")
+        print(f"Motivo: {type(fallo).__name__}: {fallo}")
+        print("Esto no es una infraccion: es que la comprobacion no ha llegado "
+              "a hacerse.")
+        return 2
+
+
+def _resolver(argv: list[str] | None, raiz: Path | None) -> int:
+    """Cuerpo de la CLI.
 
     'argv' y 'raiz' existen para que las pruebas puedan ejercitar las
     banderas sobre un repositorio de mentira; en uso normal se toman de la

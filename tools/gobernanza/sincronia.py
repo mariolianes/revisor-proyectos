@@ -141,9 +141,13 @@ def verificar_r2(raiz: Path) -> list[Infraccion]:
             regla="R2",
             fichero=FICHERO_SINCRONIA,
             detalle=(
-                f"'{ancla}' esta en el registro pero ya no la referencia ningun "
-                f"criterio. Si era intencionado, sella para limpiarlo con "
-                f"'python tools/verificar_gobernanza.py --sellar'."
+                f"'{ancla}' esta en el registro pero ningun criterio la "
+                f"referencia con ese nombre. O se ha retirado el criterio que "
+                f"la citaba, o el ancla se ha renombrado en docs/maestro/ y el "
+                f"criterio sigue citando el nombre viejo -en ese caso R1 "
+                f"protesta tambien, y lo que hay que arreglar es la 'fuente', "
+                f"no el registro-. Si era intencionado, sella para limpiarlo "
+                f"con 'python tools/verificar_gobernanza.py --sellar'."
             ),
         ))
 

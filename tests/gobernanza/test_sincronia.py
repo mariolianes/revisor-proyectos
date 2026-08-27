@@ -115,3 +115,12 @@ def test_r2_detecta_un_ancla_sobrante_en_el_registro(repo: Path):
     assert len(infracciones) == 1
     assert infracciones[0].regla == "R2"
     assert "maestro#8-dimensiones" in infracciones[0].detalle
+
+
+def test_r2_pasa_sobre_el_repositorio_real():
+    # Sin esta prueba, un .sincronia.json desactualizado dejaba la suite en
+    # verde: R1, R3, R5 y R6 ya se comprobaban contra el repositorio real y
+    # R2 no.
+    raiz = Path(__file__).resolve().parents[2]
+    infracciones = verificar_r2(raiz)
+    assert infracciones == [], "\n".join(i.detalle for i in infracciones)

@@ -88,3 +88,26 @@ def test_congelar_no_ejecuta_las_reglas_ni_sella(repo: Path):
     main(["--congelar", "v2026-2027"], raiz=repo)
     despues = antes.read_text(encoding="utf-8") if antes.is_file() else None
     assert marca == despues
+
+
+def test_un_fallo_no_controlado_devuelve_dos_y_no_se_confunde_con_una_infraccion(
+    repo: Path, capsys, monkeypatch
+):
+    import tools.verificar_gobernanza as cli
+
+    def revienta(*_args, **_kwargs):
+        raise OSError("git no responde")
+
+    monkeypatch.setattr(cli, "ejecutar", revienta)
+    codigo = cli.main([], raiz=repo)
+    assert codigo == 2
+    salida = capsys.readouterr().out
+    assert "No se ha podido ejecutar" in salida
+    assert "no es una infraccion" in salida
+
+
+def test_el_hook_distingue_el_codigo_2_de_una_infraccion():
+    from tools.instalar_hooks import HOOK
+
+    assert "$estado -eq 2" in HOOK
+    assert "no_puedo_ejecutarlo" in HOOK

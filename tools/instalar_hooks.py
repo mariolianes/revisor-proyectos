@@ -25,11 +25,17 @@ if ! command -v python > /dev/null 2>&1; then
     no_puedo_ejecutarlo "No encuentro 'python' en el PATH."
 fi
 
+# Codigos del verificador: 0 conforme, 1 hay infracciones, 2 no ha podido
+# comprobar nada. El 127 lo pone el propio shell cuando no encuentra la orden.
 python tools/verificar_gobernanza.py --staged
 estado=$?
 
 if [ $estado -eq 127 ]; then
     no_puedo_ejecutarlo "El interprete de Python no se ha podido ejecutar."
+fi
+
+if [ $estado -eq 2 ]; then
+    no_puedo_ejecutarlo "El verificador ha fallado antes de comprobar nada."
 fi
 
 if [ $estado -ne 0 ]; then

@@ -167,7 +167,7 @@ De `EN_REVISION_DOCENTE` a `APROBADO` solo se pasa por acción explícita del pr
 | Criterio necesario `PENDIENTE_OFICIAL` | Se detiene ese juicio concreto, no la corrección entera |
 | Criterios en conflicto | Alerta de resolución; el juicio afectado se suspende |
 | Fallo del proveedor de análisis | Se conserva la entrada, se registra el error, no se genera salida aprobable |
-| Falta la entrega anterior | Continúa sin comparación evolutiva, dejando constancia |
+| Falta la entrega anterior | Se detiene el juicio evolutivo; solo continúa sin comparación con autorización expresa del profesor (§18.2) |
 
 Regla transversal: **el archivo entregado no se modifica ni se sobrescribe nunca.**
 
