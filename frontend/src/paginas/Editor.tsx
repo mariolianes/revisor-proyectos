@@ -45,6 +45,8 @@ export function Editor({ ancla, alVolver }: Props) {
 
   const abrirDialogo = async () => {
     setError(null)
+    // Lo que pasó en el intento anterior no se arrastra a uno nuevo.
+    setResultado(null)
     try {
       setPropuestas(await api.propuesta(ancla, texto))
     } catch (e) {
