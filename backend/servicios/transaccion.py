@@ -150,7 +150,31 @@ def _localizar_bloque(ruta: Path, identificador: str) -> tuple[int, int] | None:
 
 
 def _clave_presente(bloque: str, clave: str) -> bool:
-    return re.search(rf"^\s*{re.escape(clave)}:\s*.*$", bloque, re.M) is not None
+    """Si 'clave:' aparece como clave de este bloque, tenga o no valor en su
+    propia línea."""
+    return re.search(
+        rf"^[^\S\n]*{re.escape(clave)}:[^\S\n]*.*$", bloque, re.M
+    ) is not None
+
+
+def _valor_de_clave_en_linea(bloque: str, clave: str) -> str | None:
+    """El resto de la línea de 'clave:', o None si el valor vive debajo.
+
+    Usa '[^\\S\\n]*' para el espacio tras los dos puntos, nunca '\\s*': con
+    re.M, '\\s*' sigue consumiendo después del salto de línea, así que con
+    una clave cuyo valor está en las líneas siguientes -una lista de bloque
+    o un mapa anidado, que es como YAML escribe casi cualquier lista- se
+    tragaba la primera línea de ese valor. Si tras los dos puntos no queda
+    nada -o solo un comentario-, el valor no está en esta línea: se
+    devuelve None para que quien llame lo rechace, no lo adivine.
+    """
+    coincidencia = re.search(
+        rf"^[^\S\n]*{re.escape(clave)}:[^\S\n]*(.*)$", bloque, re.M
+    )
+    if coincidencia is None:
+        return None
+    resto = coincidencia.group(1).split(" #", 1)[0].strip()
+    return resto or None
 
 
 def _sustituir_valor_acotado(ruta: Path, identificador: str, clave: str,
@@ -158,11 +182,12 @@ def _sustituir_valor_acotado(ruta: Path, identificador: str, clave: str,
     """Sustituye 'clave: valor' solo dentro del bloque 'identificador'.
 
     Devuelve el texto completo del fichero con el cambio aplicado, o None si
-    no se encuentra el bloque o la clave dentro de él. Nunca se sustituye
-    contra el fichero entero: varios bloques de un mismo fichero de
-    criterios suelen compartir el nombre de clave -'fuente' lo tienen casi
-    todos-, y sustituir sin acotar reescribiría el bloque equivocado sin que
-    ninguna regla de gobernanza lo note.
+    no se encuentra el bloque, la clave dentro de él, o su valor no está en
+    la misma línea. Nunca se sustituye contra el fichero entero: varios
+    bloques de un mismo fichero de criterios suelen compartir el nombre de
+    clave -'fuente' lo tienen casi todos-, y sustituir sin acotar
+    reescribiría el bloque equivocado sin que ninguna regla de gobernanza lo
+    note.
     """
     limites = _localizar_bloque(ruta, identificador)
     if limites is None:
@@ -170,8 +195,10 @@ def _sustituir_valor_acotado(ruta: Path, identificador: str, clave: str,
     texto = ruta.read_text(encoding="utf-8")
     inicio, fin = limites
     bloque = texto[inicio:fin]
+    if _valor_de_clave_en_linea(bloque, clave) is None:
+        return None
     nuevo_bloque, sustituciones = re.subn(
-        rf"^(\s*{re.escape(clave)}:\s*).*$",
+        rf"^([^\S\n]*{re.escape(clave)}:[^\S\n]*).*$",
         lambda m: f"{m.group(1)}{valor_nuevo}",
         bloque, count=1, flags=re.M,
     )
@@ -248,29 +275,55 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
             ))
 
     # Guardas baratas sobre el contenido de cada cambio, todavía sin escribir
-    # nada: forma del valor, y que el criterio y la clave existan de verdad.
-    for cambio in cambios:
-        if not _valor_seguro(cambio.valor_nuevo):
-            return Resultado(exito=False, mensaje=(
-                f"El valor «{cambio.valor_nuevo}» para «{cambio.clave}» no es "
-                f"válido: tiene que ser una sola línea, sin comillas, "
-                f"corchetes ni almohadillas, que son caracteres con "
-                f"significado especial en el fichero de criterios."
-            ))
-        ruta = raiz / cambio.fichero
-        limites = _localizar_bloque(ruta, cambio.identificador)
-        if limites is None:
-            return Resultado(exito=False, mensaje=(
-                f"No se encontró el criterio «{cambio.identificador}» en "
-                f"«{cambio.fichero}»."
-            ))
-        inicio, fin = limites
-        bloque = ruta.read_text(encoding="utf-8")[inicio:fin]
-        if not _clave_presente(bloque, cambio.clave):
-            return Resultado(exito=False, mensaje=(
-                f"El criterio «{cambio.identificador}» de «{cambio.fichero}» "
-                f"no tiene la clave «{cambio.clave}»."
-            ))
+    # nada: forma del valor, y que el criterio y la clave existan de verdad,
+    # con su valor en la misma línea. Se envuelve en su propio try porque
+    # '_localizar_bloque' parsea YAML -vía 'bloques_raiz'-: un fichero de
+    # criterios mal formado lanzaría 'yaml.YAMLError', y esto se ejecuta
+    # antes del try principal que protege la escritura. No romper la
+    # atomicidad -aquí no se ha escrito nada todavía- no es excusa para
+    # romper el contrato de la función: quien llama espera un 'Resultado',
+    # nunca una excepción.
+    try:
+        for cambio in cambios:
+            if not _valor_seguro(cambio.valor_nuevo):
+                return Resultado(exito=False, mensaje=(
+                    f"El valor «{cambio.valor_nuevo}» para «{cambio.clave}» no es "
+                    f"válido: tiene que ser una sola línea, sin comillas, "
+                    f"corchetes ni almohadillas, que son caracteres con "
+                    f"significado especial en el fichero de criterios."
+                ))
+            ruta = raiz / cambio.fichero
+            limites = _localizar_bloque(ruta, cambio.identificador)
+            if limites is None:
+                return Resultado(exito=False, mensaje=(
+                    f"No se encontró el criterio «{cambio.identificador}» en "
+                    f"«{cambio.fichero}»."
+                ))
+            inicio, fin = limites
+            bloque = ruta.read_text(encoding="utf-8")[inicio:fin]
+            if not _clave_presente(bloque, cambio.clave):
+                return Resultado(exito=False, mensaje=(
+                    f"El criterio «{cambio.identificador}» de «{cambio.fichero}» "
+                    f"no tiene la clave «{cambio.clave}»."
+                ))
+            if _valor_de_clave_en_linea(bloque, cambio.clave) is None:
+                return Resultado(exito=False, mensaje=(
+                    f"«{cambio.clave}» en «{cambio.identificador}» de "
+                    f"«{cambio.fichero}» tiene un valor de varias líneas -una "
+                    f"lista o un grupo de datos-. Este editor no puede "
+                    f"cambiar ese tipo de valor: edítalo a mano en el "
+                    f"fichero de criterios."
+                ))
+    except Exception as error:
+        return Resultado(
+            exito=False,
+            mensaje=(
+                "No se ha podido leer uno de los ficheros de criterios "
+                "afectados. Puede tener un error de formato: revísalo antes "
+                "de reintentar."
+            ),
+            detalle_tecnico=f"{type(error).__name__}: {error}",
+        )
 
     # A partir de aquí se escribe. Todo lo que se toque se guarda para revertir.
     documento = raiz / "docs" / "maestro" / _fichero_de(ancla)
@@ -375,12 +428,6 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
                 detalle_tecnico=commit.stderr,
             )
 
-        return Resultado(
-            exito=True,
-            commit=_git(raiz, "rev-parse", "--short", "HEAD").stdout.strip(),
-            mensaje="Cambio guardado, verificado y registrado.",
-        )
-
     except Exception as error:
         revertir()
         return Resultado(
@@ -391,3 +438,13 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
             ),
             detalle_tecnico=f"{type(error).__name__}: {error}",
         )
+
+    # El commit ya existe: a partir de aquí no se revierte nada. Si algo de
+    # lo que sigue lanzara, atraparlo y llamar a 'revertir()' dejaría el
+    # árbol restaurado pero el commit todavía en el historial -el estado a
+    # medias que esta función entera existe para que no pueda ocurrir-.
+    return Resultado(
+        exito=True,
+        commit=_git(raiz, "rev-parse", "--short", "HEAD").stdout.strip(),
+        mensaje="Cambio guardado, verificado y registrado.",
+    )

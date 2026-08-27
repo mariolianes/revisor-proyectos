@@ -321,3 +321,48 @@ def test_si_el_registro_de_sincronia_no_existia_se_borra_al_revertir(repo: Path)
     assert not ruta_sincronia.is_file()
     assert contenido_de(repo) == antes
     assert commits_de(repo) == commits
+
+
+# --- Fix round 2: el '\s*' del regex cruzaba el salto de línea -----------
+
+
+def test_un_valor_con_lista_debajo_no_se_guarda(repo: Path):
+    """Una clave cuyo valor vive en las líneas siguientes -una lista de
+    bloque, que es como YAML escribe casi cualquier lista- no se puede
+    sustituir con este mecanismo: se rechaza entero, sin tocar el fichero.
+
+    Antes de esta guarda, '^(\\s*{clave}:\\s*).*$' con re.M dejaba que el
+    '\\s*' de después de los dos puntos cruzara el salto de línea: sobre
+        excluye:
+          - portada
+          - indice
+    el grupo capturado se tragaba el salto y la indentación, y '.*$' se
+    comía '- portada' entero. El resultado era 'excluye: <nuevo> - indice',
+    que YAML interpreta como una cadena suelta -una lista de dos elementos
+    convertida en frase-, y 'guardar' respondía 'exito=True'.
+    """
+    extra = repo / "criteria" / "v2026-2027" / "extra.yaml"
+    contenido_original = (
+        "extra:\n"
+        "  fuente: maestro#6-estandar-academico\n"
+        "  excluye:\n"
+        "    - portada\n"
+        "    - indice\n"
+    )
+    extra.write_text(contenido_original, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "criterio con lista de bloque"],
+                    cwd=repo, check=True)
+
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo, cambios=[CambioDeValor(
+        fichero="criteria/v2026-2027/extra.yaml",
+        identificador="extra",
+        clave="excluye",
+        valor_nuevo="nada",
+    )])
+    assert not resultado.exito
+    assert "varias líneas" in resultado.mensaje
+    assert extra.read_text(encoding="utf-8") == contenido_original
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
