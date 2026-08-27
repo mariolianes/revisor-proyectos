@@ -8,15 +8,17 @@ from pathlib import Path
 
 from backend.modelos import Documento, Seccion
 from tools.gobernanza.criterios import PATRON_ANCLA
-from tools.gobernanza.sincronia import hash_de_seccion
+from tools.gobernanza.sincronia import _DOCUMENTOS, hash_de_seccion
 
 # Las tres claves válidas y su fichero. Es una lista cerrada a propósito:
 # ninguna ruta que venga del cliente se usa para construir un Path.
-DOCUMENTOS = {
-    "maestro": "01-documento-maestro.md",
-    "indice": "02-indice-comentado.md",
-    "guia": "03-guia-desarrollo.md",
-}
+#
+# La lista no se copia: es la misma que usa R2 en tools/gobernanza/sincronia.py
+# para saber qué documentos existen. Tenerla escrita dos veces significaba dos
+# dueños de la misma lista blanca, y que añadir un documento allí dejara al
+# editor sin verlo -o al revés-. El nombre allí es privado y aquí solo se lee;
+# esa capa está cerrada y no se toca desde el editor.
+DOCUMENTOS = _DOCUMENTOS
 
 PATRON_ENCABEZADO = re.compile(r"^#{2,3}\s+(.+)$", re.M)
 

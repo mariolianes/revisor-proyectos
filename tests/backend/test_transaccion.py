@@ -2,6 +2,7 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
+from backend.servicios.dependencias import criterios_de
 from backend.servicios.repositorio import leer_seccion
 from backend.servicios.transaccion import CambioDeValor, _asunto, guardar
 
@@ -34,6 +35,30 @@ TEXTO_NUEVO = (
 )
 
 
+def _revisiones_del_resto(repo: Path, ancla: str,
+                          cambios: list[CambioDeValor]) -> list[CambioDeValor]:
+    """Declara «revisado, no cambia» los criterios que el test no menciona.
+
+    Es lo que hace el docente en el diálogo antes de guardar: decidir sobre
+    cada criterio que deriva de la sección, uno por uno. Sin esas
+    declaraciones el ancla no se sella, R2 protesta y el guardado se
+    revierte entero -que es justo lo que comprueba
+    'test_un_criterio_sin_revisar_hace_saltar_r2_y_no_guarda_nada'-.
+    """
+    decididos = {(c.fichero, c.identificador, c.clave) for c in cambios}
+    return [
+        CambioDeValor(
+            fichero=criterio.fichero,
+            identificador=criterio.identificador,
+            clave=clave,
+            valor_nuevo=None,
+        )
+        for criterio in criterios_de(repo, ancla)
+        for clave in criterio.valores
+        if (criterio.fichero, criterio.identificador, clave) not in decididos
+    ]
+
+
 def _guardar_valido(repo: Path, **extra):
     seccion = leer_seccion(repo, "maestro#6-estandar-academico")
     argumentos = dict(
@@ -51,6 +76,9 @@ def _guardar_valido(repo: Path, **extra):
         hash_esperado=seccion.hash,
     )
     argumentos.update(extra)
+    argumentos["cambios"] = argumentos["cambios"] + _revisiones_del_resto(
+        repo, argumentos["ancla"], argumentos["cambios"]
+    )
     return guardar(**argumentos)
 
 
@@ -81,7 +109,10 @@ def test_el_documento_de_cambio_lleva_las_cinco_secciones(repo: Path):
 
 
 def test_el_registro_de_sincronia_queda_sellado(repo: Path):
-    _guardar_valido(repo)
+    resultado = _guardar_valido(repo)
+    # Sin esta comprobación el test pasaría también cuando el guardado se
+    # revierte: sobre un árbol restaurado R2 tampoco tiene nada que decir.
+    assert resultado.exito, resultado.mensaje
     from tools.verificar_gobernanza import ejecutar
     assert [i for i in ejecutar(repo, [], False) if i.regla == "R2"] == []
 
@@ -127,13 +158,16 @@ def test_si_una_regla_salta_se_revierte_todo(repo: Path):
 
     NOTA: el brief proponía disparar esto sustituyendo el cuerpo de la
     sección sin tocar su marca de ancla. Se comprobó -en rojo, ejecutando el
-    test- que ese escenario nunca dispara ninguna de las seis reglas: la
-    marca de ancla la conserva siempre '_sustituir_seccion', y
-    'escribir_sincronia' se llama justo antes de verificar, así que R2 nunca
-    puede fallar contra su propio sello recién escrito. Se sustituye por un
-    escenario que sí viola R1 de verdad: un 'cambio' que deja la 'fuente' de
-    un criterio apuntando a un ancla que no existe. El resto del test -que
-    se revierte todo, byte a byte y sin commit- es idéntico en espíritu.
+    test- que ese escenario no disparaba ninguna de las seis reglas: la
+    marca de ancla la conserva siempre '_sustituir_seccion', y el sello de
+    R2 se regeneraba entero justo antes de verificar, así que R2 no podía
+    fallar contra su propio sello recién escrito. Ese agujero está cerrado
+    -ahora solo se sella lo revisado, y lo comprueba
+    'test_un_criterio_sin_revisar_hace_saltar_r2_y_no_guarda_nada'-, pero
+    este test se queda como está: cubre otro camino, el de un 'cambio' que
+    deja la 'fuente' de un criterio apuntando a un ancla que no existe y
+    hace saltar R1. El resto -que se revierte todo, byte a byte y sin
+    commit- es idéntico en espíritu.
     """
     antes, commits = contenido_de(repo), commits_de(repo)
     resultado = guardar(
@@ -529,3 +563,191 @@ def test_los_comentarios_del_fichero_de_criterios_sobreviven_al_guardado(repo: P
         "minimo_paginas_contenido: 20",
         "minimo_paginas_contenido: 25",
     )
+
+
+# --- Fix round 5: el sello ya no se genera del arbol que va a verificar --
+
+
+def test_un_criterio_sin_revisar_hace_saltar_r2_y_no_guarda_nada(repo: Path):
+    """El caso que este arreglo existe para impedir que vuelva.
+
+    Se reescribe la sección entera -de «20 páginas / Arial 11» a «35 páginas
+    / Times New Roman 12»- y se guarda sin decidir nada sobre los criterios
+    que derivan de ella. Antes, el guardado sellaba el registro de R2 a
+    partir de esa misma prosa y luego «verificaba» contra ese sello: salía
+    'exito=True', el commit se hacía, y el verificador daba el repositorio
+    por conforme para siempre, con la norma diciendo una cosa y los
+    criterios otra.
+
+    Ahora el ancla no se sella -no hay nada revisado que sellar-, R2 ve la
+    prosa nueva contra el hash viejo, protesta, y el guardado se revierte
+    entero.
+    """
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = guardar(
+        raiz=repo,
+        ancla="maestro#6-estandar-academico",
+        texto_nuevo=(
+            "## 6. Estándar académico\n\n"
+            "El contenido principal tendrá un mínimo de 35 páginas, excluidas\n"
+            "portada, índice y anexos. La tipografía será Times New Roman 12.\n"
+        ),
+        cambios=[],
+        motivo="Prueba: cambiar la prosa sin revisar los criterios",
+        fuente="Prueba",
+        hash_esperado=leer_seccion(repo, "maestro#6-estandar-academico").hash,
+    )
+    assert not resultado.exito
+    assert any(i["regla"] == "R2" for i in resultado.infracciones), resultado.mensaje
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_el_sello_solo_avanza_en_las_anclas_revisadas(repo: Path):
+    """El mecanismo, visto de cerca y sin transacción por medio.
+
+    Con la prosa ya cambiada: si no se sella nada, R2 protesta; si se sella
+    esa ancla -que es lo que el guardado hace cuando el docente ha decidido
+    sobre todos sus criterios-, deja de protestar. Es la diferencia entre un
+    sello que registra lo revisado y uno que se calca del árbol que va a
+    verificar.
+    """
+    from backend.servicios.transaccion import _sellar
+    from tools.gobernanza.sincronia import verificar_r2
+
+    documento = repo / "docs/maestro/01-documento-maestro.md"
+    documento.write_text(
+        documento.read_text(encoding="utf-8").replace(
+            "mínimo de 20 páginas", "mínimo de 35 páginas"
+        ),
+        encoding="utf-8",
+    )
+
+    _sellar(repo, set())
+    infracciones = verificar_r2(repo)
+    assert [i.regla for i in infracciones] == ["R2"]
+    assert "maestro#6-estandar-academico" in infracciones[0].detalle
+
+    _sellar(repo, {"maestro#6-estandar-academico"})
+    assert verificar_r2(repo) == []
+
+
+def test_lo_revisado_sin_cambio_no_toca_el_fichero_pero_sella(repo: Path):
+    """«Lo he revisado y no cambia» es una decisión, y se comporta como tal.
+
+    No escribe nada en 'criteria/' -el fichero queda byte a byte igual- pero
+    cuenta como revisado: es lo único que permite volver a sellar el ancla
+    cuando la prosa cambia y ningún criterio tiene que cambiar con ella.
+    """
+    formato = repo / "criteria/v2026-2027/formato.yaml"
+    antes = formato.read_bytes()
+
+    resultado = _guardar_valido(repo, cambios=[])
+    assert resultado.exito, resultado.mensaje
+    assert formato.read_bytes() == antes
+
+    documento = next((repo / "docs/changes").glob("*-*.md")).read_text(encoding="utf-8")
+    assert "revisado, sigue igual" in documento
+
+    from tools.verificar_gobernanza import ejecutar
+    assert ejecutar(repo, [], False) == []
+
+
+def test_un_criterio_de_otra_seccion_no_se_decide_desde_aqui(repo: Path):
+    """Un par descuadrado escribiría un documento de cambio que miente."""
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo, cambios=[CambioDeValor(
+        fichero="criteria/v2026-2027/dimensiones.yaml",
+        identificador="D05",
+        clave="nombre",
+        valor_nuevo="Otra cosa",
+    )])
+    assert not resultado.exito
+    assert "no deriva de la sección" in resultado.mensaje
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_una_infraccion_previa_se_dice_como_previa_y_no_se_escribe_nada(repo: Path):
+    """Si el repositorio ya venía torcido, no se culpa al docente.
+
+    Se comitea a mano una prosa cambiada sin sellar: R2 queda protestando
+    desde HEAD. Al guardar, el editor lo dice con esas palabras -que no
+    estaba conforme antes de empezar- y no escribe nada, en vez de escribirlo
+    todo, tropezar con la infracción al verificar y contarla como si la
+    hubiera provocado este cambio.
+    """
+    documento = repo / "docs/maestro/01-documento-maestro.md"
+    documento.write_text(
+        documento.read_text(encoding="utf-8").replace(
+            "mínimo de 20 páginas", "mínimo de 30 páginas"
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "prosa cambiada sin sellar"],
+                   cwd=repo, check=True)
+
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo)
+    assert not resultado.exito
+    assert "no estaba conforme antes de empezar" in resultado.mensaje
+    assert any(i["regla"] == "R2" for i in resultado.infracciones)
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_dos_guardados_a_la_vez_no_se_pisan(repo: Path, monkeypatch):
+    """Dos peticiones solapadas: una guarda, la otra se va de vacío.
+
+    El endpoint es una función normal y Starlette la ejecuta en un hilo del
+    pool, así que dos peticiones corren de verdad a la vez. Sin cerrojo, el
+    segundo guardado comiteaba y el primero, al fallar, restauraba los bytes
+    que había capturado antes de ese commit: deshacía en disco un cambio ya
+    registrado, borraba su documento de cambio y contestaba «no se ha
+    guardado nada», que era falso.
+
+    Se ensancha la ventana ralentizando la verificación -que es donde más
+    tiempo pasa el guardado real- para que el solape sea seguro y no
+    dependa de la máquina.
+    """
+    import threading
+    import time
+
+    import backend.servicios.transaccion as transaccion
+
+    verificar = transaccion.ejecutar
+
+    def verificar_despacio(raiz, ficheros, solo_staged):
+        time.sleep(0.4)
+        return verificar(raiz, ficheros, solo_staged)
+
+    monkeypatch.setattr(transaccion, "ejecutar", verificar_despacio)
+
+    commits = commits_de(repo)
+    resultados: list = []
+
+    def guardar_en_hilo():
+        resultados.append(_guardar_valido(repo))
+
+    primero = threading.Thread(target=guardar_en_hilo)
+    primero.start()
+    time.sleep(0.2)
+    segundo = _guardar_valido(repo)
+    primero.join(timeout=30)
+
+    assert len(resultados) == 1
+    assert resultados[0].exito, resultados[0].mensaje
+    assert not segundo.exito
+    assert "guardado en curso" in segundo.mensaje
+
+    # Un solo commit nuevo, el árbol limpio y el repositorio conforme.
+    assert len(commits_de(repo)) == len(commits) + 1
+    estado = subprocess.run(["git", "status", "--porcelain"], cwd=repo,
+                            capture_output=True, text=True, check=True)
+    assert estado.stdout.strip() == ""
+    assert verificar(repo, [], False) == []
+    assert len(list((repo / "docs/changes").glob("*-*.md"))) == 1
+    maestro = (repo / "docs/maestro/01-documento-maestro.md").read_text(encoding="utf-8")
+    assert "mínimo de 25 páginas" in maestro
+

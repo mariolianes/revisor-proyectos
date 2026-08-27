@@ -6,8 +6,10 @@ nadie sabe interpretar después, que es justo lo que la gobernanza evita.
 """
 
 import io
+import json
 import re
 import subprocess
+import threading
 import unicodedata
 from datetime import date
 from pathlib import Path
@@ -16,19 +18,39 @@ from pydantic import BaseModel
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import ScalarString
 
+from backend.servicios.dependencias import criterios_de
 from backend.servicios.repositorio import DOCUMENTOS, leer_seccion
 from tools.gobernanza.cambios import CARPETA as CARPETA_CAMBIOS
-from tools.gobernanza.sincronia import FICHERO_SINCRONIA, escribir_sincronia
+from tools.gobernanza.sincronia import FICHERO_SINCRONIA, calcular_sincronia
 from tools.verificar_gobernanza import ejecutar
 
 
 class CambioDeValor(BaseModel):
-    """Un valor de un criterio que el docente ha decidido cambiar."""
+    """Lo que el docente ha decidido sobre un valor de un criterio.
+
+    Son dos decisiones distintas, no una:
+
+    - 'valor_nuevo' con contenido: el criterio pasa a valer eso. Da igual
+      que el valor lo propusiera el editor o lo escribiera él a mano; lo que
+      llega aquí es su decisión.
+    - 'valor_nuevo' vacío -None-: «lo he revisado y no cambia». Ha mirado
+      ese valor y declara que sigue siendo correcto. No se escribe nada en
+      el fichero de criterios, pero cuenta como revisado, y es lo único que
+      permite volver a sellar el ancla de la que deriva.
+
+    No decir nada de un criterio no es ninguna de las dos cosas: ese
+    criterio queda sin revisar, y su ancla no se sella.
+    """
 
     fichero: str
     identificador: str
     clave: str
-    valor_nuevo: str
+    valor_nuevo: str | None
+
+    @property
+    def cambia_el_valor(self) -> bool:
+        """Si hay que escribir algo en el fichero de criterios."""
+        return self.valor_nuevo is not None
 
 
 class Resultado(BaseModel):
@@ -70,14 +92,23 @@ def _fichero_de(ancla: str) -> str:
 
 def _documento_de_cambio(ancla: str, cambios: list[CambioDeValor],
                          motivo: str, fuente: str) -> str:
-    """El documento que R5 exige, con sus cinco secciones."""
-    if cambios:
-        lista = "\n".join(
-            f"- `{c.fichero}` · {c.identificador}.{c.clave} → {c.valor_nuevo}"
-            for c in cambios
-        )
-    else:
-        lista = "Ningún criterio derivado cambia de valor."
+    """El documento que R5 exige, con sus cinco secciones.
+
+    Lo revisado sin cambiar también se escribe, y con esas palabras: dentro
+    de un año, «se miró y se dejó igual» es una información distinta de «no
+    se miró», y este fichero existe justamente para poder distinguirlas.
+    """
+    cambiados = [
+        f"- `{c.fichero}` · {c.identificador}.{c.clave} → {c.valor_nuevo}"
+        for c in cambios if c.cambia_el_valor
+    ]
+    revisados = [
+        f"- `{c.fichero}` · {c.identificador}.{c.clave}: revisado, sigue igual"
+        for c in cambios if not c.cambia_el_valor
+    ]
+    if not cambiados:
+        cambiados = ["Ningún criterio derivado cambia de valor."]
+    lista = "\n".join(cambiados + revisados)
 
     return (
         f"# {motivo.strip().rstrip('.')}\n\n"
@@ -347,9 +378,106 @@ def _valor_seguro(valor: str) -> bool:
     return True
 
 
+# --------------------------------------------------------------------------
+# El sello de R2, y por qué no se regenera entero.
+#
+# 'escribir_sincronia' recalcula el hash de TODAS las anclas a partir de los
+# ficheros que hay en ese momento. Llamarla dentro de esta transacción y
+# verificar después equivale a sellar el árbol contra sí mismo: R2 compara la
+# prosa recién escrita con un sello sacado de esa misma prosa una línea antes,
+# así que no puede fallar nunca. Era exactamente eso lo que hacía este módulo,
+# y con ello un cambio de prosa cuyos criterios derivados nadie había mirado
+# quedaba comiteado y «conforme» para siempre: la norma decía una cosa y los
+# criterios otra, sin que nada volviera a protestar.
+#
+# Aquí se sella solo lo que el docente ha revisado de verdad. Un ancla se
+# sella cuando ha decidido -cambiándolo o declarando que sigue igual- cada
+# uno de los valores de los criterios que la citan como fuente. Si deja
+# alguno sin decidir, su entrada del registro se queda como estaba: R2 sigue
+# viendo la prosa cambiada contra el hash viejo y protesta, que es su trabajo.
+# --------------------------------------------------------------------------
+
+
+def _valores_derivados(raiz: Path, ancla: str) -> set[tuple[str, str, str]]:
+    """Cada valor de criterio que deriva de esa sección: (fichero, id, clave)."""
+    return {
+        (criterio.fichero, criterio.identificador, clave)
+        for criterio in criterios_de(raiz, ancla)
+        for clave in criterio.valores
+    }
+
+
+def _todo_revisado(raiz: Path, ancla: str, cambios: list[CambioDeValor]) -> bool:
+    """Si el docente ha decidido sobre cada valor que deriva de la sección."""
+    decididos = {(c.fichero, c.identificador, c.clave) for c in cambios}
+    return _valores_derivados(raiz, ancla) <= decididos
+
+
+def _sellar(raiz: Path, anclas: set[str]) -> None:
+    """Actualiza el registro de R2 solo en las anclas indicadas.
+
+    El resto de entradas se queda tal cual estaba, sin recalcular: si el
+    hash de otra sección no coincidiera con el registro, eso es una
+    infracción de R2 que este guardado no tiene derecho a borrar.
+    """
+    if not anclas:
+        return
+    ruta = raiz / FICHERO_SINCRONIA
+    registro: dict[str, str] = {}
+    if ruta.is_file():
+        registro = json.loads(ruta.read_text(encoding="utf-8"))
+
+    actual = calcular_sincronia(raiz)
+    for ancla in anclas:
+        if ancla in actual:
+            registro[ancla] = actual[ancla]
+
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    contenido = json.dumps(dict(sorted(registro.items())), indent=2,
+                           ensure_ascii=False)
+    ruta.write_text(contenido + "\n", encoding="utf-8")
+
+
+# Un solo guardado a la vez en todo el proceso.
+#
+# El endpoint es una función normal, así que Starlette la ejecuta en un hilo
+# del pool: dos peticiones se solapan de verdad. Y se solapan justo cuando es
+# peor -el docente no ve respuesta y vuelve a pulsar-, con este desenlace: el
+# segundo guardado comitea, el primero falla, y al revertir restaura los bytes
+# que capturó ANTES de ese commit, deshaciendo en disco un cambio ya
+# registrado y borrando su documento de cambio.
+#
+# El segundo en llegar no espera: se le contesta en el acto que hay un
+# guardado en curso. Hacerle esperar sería peor, porque lo que llega dos veces
+# casi siempre es el mismo guardado pulsado dos veces: al desbloquearse
+# repetiría el trabajo sobre una sección que ya cambió, y lo que leería el
+# docente sería «la sección ha cambiado desde que la abriste», que no explica
+# nada de lo que ha pasado.
+_CERROJO = threading.Lock()
+
+
 def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValor],
             motivo: str, fuente: str, hash_esperado: str) -> Resultado:
-    """Ejecuta el procedimiento completo, o no deja rastro."""
+    """Ejecuta el procedimiento completo, o no deja rastro.
+
+    Es la única puerta de escritura, y por eso el cerrojo está aquí y no en
+    el endpoint: cualquier camino que llegue a guardar pasa por él.
+    """
+    if not _CERROJO.acquire(blocking=False):
+        return Resultado(exito=False, mensaje=(
+            "Ya hay un guardado en curso. Espera a que termine: no hace "
+            "falta que vuelvas a pulsar."
+        ))
+    try:
+        return _guardar(raiz, ancla, texto_nuevo, cambios, motivo, fuente,
+                        hash_esperado)
+    finally:
+        _CERROJO.release()
+
+
+def _guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValor],
+             motivo: str, fuente: str, hash_esperado: str) -> Resultado:
+    """El cuerpo del guardado, ya con el cerrojo tomado."""
     if not motivo.strip():
         return Resultado(exito=False, mensaje=(
             "Falta el motivo del cambio. Es lo que permitirá entender esta "
@@ -394,13 +522,50 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
             "guardar desde aquí."
         ))
 
+    # Que el árbol esté limpio no quiere decir que sea correcto: puede venir
+    # ya comiteada una infracción de antes. Si no se mira aquí, el guardado
+    # escribe, la verificación del final la encuentra y el docente lee «el
+    # cambio no se ha guardado por 1 infracción» sobre un fichero que ni ha
+    # abierto. Se comprueba una vez, antes de tocar nada, y se dice de quién
+    # es el problema.
+    heredadas = ejecutar(raiz, [], False)
+    if heredadas:
+        return Resultado(
+            exito=False,
+            infracciones=[
+                {"regla": i.regla, "fichero": i.fichero, "detalle": i.detalle}
+                for i in heredadas
+            ],
+            mensaje=(
+                f"El repositorio ya no estaba conforme antes de empezar: "
+                f"tiene {len(heredadas)} infracción(es) que no vienen de este "
+                f"cambio. No se ha escrito nada. Hay que resolverlas antes de "
+                f"guardar desde aquí."
+            ),
+        )
+
     for cambio in cambios:
         ruta = (raiz / cambio.fichero).resolve()
         carpeta = (raiz / "criteria").resolve()
-        if not str(ruta).startswith(str(carpeta)) or not ruta.is_file():
+        # 'is_relative_to' compara tramo a tramo. Comparar los textos daría
+        # por buena una carpeta hermana que empezara igual -'criteria-viejo/'
+        # empieza por 'criteria'-, y eso es una ruta fuera de la lista blanca.
+        if not ruta.is_relative_to(carpeta) or not ruta.is_file():
             return Resultado(exito=False, mensaje=(
                 f"«{cambio.fichero}» no es un fichero de criterios de este "
                 f"repositorio."
+            ))
+
+    # Cada decisión tiene que ser sobre un criterio que derive de la sección
+    # que se está editando. Un par descuadrado -un criterio de otra sección
+    # colado en este guardado- produciría un documento de cambio que afirma
+    # algo falso, y ese fichero solo sirve si dentro de un año se sostiene.
+    derivados = {(c.fichero, c.identificador) for c in criterios_de(raiz, ancla)}
+    for cambio in cambios:
+        if (cambio.fichero, cambio.identificador) not in derivados:
+            return Resultado(exito=False, mensaje=(
+                f"«{cambio.identificador}» de «{cambio.fichero}» no deriva de "
+                f"la sección «{ancla}», así que no se decide desde aquí."
             ))
 
     # Guardas baratas sobre el contenido de cada cambio, todavía sin escribir
@@ -414,6 +579,12 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
     # toquen estos cambios-, así que si llegamos aquí, ya se sabe que
     # parsean.
     for cambio in cambios:
+        # Lo revisado sin cambiar no se escribe, así que no se le pide que
+        # tenga forma de valor escribible. Es lo que permite dar por revisado
+        # un criterio cuyo valor es una lista o un texto largo, que este
+        # editor nunca podría cambiar pero el docente sí puede mirar.
+        if not cambio.cambia_el_valor:
+            continue
         if not _valor_seguro(cambio.valor_nuevo):
             return Resultado(exito=False, mensaje=(
                 f"El valor «{cambio.valor_nuevo}» para «{cambio.clave}» no es "
@@ -424,6 +595,13 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
         _, problema = _aplicar_cambio(raiz, cambio)
         if problema:
             return Resultado(exito=False, mensaje=problema)
+
+    # Si el ancla se puede volver a sellar se decide ahora, con los criterios
+    # tal como estaban cuando el docente los miró. Preguntarlo después de
+    # escribir daría la respuesta sobre otro árbol: un cambio de 'fuente'
+    # mueve un criterio de sección, y entonces «están todos revisados» sería
+    # cierto sobre una lista distinta de la que él tenía delante.
+    revisado_del_todo = _todo_revisado(raiz, ancla, cambios)
 
     # A partir de aquí se escribe. Todo lo que se toque se guarda para revertir.
     documento = raiz / "docs" / "maestro" / _fichero_de(ancla)
@@ -468,6 +646,8 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
         documento.write_text(texto_actualizado, encoding="utf-8")
 
         for cambio in cambios:
+            if not cambio.cambia_el_valor:
+                continue
             ruta = raiz / cambio.fichero
             nuevo_texto, _ = _aplicar_cambio(raiz, cambio)
             if nuevo_texto is None:
@@ -486,7 +666,14 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
             _documento_de_cambio(ancla, cambios, motivo, fuente), encoding="utf-8"
         )
 
-        escribir_sincronia(raiz)
+        # Se sella la sección editada solo si el docente ha decidido sobre
+        # cada uno de los criterios que la citan. Si dejó alguno sin mirar,
+        # aquí no se toca el registro y la verificación de la línea siguiente
+        # encuentra a R2 protestando por esa sección -que es lo correcto: la
+        # prosa ha cambiado y hay un criterio que nadie ha revisado-, así que
+        # el guardado se revierte entero y se le dice cuál falta.
+        if revisado_del_todo:
+            _sellar(raiz, {ancla})
 
         infracciones = ejecutar(raiz, [], False)
         if infracciones:
@@ -507,15 +694,19 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
         # entero: el hueco de guarda ya comprobó que no había nada más
         # pendiente, pero un 'git add -A' comitearía igual cualquier cosa
         # que apareciera entre esa comprobación y este punto.
-        rutas_para_commit = {documento, ruta_cambio, sincronia}
-        rutas_para_commit.update(raiz / cambio.fichero for cambio in cambios)
+        rutas_para_commit = {documento, ruta_cambio}
+        if sincronia.is_file():
+            rutas_para_commit.add(sincronia)
+        rutas_para_commit.update(
+            raiz / cambio.fichero for cambio in cambios if cambio.cambia_el_valor
+        )
         relativas = sorted(r.relative_to(raiz).as_posix() for r in rutas_para_commit)
         _git(raiz, "add", "--", *relativas)
 
         commit = _git(raiz, "commit", "-q", "-m", f"docs: {motivo.strip()}")
         if commit.returncode != 0:
+            # 'revertir()' ya hace el 'git reset': repetirlo aquí no añadía nada.
             revertir()
-            _git(raiz, "reset")
             return Resultado(
                 exito=False,
                 mensaje=(
