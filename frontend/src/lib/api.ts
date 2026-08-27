@@ -11,8 +11,19 @@ async function pedir<T>(ruta: string, opciones?: RequestInit): Promise<T> {
     ...opciones,
   })
   if (!respuesta.ok) {
-    const detalle = await respuesta.text()
-    throw new Error(`${respuesta.status}: ${detalle}`)
+    const cuerpo = await respuesta.text()
+    let mensaje = cuerpo
+    try {
+      const json = JSON.parse(cuerpo)
+      if (json && typeof json.detail === "string") {
+        mensaje = json.detail
+      }
+    } catch {
+      // El cuerpo no era JSON: se usa el texto crudo tal cual.
+    }
+    const error = new Error(mensaje) as Error & { estado: number }
+    error.estado = respuesta.status
+    throw error
   }
   return respuesta.json() as Promise<T>
 }
