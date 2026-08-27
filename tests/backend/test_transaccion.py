@@ -366,3 +366,73 @@ def test_un_valor_con_lista_debajo_no_se_guarda(repo: Path):
     assert extra.read_text(encoding="utf-8") == contenido_original
     assert contenido_de(repo) == antes
     assert commits_de(repo) == commits
+
+
+# --- Fix round 3: comentario sin espacio delante, y lista en una línea ---
+
+
+def test_una_clave_con_solo_un_comentario_no_se_guarda(repo: Path):
+    """'clave:  # comentario' no tiene valor en su línea, aunque el
+    comentario en sí sea un texto no vacío.
+
+    Antes de esta guarda, '_valor_de_clave_en_linea' partía por " #" -con
+    espacio delante-, pero el hueco tras los dos puntos ya se había comido
+    ese espacio: el propio texto del comentario se colaba como si fuera el
+    valor, y se aceptaba el cambio, corrompiendo la lista de debajo exactamente
+    como en 'test_un_valor_con_lista_debajo_no_se_guarda'.
+    """
+    extra = repo / "criteria" / "v2026-2027" / "extra.yaml"
+    contenido_original = (
+        "extra:\n"
+        "  fuente: maestro#6-estandar-academico\n"
+        "  excluye:  # lo que no cuenta para el minimo\n"
+        "    - portada\n"
+        "    - indice\n"
+        "    - anexos\n"
+    )
+    extra.write_text(contenido_original, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "criterio con lista comentada"],
+                    cwd=repo, check=True)
+
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo, cambios=[CambioDeValor(
+        fichero="criteria/v2026-2027/extra.yaml",
+        identificador="extra",
+        clave="excluye",
+        valor_nuevo="nada",
+    )])
+    assert not resultado.exito
+    assert "varias líneas" in resultado.mensaje
+    assert extra.read_text(encoding="utf-8") == contenido_original
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits
+
+
+def test_una_lista_en_una_sola_linea_no_se_guarda(repo: Path):
+    """'excluye: [portada, indice, anexos]' es una lista en estilo de flujo:
+    sustituirla la convertiría en un escalar sin que nadie lo pidiera.
+    """
+    extra = repo / "criteria" / "v2026-2027" / "extra.yaml"
+    contenido_original = (
+        "extra:\n"
+        "  fuente: maestro#6-estandar-academico\n"
+        "  excluye: [portada, indice, anexos]\n"
+    )
+    extra.write_text(contenido_original, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "criterio con lista en linea"],
+                    cwd=repo, check=True)
+
+    antes, commits = contenido_de(repo), commits_de(repo)
+    resultado = _guardar_valido(repo, cambios=[CambioDeValor(
+        fichero="criteria/v2026-2027/extra.yaml",
+        identificador="extra",
+        clave="excluye",
+        valor_nuevo="nada",
+    )])
+    assert not resultado.exito
+    assert "una sola línea" in resultado.mensaje
+    assert extra.read_text(encoding="utf-8") == contenido_original
+    assert contenido_de(repo) == antes
+    assert commits_de(repo) == commits

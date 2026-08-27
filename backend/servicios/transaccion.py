@@ -173,8 +173,26 @@ def _valor_de_clave_en_linea(bloque: str, clave: str) -> str | None:
     )
     if coincidencia is None:
         return None
-    resto = coincidencia.group(1).split(" #", 1)[0].strip()
+    resto = coincidencia.group(1)
+    if resto.startswith("#"):
+        # 'clave:  # comentario': el hueco tras los dos puntos ya se comió
+        # el espacio antes del '#', así que el 'split(" #")' de abajo no ve
+        # ningún espacio delante y no lo reconoce como comentario. Sin este
+        # caso aparte, el propio texto del comentario se devolvía como si
+        # fuera el valor, y se aceptaba un cambio que no tocaba nada real.
+        return None
+    # Un comentario después de un valor real sí lleva un espacio delante
+    # -es la única forma en que YAML lo distingue del valor-, y no se puede
+    # partir por cualquier '#': 'maestro#6-estandar-academico' es un valor
+    # legítimo con una almohadilla dentro, sin espacio delante.
+    resto = resto.split(" #", 1)[0].strip()
     return resto or None
+
+
+# Con qué empieza un valor que ya no es un escalar en su propia línea, sino
+# una lista o un mapa en estilo de flujo -'[a, b]' o '{a: 1}'-. Sustituirlo
+# de forma acotada lo convertiría en un escalar sin que nadie lo pidiera.
+_INICIOS_DE_COLECCION = ("[", "{")
 
 
 def _sustituir_valor_acotado(ruta: Path, identificador: str, clave: str,
@@ -182,8 +200,9 @@ def _sustituir_valor_acotado(ruta: Path, identificador: str, clave: str,
     """Sustituye 'clave: valor' solo dentro del bloque 'identificador'.
 
     Devuelve el texto completo del fichero con el cambio aplicado, o None si
-    no se encuentra el bloque, la clave dentro de él, o su valor no está en
-    la misma línea. Nunca se sustituye contra el fichero entero: varios
+    no se encuentra el bloque, la clave dentro de él, o su valor actual no
+    es un escalar en su propia línea -vive debajo, o es una lista o un mapa
+    en estilo de flujo-. Nunca se sustituye contra el fichero entero: varios
     bloques de un mismo fichero de criterios suelen compartir el nombre de
     clave -'fuente' lo tienen casi todos-, y sustituir sin acotar
     reescribiría el bloque equivocado sin que ninguna regla de gobernanza lo
@@ -195,7 +214,8 @@ def _sustituir_valor_acotado(ruta: Path, identificador: str, clave: str,
     texto = ruta.read_text(encoding="utf-8")
     inicio, fin = limites
     bloque = texto[inicio:fin]
-    if _valor_de_clave_en_linea(bloque, clave) is None:
+    valor_actual = _valor_de_clave_en_linea(bloque, clave)
+    if valor_actual is None or valor_actual.startswith(_INICIOS_DE_COLECCION):
         return None
     nuevo_bloque, sustituciones = re.subn(
         rf"^([^\S\n]*{re.escape(clave)}:[^\S\n]*).*$",
@@ -249,7 +269,24 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
             "cambio no debería hacerse."
         ))
 
-    seccion = leer_seccion(raiz, ancla)
+    try:
+        # 'leer_seccion' recorre 'docs/maestro/' y, para contar cuántos
+        # criterios cita cada sección, también parsea con YAML todos los
+        # ficheros de 'criteria/' -no solo el que esta transacción va a
+        # tocar-. Si alguno estuviera mal formado, lanzaría aquí, antes de
+        # escribir nada: se captura para devolver un 'Resultado', nunca una
+        # excepción sin capturar.
+        seccion = leer_seccion(raiz, ancla)
+    except Exception as error:
+        return Resultado(
+            exito=False,
+            mensaje=(
+                "No se han podido leer los documentos o los criterios del "
+                "repositorio. Puede haber un error de formato: revísalo "
+                "antes de reintentar."
+            ),
+            detalle_tecnico=f"{type(error).__name__}: {error}",
+        )
     if seccion is None:
         return Resultado(exito=False, mensaje=f"La sección «{ancla}» no existe.")
 
@@ -276,54 +313,50 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
 
     # Guardas baratas sobre el contenido de cada cambio, todavía sin escribir
     # nada: forma del valor, y que el criterio y la clave existan de verdad,
-    # con su valor en la misma línea. Se envuelve en su propio try porque
-    # '_localizar_bloque' parsea YAML -vía 'bloques_raiz'-: un fichero de
-    # criterios mal formado lanzaría 'yaml.YAMLError', y esto se ejecuta
-    # antes del try principal que protege la escritura. No romper la
-    # atomicidad -aquí no se ha escrito nada todavía- no es excusa para
-    # romper el contrato de la función: quien llama espera un 'Resultado',
-    # nunca una excepción.
-    try:
-        for cambio in cambios:
-            if not _valor_seguro(cambio.valor_nuevo):
-                return Resultado(exito=False, mensaje=(
-                    f"El valor «{cambio.valor_nuevo}» para «{cambio.clave}» no es "
-                    f"válido: tiene que ser una sola línea, sin comillas, "
-                    f"corchetes ni almohadillas, que son caracteres con "
-                    f"significado especial en el fichero de criterios."
-                ))
-            ruta = raiz / cambio.fichero
-            limites = _localizar_bloque(ruta, cambio.identificador)
-            if limites is None:
-                return Resultado(exito=False, mensaje=(
-                    f"No se encontró el criterio «{cambio.identificador}» en "
-                    f"«{cambio.fichero}»."
-                ))
-            inicio, fin = limites
-            bloque = ruta.read_text(encoding="utf-8")[inicio:fin]
-            if not _clave_presente(bloque, cambio.clave):
-                return Resultado(exito=False, mensaje=(
-                    f"El criterio «{cambio.identificador}» de «{cambio.fichero}» "
-                    f"no tiene la clave «{cambio.clave}»."
-                ))
-            if _valor_de_clave_en_linea(bloque, cambio.clave) is None:
-                return Resultado(exito=False, mensaje=(
-                    f"«{cambio.clave}» en «{cambio.identificador}» de "
-                    f"«{cambio.fichero}» tiene un valor de varias líneas -una "
-                    f"lista o un grupo de datos-. Este editor no puede "
-                    f"cambiar ese tipo de valor: edítalo a mano en el "
-                    f"fichero de criterios."
-                ))
-    except Exception as error:
-        return Resultado(
-            exito=False,
-            mensaje=(
-                "No se ha podido leer uno de los ficheros de criterios "
-                "afectados. Puede tener un error de formato: revísalo antes "
-                "de reintentar."
-            ),
-            detalle_tecnico=f"{type(error).__name__}: {error}",
-        )
+    # con su valor en la misma línea. No hace falta protegerlas contra un
+    # YAML mal formado: el 'leer_seccion' de más arriba ya parseó con éxito
+    # todos los ficheros de 'criteria/' -incluido cualquiera de los que
+    # toquen estos cambios-, así que si llegamos aquí, ya se sabe que
+    # parsean.
+    for cambio in cambios:
+        if not _valor_seguro(cambio.valor_nuevo):
+            return Resultado(exito=False, mensaje=(
+                f"El valor «{cambio.valor_nuevo}» para «{cambio.clave}» no es "
+                f"válido: tiene que ser una sola línea, sin comillas, "
+                f"corchetes ni almohadillas, que son caracteres con "
+                f"significado especial en el fichero de criterios."
+            ))
+        ruta = raiz / cambio.fichero
+        limites = _localizar_bloque(ruta, cambio.identificador)
+        if limites is None:
+            return Resultado(exito=False, mensaje=(
+                f"No se encontró el criterio «{cambio.identificador}» en "
+                f"«{cambio.fichero}»."
+            ))
+        inicio, fin = limites
+        bloque = ruta.read_text(encoding="utf-8")[inicio:fin]
+        if not _clave_presente(bloque, cambio.clave):
+            return Resultado(exito=False, mensaje=(
+                f"El criterio «{cambio.identificador}» de «{cambio.fichero}» "
+                f"no tiene la clave «{cambio.clave}»."
+            ))
+        valor_actual = _valor_de_clave_en_linea(bloque, cambio.clave)
+        if valor_actual is None:
+            return Resultado(exito=False, mensaje=(
+                f"«{cambio.clave}» en «{cambio.identificador}» de "
+                f"«{cambio.fichero}» tiene un valor de varias líneas -una "
+                f"lista o un grupo de datos-. Este editor no puede "
+                f"cambiar ese tipo de valor: edítalo a mano en el "
+                f"fichero de criterios."
+            ))
+        if valor_actual.startswith(_INICIOS_DE_COLECCION):
+            return Resultado(exito=False, mensaje=(
+                f"«{cambio.clave}» en «{cambio.identificador}» de "
+                f"«{cambio.fichero}» es una lista o un grupo de datos "
+                f"escrito en una sola línea. Este editor no puede cambiar "
+                f"ese tipo de valor: edítalo a mano en el fichero de "
+                f"criterios."
+            ))
 
     # A partir de aquí se escribe. Todo lo que se toque se guarda para revertir.
     documento = raiz / "docs" / "maestro" / _fichero_de(ancla)
@@ -442,9 +475,24 @@ def guardar(raiz: Path, ancla: str, texto_nuevo: str, cambios: list[CambioDeValo
     # El commit ya existe: a partir de aquí no se revierte nada. Si algo de
     # lo que sigue lanzara, atraparlo y llamar a 'revertir()' dejaría el
     # árbol restaurado pero el commit todavía en el historial -el estado a
-    # medias que esta función entera existe para que no pueda ocurrir-.
+    # medias que esta función entera existe para que no pueda ocurrir-. Por
+    # el mismo motivo, este 'try' es solo para leer el hash: si falla, el
+    # guardado ya ha ocurrido y se informa como éxito, sin identificador.
+    try:
+        commit_hash = _git(raiz, "rev-parse", "--short", "HEAD").stdout.strip()
+    except Exception as error:
+        return Resultado(
+            exito=True,
+            commit=None,
+            mensaje=(
+                "El cambio se ha guardado y registrado, pero no se ha "
+                "podido leer el identificador del commit."
+            ),
+            detalle_tecnico=f"{type(error).__name__}: {error}",
+        )
+
     return Resultado(
         exito=True,
-        commit=_git(raiz, "rev-parse", "--short", "HEAD").stdout.strip(),
+        commit=commit_hash,
         mensaje="Cambio guardado, verificado y registrado.",
     )
