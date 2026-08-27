@@ -89,6 +89,40 @@ def _contexto(valor: str, texto: str) -> tuple[str, str] | None:
     return " ".join(antes), " ".join(despues)
 
 
+def _sigue_en_el_mismo_sitio(valor: str, texto_viejo: str, texto_nuevo: str) -> bool:
+    """Si el valor ocupa en el texto nuevo el mismo sitio que ocupaba en el viejo.
+
+    No basta con que el valor aparezca en los dos textos: hay que comprobar
+    que es LA MISMA aparición. Dos ejemplos reales de por qué, los dos con el
+    criterio 'cuerpo: 11':
+
+    - «mínimo de 11 páginas ... Arial 12»: el 11 sigue en el texto, pero es
+      el de la extensión, no el del cuerpo de letra. La tipografía ha pasado
+      a 12 y nadie lo habría mirado.
+    - «Arial 12. Los márgenes serán de 11 mm»: el 11 sigue en el texto, pero
+      en otra frase y hablando de otra cosa.
+
+    En los dos casos el criterio quedaría sellado diciendo 11 mientras la
+    norma dice 12. Así que el sitio se localiza igual que lo hace
+    `_candidato` para proponer -por las tres palabras que precedían al
+    valor-, y solo se da por el mismo sitio si ahí, en el texto nuevo, está
+    exactamente ese valor y una sola vez.
+
+    Las palabras del contexto se buscan separadas por 'cualquier espacio'
+    para que volver a repartir el párrafo en líneas no cuente como haber
+    movido el valor: lo que se comprueba es la prosa, no su maquetado.
+    """
+    contexto = _contexto(valor, texto_viejo)
+    if contexto is None:
+        return False
+    antes, _ = contexto
+    if not antes:
+        return False
+    palabras = r"\s+".join(re.escape(palabra) for palabra in antes.split())
+    patron = rf"{palabras}\s+{_LIMITE_IZQUIERDO}{re.escape(valor)}{_LIMITE_DERECHO}"
+    return len(re.findall(patron, texto_nuevo)) == 1
+
+
 def _candidato(valor_viejo: str, texto_viejo: str, texto_nuevo: str) -> str | None:
     """El número que ocupa en el texto nuevo el mismo sitio que ocupaba el viejo.
 
@@ -141,31 +175,38 @@ def _evaluar(criterio, clave: str, valor: str, texto_viejo: str, texto_nuevo: st
             revisado_sin_cambio=revisado_sin_cambio,
         )
 
-    # Lo primero de todo: si el valor estaba literalmente en el texto viejo y
-    # sigue estando literalmente en el nuevo, no hay nada que decidir. La
-    # prosa que respalda ese valor no lo ha tocado, así que se da por
-    # revisado sin cambio y el docente no tiene que pronunciarse.
+    # Lo primero de todo: si el valor estaba en un sitio identificable del
+    # texto viejo y sigue estando en ESE MISMO sitio en el nuevo, no hay nada
+    # que decidir. La prosa que respalda ese valor no lo ha tocado, así que
+    # se da por revisado sin cambio y el docente no tiene que pronunciarse.
     #
-    # El criterio es que el VALOR siga presente, no que el texto entero sea
-    # idéntico: cambiar una frase de la sección no obliga a redecidir el
-    # cuerpo de letra si el cuerpo de letra sigue diciendo lo mismo.
+    # Las dos condiciones son necesarias, y ninguna sobra:
     #
-    # Y hace falta que estuviera antes: un valor que no aparece literalmente
-    # ni en el texto viejo ni en el nuevo -que es lo que pasa con casi todo
-    # lo que no es un número- NO es "no ha cambiado", es que no se puede
-    # saber. Eso se pregunta, y por eso esta comprobación exige las dos
-    # apariciones y no solo la del texto nuevo.
-    if _apariciones(valor, texto_viejo) >= 1 and _apariciones(valor, texto_nuevo) >= 1:
+    # - Aparición única en el texto viejo. Si el valor estaba dos veces no se
+    #   sabe cuál de las dos respaldaba el criterio, y "sigue estando" podría
+    #   sostenerse sobre la otra. Es la misma exigencia que hace la guarda de
+    #   más abajo para poder proponer.
+    # - El mismo sitio en el texto nuevo, no un sitio cualquiera. Si no,
+    #   «mínimo de 11 páginas ... Arial 12» daría por revisado un 'cuerpo:
+    #   11' apoyándose en el 11 de la extensión, y el criterio quedaría
+    #   sellado contradiciendo la norma sin que nadie lo hubiera mirado: el
+    #   defecto que R2 existe para impedir, entrando por otra puerta.
+    #
+    # Que el valor no aparezca literalmente ni antes ni después -lo que pasa
+    # con casi todo lo que no es un número, y con todas las listas- NO es "no
+    # ha cambiado": es que no se puede saber. Eso se pregunta.
+    if (_apariciones(valor, texto_viejo) == 1
+            and _sigue_en_el_mismo_sitio(valor, texto_viejo, texto_nuevo)):
         return resultado(None, (
-            "El valor sigue apareciendo igual en el texto nuevo, así que la "
-            "prosa que lo respalda no lo ha tocado. Lo doy por revisado sin "
-            "cambio; desmárcalo si no estás de acuerdo."
+            "El valor sigue apareciendo igual, y en el mismo sitio, en el "
+            "texto nuevo, así que la prosa que lo respalda no lo ha tocado. "
+            "Lo doy por revisado sin cambio; desmárcalo si no estás de "
+            "acuerdo."
         ), revisado_sin_cambio=True)
 
-    # A partir de aquí el valor ya no está en el texto nuevo. Si además ni
-    # siquiera aparecía literalmente una vez en el texto anterior, da igual
-    # que sea o no un número: no hay nada de lo que partir. Comprobar esto
-    # antes que la numericidad importa para los valores
+    # Si el valor ni siquiera aparecía literalmente una vez en el texto
+    # anterior, da igual que sea o no un número: no hay nada de lo que
+    # partir. Comprobar esto antes que la numericidad importa para los valores
     # que no son números (listas, texto libre): también ellos deben salir
     # con "no aparece literalmente" cuando ese es el motivo real, no con un
     # "no es un número" que oculta el motivo verdadero.

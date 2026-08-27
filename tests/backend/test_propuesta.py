@@ -197,3 +197,71 @@ def test_un_valor_que_desaparece_del_texto_no_llega_marcado(repo: Path):
     for clave in ("familia", "cuerpo"):
         propuesta = next(p for p in propuestas if p.clave == clave)
         assert not propuesta.revisado_sin_cambio, clave
+
+
+# --- Fix round 7: no basta con que el valor este; tiene que ser el mismo ---
+
+
+def test_no_se_marca_apoyandose_en_otra_aparicion_del_mismo_valor(repo: Path):
+    """El caso que demuestra por qué «sigue estando» no era suficiente.
+
+    La prosa dice «mínimo de 11 páginas ... Arial 11» y el criterio 'cuerpo'
+    vale 11. Se cambia SOLO la tipografía, a Arial 12. El 11 sigue en el
+    texto -el de la extensión-, así que una comprobación que solo mire si el
+    valor aparece daría 'cuerpo' por revisado sin cambio: la norma diría
+    Arial 12, el criterio seguiría diciendo 11, y el ancla quedaría sellada
+    sin que nadie lo hubiera mirado. Se pregunta.
+    """
+    documento = repo / "docs/maestro/01-documento-maestro.md"
+    documento.write_text(
+        documento.read_text(encoding="utf-8").replace(
+            "mínimo de 20 páginas", "mínimo de 11 páginas"
+        ),
+        encoding="utf-8",
+    )
+    texto = (
+        "## 6. Estándar académico\n\n"
+        "El contenido principal tendrá un mínimo de 11 páginas, excluidas portada,\n"
+        "índice y anexos. La tipografía será Arial 12.\n"
+    )
+    propuestas = proponer(repo, "maestro#6-estandar-academico", texto)
+    cuerpo = next(p for p in propuestas if p.clave == "cuerpo")
+    assert cuerpo.valor_actual == "11"
+    assert not cuerpo.revisado_sin_cambio
+
+
+def test_no_se_marca_si_el_valor_reaparece_en_otra_frase(repo: Path):
+    """El valor sigue en el texto, pero hablando de otra cosa.
+
+    «Arial 11» pasa a «Arial 12. Los márgenes serán de 11 mm»: el 11 sigue
+    escrito, pero ya no es el cuerpo de letra. Marcarlo sellaría un criterio
+    obsoleto apoyado en un número de otra oración.
+    """
+    texto = (
+        "## 6. Estándar académico\n\n"
+        "El contenido principal tendrá un mínimo de 20 páginas, excluidas portada,\n"
+        "índice y anexos. La tipografía será Arial 12. Los márgenes serán de 11 mm.\n"
+    )
+    propuestas = proponer(repo, "maestro#6-estandar-academico", texto)
+    cuerpo = next(p for p in propuestas if p.clave == "cuerpo")
+    assert not cuerpo.revisado_sin_cambio
+    # Y además se propone el sustituto correcto: el que está en su sitio.
+    assert cuerpo.valor_propuesto == "12"
+
+
+def test_repartir_el_parrafo_en_otras_lineas_no_mueve_el_valor(repo: Path):
+    """Lo que se compara es la prosa, no su maquetado.
+
+    Reescribir los saltos de línea de la sección no toca ningún valor, así
+    que no puede obligar a redecidirlos todos.
+    """
+    texto = (
+        "## 6. Estándar académico\n\n"
+        "El contenido principal tendrá un mínimo de 20 páginas,\n"
+        "excluidas portada, índice y anexos. La tipografía\n"
+        "será Arial 11.\n"
+    )
+    propuestas = proponer(repo, "maestro#6-estandar-academico", texto)
+    for clave in ("familia", "cuerpo", "minimo_paginas_contenido"):
+        propuesta = next(p for p in propuestas if p.clave == clave)
+        assert propuesta.revisado_sin_cambio, clave
