@@ -23,4 +23,11 @@ def crear_app(raiz: Path) -> FastAPI:
     def salud() -> dict[str, str]:
         return {"estado": "vivo", "raiz": str(raiz)}
 
+    # El front compilado se sirve desde el propio backend: una sola pieza
+    # que arrancar, no dos.
+    dist = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+    if dist.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")
+
     return app

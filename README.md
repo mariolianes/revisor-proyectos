@@ -31,3 +31,17 @@ pertenecen siempre al profesor.
 El segundo paso no es opcional: instala el hook de pre-commit que ejecuta el
 verificador. Sin él, nada vigila los criterios hasta que alguien se acuerde de
 lanzar el verificador a mano.
+
+## Editor de criterios
+
+Para leer y modificar los documentos normativos sin salirte del
+procedimiento:
+
+    editor.cmd
+
+Abre `http://127.0.0.1:8000` en el navegador. La primera vez compila el
+frontend, lo que tarda un poco.
+
+El editor no permite guardar un cambio sin motivo y sin fuente, y ejecuta las
+seis reglas antes de comitear. Si alguna salta, no se guarda nada: el
+repositorio queda como estaba.
