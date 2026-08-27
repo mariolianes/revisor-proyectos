@@ -285,3 +285,64 @@ def test_fuente_vacia_no_pasa_el_filtro(
     assert all(comprobacion.criterio != "archivo" for comprobacion in resultado)
     # el resto del fichero no se ve afectado
     assert _de(resultado, "extension").veredicto == CUMPLE
+
+
+# --- Ronda 2 de revisión: el propio manejador de errores -------------------
+
+
+def test_fuente_no_textual_no_revienta_el_manejador(
+    tmp_path: Path, pdf_con_indice: Path
+) -> None:
+    """Crítico: la Comprobacion de repuesto no puede fallar por su cuenta.
+
+    `fuente` puede ser cualquier cosa que YAML sepa leer, no solo texto. Si
+    el manejador de errores construye el repuesto con esa misma fuente
+    cruda, Pydantic la rechaza dentro del propio `except` y esa segunda
+    excepción escapa sin que nadie la capture: el mecanismo que existe para
+    que nada tumbe la comprobación la tumbaría él.
+    """
+    raiz = tmp_path / "repo"
+    carpeta = raiz / "criteria" / "v2026-2027"
+    carpeta.mkdir(parents=True)
+    (carpeta / "formato.yaml").write_text(
+        "extension:\n"
+        "  minimo_paginas_contenido: 4\n"
+        "  fuente: maestro#6-estandar-academico\n"
+        "\n"
+        "tipografia:\n"
+        "  familia: Helvetica\n"
+        "  cuerpo: 11\n"
+        "  fuente: {seccion: maestro, ancla: 6-estandar-academico}\n",
+        encoding="utf-8",
+    )
+
+    resultado = comprobar(raiz, "v2026-2027", medir(pdf_con_indice))
+
+    assert _de(resultado, "extension").veredicto == CUMPLE
+    comprobacion = _de(resultado, "tipografia")
+    assert comprobacion.veredicto == NO_VERIFICABLE
+
+
+def test_fallo_interno_no_acusa_al_fichero_de_criterios(
+    criterios_de_formato: Path, pdf_con_indice: Path
+) -> None:
+    """Importante: un fallo de medición, no del YAML, no debe afirmar que
+    el fichero está mal escrito. El mismo `try/except` envuelve las dos
+    causas posibles y no hay forma fiable de distinguirlas desde aquí, así
+    que el aviso ofrece las dos sin decidir cuál es -lo que no se sabe, no
+    se afirma-.
+    """
+    medidas = medir(pdf_con_indice)
+    medidas.texto.cuerpo_dominante = None  # el comprobador espera un número
+
+    resultado = comprobar(criterios_de_formato, "v2026-2027", medidas)
+
+    comprobacion = _de(resultado, "tipografia")
+    assert comprobacion.veredicto == NO_VERIFICABLE
+    assert "TypeError" in comprobacion.nota
+    assert "está mal escrito" not in comprobacion.nota
+    # ofrece las dos posibilidades sin decidir cuál es
+    assert "formato.yaml" in comprobacion.nota
+    assert "programa" in comprobacion.nota
+    # el resto del fichero no se ve afectado
+    assert _de(resultado, "extension").veredicto == CUMPLE

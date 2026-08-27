@@ -72,6 +72,25 @@ def _normalizar(texto: str) -> str:
     return sin_tildes.strip().lower()
 
 
+def _texto(valor: object) -> str:
+    """Convierte cualquier valor a texto sin que la conversión pueda fallar.
+
+    El nombre y la `fuente` de un bloque de criterios llegan tal cual los
+    escribió quien editó el YAML a mano: no tienen por qué ser una cadena
+    -`fuente` podría ser un diccionario, una lista, un número-. Se usan aquí
+    para construir la `Comprobacion` de repuesto cuando algo ya ha fallado,
+    así que no pueden volver a fallar por el mismo motivo: si un campo
+    crudo del bloque se pasa sin convertir a un `Comprobacion(...)` de
+    repuesto, Pydantic lo rechaza y esa segunda excepción escapa sin que
+    nadie la capture. Cualquier valor que en el futuro se tome directamente
+    de un bloque para un mensaje de repuesto debe pasar por aquí primero.
+    """
+    try:
+        return str(valor)
+    except Exception:
+        return "<valor no representable>"
+
+
 def _extension(bloque: dict, medidas: Medidas) -> Comprobacion:
     minimo = bloque["minimo_paginas_contenido"]
     contadas = medidas.estructura.paginas_de_contenido
@@ -348,14 +367,15 @@ def comprobar(raiz: Path, version: str, medidas: Medidas) -> list[Comprobacion]:
 
         comprobador = COMPROBADORES.get(nombre)
         if comprobador is None:
+            nombre_txt = _texto(nombre)
             resultado.append(Comprobacion(
-                criterio=nombre,
+                criterio=nombre_txt,
                 veredicto=NO_VERIFICABLE,
                 esperado="una comprobación programada para este criterio",
                 medido="el criterio está declarado en el fichero pero el "
                        "sistema todavía no sabe comprobarlo",
-                fuente=fuente,
-                nota=f"«{nombre}» no coincide con ningún comprobador "
+                fuente=_texto(fuente),
+                nota=f"«{nombre_txt}» no coincide con ningún comprobador "
                      f"conocido en criteria/{version}/formato.yaml. Si es "
                      "una errata en el nombre, corrígela; si es un criterio "
                      "nuevo, falta programar su comprobación.",
@@ -364,16 +384,25 @@ def comprobar(raiz: Path, version: str, medidas: Medidas) -> list[Comprobacion]:
 
         try:
             resultado.append(comprobador(bloque, medidas))
-        except Exception as error:  # noqa: BLE001 - un bloque mal escrito no debe tumbar los demás
+        except Exception as error:  # noqa: BLE001 - un bloque mal escrito, o un fallo interno, no debe tumbar los demás
+            # No se sabe si el fallo viene de un bloque mal escrito o de un
+            # error del programa al operar sobre lo medido: el mismo
+            # try/except envuelve las dos cosas y no hay forma fiable de
+            # distinguirlas desde aquí. Se ofrecen las dos posibilidades sin
+            # afirmar cuál es -lo que no se sabe, no se afirma-, igual que
+            # con cualquier otro juicio de este módulo.
+            nombre_txt = _texto(nombre)
             resultado.append(Comprobacion(
-                criterio=nombre,
+                criterio=nombre_txt,
                 veredicto=NO_VERIFICABLE,
-                esperado="un criterio bien formado en el fichero",
+                esperado="un criterio comprobable",
                 medido="no se ha podido comprobar",
-                fuente=fuente,
-                nota=f"El criterio «{nombre}» está mal escrito en "
-                     f"criteria/{version}/formato.yaml y no se ha podido "
-                     f"comprobar ({type(error).__name__}: {error}). El resto "
-                     "de criterios sí se ha comprobado.",
+                fuente=_texto(fuente),
+                nota=f"No se ha podido comprobar el criterio «{nombre_txt}» "
+                     f"({type(error).__name__}: {error}). Puede deberse a un "
+                     f"error en criteria/{version}/formato.yaml -sobre todo "
+                     "si se acaba de editar- o a un fallo del programa; con "
+                     "lo que se sabe aquí no se puede distinguir cuál de las "
+                     "dos es. El resto de criterios sí se ha comprobado.",
             ))
     return resultado
