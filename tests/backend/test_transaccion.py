@@ -436,3 +436,96 @@ def test_una_lista_en_una_sola_linea_no_se_guarda(repo: Path):
     assert extra.read_text(encoding="utf-8") == contenido_original
     assert contenido_de(repo) == antes
     assert commits_de(repo) == commits
+
+
+# --- Fix round 4: la sustitución pasa a hacerse sobre el árbol del YAML --
+
+
+def test_una_clave_repetida_mas_adentro_no_se_confunde_con_la_del_criterio(repo: Path):
+    """Una clave del mismo nombre anidada dentro del bloque no es la del criterio.
+
+    Es el quinto agujero de la misma familia, y el que cerró el cambio de
+    mecanismo. Con una expresión regular acotada al bloque, pedir cambiar
+    'extension_extra.fuente' reescribía la 'fuente' de 'notas' -anidada más
+    adentro, pero antes en el texto-, dejaba intacta la de verdad y respondía
+    'exito=True'. Un patrón de línea sabe encontrar 'fuente:' en un texto,
+    pero no distingue una clave propia del criterio de otra con el mismo
+    nombre en su subárbol: eso es estructura, no texto.
+    """
+    extra = repo / "criteria" / "v2026-2027" / "extra.yaml"
+    contenido_original = (
+        "extension_extra:\n"
+        "  notas:\n"
+        "    fuente: nota interna del docente, sin valor normativo\n"
+        "  fuente: maestro#6-estandar-academico\n"
+    )
+    extra.write_text(contenido_original, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "criterio con clave repetida dentro"],
+                   cwd=repo, check=True)
+
+    resultado = _guardar_valido(repo, cambios=[CambioDeValor(
+        fichero="criteria/v2026-2027/extra.yaml",
+        identificador="extension_extra",
+        clave="fuente",
+        valor_nuevo="maestro#8-dimensiones",
+    )])
+    assert resultado.exito, resultado.mensaje
+
+    texto = extra.read_text(encoding="utf-8")
+    # La anidada, intacta.
+    assert "    fuente: nota interna del docente, sin valor normativo\n" in texto
+    # La del criterio, cambiada.
+    assert "  fuente: maestro#8-dimensiones\n" in texto
+    # Y nada más ha cambiado en el fichero.
+    assert texto == contenido_original.replace(
+        "  fuente: maestro#6-estandar-academico",
+        "  fuente: maestro#8-dimensiones",
+    )
+
+
+def test_los_comentarios_del_fichero_de_criterios_sobreviven_al_guardado(repo: Path):
+    """Los comentarios de 'criteria/' son normativos y no se pueden perder.
+
+    Las cabeceras del tipo «NO EDITAR sin cambiar antes la prosa» y las notas
+    que explican de dónde sale cada valor forman parte de la gobernanza:
+    guardar un cambio no puede borrarlas. Se comprueba además que el fichero
+    queda igual salvo el valor pedido, líneas en blanco y sangría incluidas.
+    """
+    extra = repo / "criteria" / "v2026-2027" / "extra.yaml"
+    contenido_original = (
+        "# Requisitos extra de formato. Derivado de docs/maestro/.\n"
+        "# NO EDITAR sin cambiar antes la prosa. Ver GOVERNANCE.md.\n"
+        "\n"
+        "extension_extra:\n"
+        "  # El minimo sale del apartado 4.2 de la programacion didactica.\n"
+        "  minimo_paginas_contenido: 20  # sin portada, indice ni anexos\n"
+        "\n"
+        "  fuente: maestro#6-estandar-academico\n"
+    )
+    extra.write_text(contenido_original, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "criterio con comentarios normativos"],
+                   cwd=repo, check=True)
+
+    resultado = _guardar_valido(repo, cambios=[CambioDeValor(
+        fichero="criteria/v2026-2027/extra.yaml",
+        identificador="extension_extra",
+        clave="minimo_paginas_contenido",
+        valor_nuevo="25",
+    )])
+    assert resultado.exito, resultado.mensaje
+
+    texto = extra.read_text(encoding="utf-8")
+    for comentario in (
+        "# Requisitos extra de formato. Derivado de docs/maestro/.",
+        "# NO EDITAR sin cambiar antes la prosa. Ver GOVERNANCE.md.",
+        "  # El minimo sale del apartado 4.2 de la programacion didactica.",
+        "# sin portada, indice ni anexos",
+    ):
+        assert comentario in texto, f"se ha perdido el comentario: {comentario}"
+
+    assert texto == contenido_original.replace(
+        "minimo_paginas_contenido: 20",
+        "minimo_paginas_contenido: 25",
+    )
