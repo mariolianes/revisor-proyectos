@@ -1,4 +1,10 @@
+import { useState } from "react"
+
+import { Documentos } from "./paginas/Documentos"
+
 function App() {
+  const [seccionElegida, setSeccionElegida] = useState<string | null>(null)
+
   return (
     <main className="min-h-screen bg-papel px-8 py-12">
       <header className="regla-fina pb-4 mb-8">
@@ -6,14 +12,12 @@ function App() {
           Editor de criterios
         </h1>
       </header>
-      <div className="prosa">
-        <h2>Andamiaje</h2>
-        <p>
-          Este es el punto de partida del frontend. Las pantallas de
-          navegación, lectura y propuesta se construyen sobre este
-          andamiaje.
+      <Documentos alElegirSeccion={setSeccionElegida} />
+      {seccionElegida && (
+        <p className="mt-8 font-mono text-[11px] text-gris">
+          Sección elegida: {seccionElegida}
         </p>
-      </div>
+      )}
     </main>
   )
 }
