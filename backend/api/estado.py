@@ -28,7 +28,11 @@ REGLAS = [
      "No vigila nada hasta que alguien congela una versión."),
     ("R5", "Un fichero por cambio",
      "Tocar criterios o prosa exige documentar el cambio.",
-     "Exige que exista el documento, no que su contenido sea cierto."),
+     "Exige que exista el documento, no que su contenido sea cierto. Además, "
+     "en esta pantalla no comprueba si un cambio se hizo sin documentar: "
+     "esa mitad de la regla solo se ejecuta sobre lo que hay en staging, y "
+     "aquí no hay nada en staging que mirar. Quien lo detecta es el gancho "
+     "de commit, en el momento de guardar."),
     ("R6", "Nada personal en el repositorio",
      "Ni entregas, ni nombres, ni datos identificativos.",
      "Es un cedazo: reconoce formatos habituales, no todos."),
