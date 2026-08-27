@@ -21,6 +21,7 @@ export function Editor({ ancla, alVolver }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    setError(null)
     api.seccion(ancla).then(({ seccion, criterios }) => {
       setSeccion(seccion)
       setCriterios(criterios)
@@ -28,12 +29,21 @@ export function Editor({ ancla, alVolver }: Props) {
     }).catch((e: Error) => setError(e.message))
   }, [ancla])
 
-  if (error) return <p className="text-tinta">{error}</p>
-  if (!seccion) return <p className="text-gris">Cargando…</p>
+  // Este retorno anticipado a pantalla completa es solo para cuando la
+  // sección nunca llegó a cargarse: ahí no hay texto ni enlace que
+  // proteger. Un fallo posterior (al proponer o al guardar) NO pasa por
+  // aquí — se enseña dentro de la pantalla, para no borrar lo que el
+  // profesor lleva escrito. Ver guardar() y abrirDialogo() más abajo.
+  if (!seccion) {
+    return error
+      ? <p className="text-tinta">{error}</p>
+      : <p className="text-gris">Cargando…</p>
+  }
 
   const sinCambios = texto === seccion.texto
 
   const abrirDialogo = async () => {
+    setError(null)
     try {
       setPropuestas(await api.propuesta(ancla, texto))
     } catch (e) {
@@ -46,6 +56,7 @@ export function Editor({ ancla, alVolver }: Props) {
     motivo: string
     fuente: string
   }) => {
+    setError(null)
     try {
       const respuesta = await api.guardar({
         ancla,
@@ -102,6 +113,10 @@ export function Editor({ ancla, alVolver }: Props) {
             )}
           </div>
 
+          {error && (
+            <p className="mt-4 text-[13px] text-tinta">{error}</p>
+          )}
+
           {resultado && (
             <div className="mt-6 border-t border-grisclaro pt-4">
               <p className="text-[13px]">{resultado.mensaje}</p>
@@ -114,7 +129,7 @@ export function Editor({ ancla, alVolver }: Props) {
                 <ul className="mt-3 space-y-2">
                   {resultado.infracciones.map((i, indice) => (
                     <li key={indice} className="text-[12px]">
-                      <span className="font-mono senal">[{i.regla}]</span>{" "}
+                      <span className="font-mono text-tinta">[{i.regla}]</span>{" "}
                       <span className="font-mono text-gris">{i.fichero}</span>
                       <p className="text-gris mt-1">{i.detalle}</p>
                     </li>
