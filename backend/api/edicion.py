@@ -19,6 +19,12 @@ class PeticionGuardar(BaseModel):
     hash_esperado: str
 
 
+# La función es síncrona a propósito: el guardado ejecuta git y escribe en el
+# disco durante segundos, y como 'def' Starlette lo hace en un hilo del pool,
+# de modo que el resto de la aplicación sigue respondiendo. Eso significa que
+# dos peticiones pueden solaparse de verdad; quien lo impide es el cerrojo de
+# 'guardar', que está en la transacción y no aquí para que ningún camino que
+# escriba pueda saltárselo.
 @router.post("/guardar")
 def guardar_cambio(cuerpo: PeticionGuardar, peticion: Request) -> Resultado:
     raiz: Path = peticion.app.state.raiz
