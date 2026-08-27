@@ -61,3 +61,19 @@ class MedidasDeEstructura(BaseModel):
     entradas_de_indice: list[EntradaDeIndice] = []
     titulos_no_encontrados: list[str] = []
     paginas_declaradas_incorrectas: list[str] = []
+
+
+class Imagen(BaseModel):
+    """Una imagen colocada en una página.
+
+    `dpi_efectivo` es la resolución a la que se imprime de verdad: los
+    píxeles que tiene repartidos entre el tamaño que ocupa. Es lo que
+    delata una captura de pantalla estirada, que en el archivo parece
+    correcta y en el papel se ve borrosa.
+    """
+
+    pagina: int
+    ancho_px: int
+    alto_px: int
+    dpi_efectivo: float
+    proporcion_de_pagina: float

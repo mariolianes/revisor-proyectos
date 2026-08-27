@@ -247,3 +247,27 @@ def pdf_con_indice(tmp_path: Path) -> Path:
             ["ANEXOS", "Anexo I. Codigo fuente."],
         ],
     )
+
+
+@pytest.fixture
+def pdf_con_imagenes(tmp_path: Path) -> Path:
+    """Dos imágenes: una nítida y otra de 40x30 px estirada a 200x150 pt.
+
+    La segunda queda a 14,4 ppp efectivos: es la captura de pantalla
+    ampliada que se ve borrosa impresa.
+    """
+    documento = pymupdf.open()
+    pagina = documento.new_page()
+
+    nitida = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 600, 450), False)
+    nitida.set_rect(nitida.irect, (30, 60, 120))
+    pagina.insert_image(pymupdf.Rect(72, 72, 272, 222), pixmap=nitida)
+
+    borrosa = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 30), False)
+    borrosa.set_rect(borrosa.irect, (200, 120, 60))
+    pagina.insert_image(pymupdf.Rect(72, 300, 272, 450), pixmap=borrosa)
+
+    ruta = tmp_path / "con-imagenes.pdf"
+    documento.save(ruta)
+    documento.close()
+    return ruta
