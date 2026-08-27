@@ -70,6 +70,11 @@ class Imagen(BaseModel):
     píxeles que tiene repartidos entre el tamaño que ocupa. Es lo que
     delata una captura de pantalla estirada, que en el archivo parece
     correcta y en el papel se ve borrosa.
+
+    `proporcion_de_pagina` no está acotada a 1: no es un porcentaje que no
+    pueda pasar del 100 %, es el área del rectángulo de colocación dividida
+    entre el área de la página. Una imagen puesta más grande que la propia
+    página da un valor mayor que 1, y es geométricamente correcto que lo dé.
     """
 
     pagina: int

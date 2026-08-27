@@ -4,6 +4,7 @@ Se construyen aquí y viven en tmp_path. Ninguna prueba de este proyecto
 toca una entrega real de un alumno, y ningún PDF entra en el repositorio.
 """
 
+import re
 from pathlib import Path
 
 import pymupdf
@@ -268,6 +269,85 @@ def pdf_con_imagenes(tmp_path: Path) -> Path:
     pagina.insert_image(pymupdf.Rect(72, 300, 272, 450), pixmap=borrosa)
 
     ruta = tmp_path / "con-imagenes.pdf"
+    documento.save(ruta)
+    documento.close()
+    return ruta
+
+
+@pytest.fixture
+def pdf_con_imagen_en_pagina_girada(tmp_path: Path) -> Path:
+    """Una imagen de 300x60 px en un rectángulo nativo de 60x300 pt, en una
+    página girada 90°.
+
+    `get_image_rects` da ese rectángulo en coordenadas anteriores a
+    `/Rotate`: en la página impresa el ancho y el alto quedan
+    intercambiados. Es una imagen nítida -se imprime a 72 ppp- que sin
+    deshacer ese cruce se confundiría con una captura de pantalla estirada.
+    """
+    documento = pymupdf.open()
+    pagina = documento.new_page()
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 300, 60), False)
+    pixmap.set_rect(pixmap.irect, (10, 20, 30))
+    pagina.insert_image(
+        pymupdf.Rect(72, 72, 132, 372),  # 60 x 300 pt, en coordenadas nativas
+        pixmap=pixmap,
+        keep_proportion=False,
+    )
+    pagina.set_rotation(90)
+    ruta = tmp_path / "girada.pdf"
+    documento.save(ruta)
+    documento.close()
+    return ruta
+
+
+@pytest.fixture
+def pdf_con_imagen_estirada_de_forma_asimetrica(tmp_path: Path) -> Path:
+    """Una imagen de 400x100 px en un rectángulo de 100x100 pt, sin
+    conservar la proporción.
+
+    Da 288 ppp en horizontal y 72 en vertical: el caso de arrastrar solo una
+    esquina de la imagen. `insert_image` conserva la proporción por
+    defecto, así que una imagen normal siempre da el mismo dpi en los dos
+    ejes y no sirve para distinguir `min` de `max`; esta sí.
+    """
+    documento = pymupdf.open()
+    pagina = documento.new_page()
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 400, 100), False)
+    pixmap.set_rect(pixmap.irect, (200, 50, 10))
+    pagina.insert_image(
+        pymupdf.Rect(72, 72, 172, 172),  # 100 x 100 pt
+        pixmap=pixmap,
+        keep_proportion=False,
+    )
+    ruta = tmp_path / "estirada-asimetrica.pdf"
+    documento.save(ruta)
+    documento.close()
+    return ruta
+
+
+@pytest.fixture
+def pdf_con_imagen_sin_colocacion(tmp_path: Path) -> Path:
+    """Una imagen en el catálogo de recursos de la página, sin ningún
+    operador en el contenido que la coloque.
+
+    Se inserta una imagen normal y luego se retira a mano, del flujo de
+    contenido, el operador `Do` que la dibuja -dejando intacta la entrada
+    del recurso XObject-. Es lo que dejan algunos exportadores descuidados
+    o una capa oculta: `get_image_rects` no devuelve ningún rectángulo para
+    ese recurso.
+    """
+    documento = pymupdf.open()
+    pagina = documento.new_page()
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 50, 50), False)
+    pixmap.set_rect(pixmap.irect, (10, 10, 10))
+    pagina.insert_image(pymupdf.Rect(72, 72, 122, 122), pixmap=pixmap)
+
+    xref_contenido = pagina.get_contents()[0]
+    contenido = documento.xref_stream(xref_contenido)
+    contenido_sin_colocacion = re.sub(rb"/\S+\s+Do\s*\n?", b"", contenido)
+    documento.update_stream(xref_contenido, contenido_sin_colocacion)
+
+    ruta = tmp_path / "sin-colocacion.pdf"
     documento.save(ruta)
     documento.close()
     return ruta
