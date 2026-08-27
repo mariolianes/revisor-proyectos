@@ -10,8 +10,14 @@ from fastapi import FastAPI
 
 def crear_app(raiz: Path) -> FastAPI:
     """Crea la aplicación atada a una raíz de repositorio concreta."""
+    from backend.api import documentos, edicion, estado
+
     app = FastAPI(title="Editor de criterios", docs_url=None, redoc_url=None)
     app.state.raiz = raiz
+
+    app.include_router(documentos.router)
+    app.include_router(edicion.router)
+    app.include_router(estado.router)
 
     @app.get("/api/salud")
     def salud() -> dict[str, str]:
