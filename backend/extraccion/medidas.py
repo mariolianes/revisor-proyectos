@@ -82,3 +82,23 @@ class Imagen(BaseModel):
     alto_px: int
     dpi_efectivo: float
     proporcion_de_pagina: float
+
+
+class Medidas(BaseModel):
+    """Todo lo medido sobre un archivo, sin valorar nada.
+
+    `texto_plano` vive aquí porque lo necesita la comparación evolutiva,
+    pero NO se guarda en Supabase: la decisión D-001 excluye el texto del
+    trabajo de la base de datos. Se usa y se descarta.
+    """
+
+    nombre_archivo: str
+    huella: str
+    paginas: list[Pagina]
+    total_paginas: int
+    paginas_en_blanco: list[int]
+    escaneado: bool
+    texto: MedidasDeTexto
+    estructura: MedidasDeEstructura
+    imagenes: list[Imagen]
+    texto_plano: str
