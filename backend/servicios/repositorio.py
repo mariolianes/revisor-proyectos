@@ -54,6 +54,10 @@ def _trocear(texto: str) -> list[tuple[str, str, str]]:
 
 def listar_documentos(raiz: Path) -> list[Documento]:
     """Los documentos presentes, con sus secciones en el orden del fichero."""
+    # Import diferido a propósito: si fuera de cabecera, este módulo y
+    # dependencias.py se acoplarían al cargar. dependencias.py no debe
+    # importar repositorio.py a nivel de módulo; así se queda esa relación
+    # en un solo sentido.
     from backend.servicios.dependencias import contar_por_ancla
 
     conteo = contar_por_ancla(raiz)
