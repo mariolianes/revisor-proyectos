@@ -26,6 +26,17 @@ class Propuesta(BaseModel):
     valor_actual: str
     valor_propuesto: str | None
     motivo: str
+    # El valor sigue estando, palabra por palabra, en el texto nuevo: la
+    # prosa que lo respalda no lo ha tocado, así que no hay nada que
+    # decidir. Llega al diálogo ya marcado como revisado sin cambio, y el
+    # docente puede desmarcarlo si no está de acuerdo.
+    #
+    # Esto no relaja ninguna regla: sigue haciendo falta que él confirme el
+    # guardado, y la decisión se registra en el documento de cambio igual
+    # que si la hubiera marcado a mano. Lo que evita es pedirle treinta y
+    # seis decisiones cuando solo dos han cambiado de verdad, que es el
+    # precio que empujaba a rodear el procedimiento en vez de seguirlo.
+    revisado_sin_cambio: bool = False
 
 
 def _es_numero(valor: str) -> bool:
@@ -118,7 +129,8 @@ def proponer(raiz: Path, ancla: str, texto_nuevo: str) -> list[Propuesta]:
 
 def _evaluar(criterio, clave: str, valor: str, texto_viejo: str, texto_nuevo: str) -> Propuesta:
     """Decide qué proponer para un valor concreto, o por qué no proponer nada."""
-    def resultado(propuesto: str | None, motivo: str) -> Propuesta:
+    def resultado(propuesto: str | None, motivo: str,
+                  revisado_sin_cambio: bool = False) -> Propuesta:
         return Propuesta(
             fichero=criterio.fichero,
             identificador=criterio.identificador,
@@ -126,11 +138,34 @@ def _evaluar(criterio, clave: str, valor: str, texto_viejo: str, texto_nuevo: st
             valor_actual=valor,
             valor_propuesto=propuesto,
             motivo=motivo,
+            revisado_sin_cambio=revisado_sin_cambio,
         )
 
-    # Primero, si el valor ni siquiera aparece literalmente una vez en el
-    # texto anterior: da igual que sea o no un número, no hay nada de lo que
-    # partir. Comprobarlo antes que la numericidad importa para los valores
+    # Lo primero de todo: si el valor estaba literalmente en el texto viejo y
+    # sigue estando literalmente en el nuevo, no hay nada que decidir. La
+    # prosa que respalda ese valor no lo ha tocado, así que se da por
+    # revisado sin cambio y el docente no tiene que pronunciarse.
+    #
+    # El criterio es que el VALOR siga presente, no que el texto entero sea
+    # idéntico: cambiar una frase de la sección no obliga a redecidir el
+    # cuerpo de letra si el cuerpo de letra sigue diciendo lo mismo.
+    #
+    # Y hace falta que estuviera antes: un valor que no aparece literalmente
+    # ni en el texto viejo ni en el nuevo -que es lo que pasa con casi todo
+    # lo que no es un número- NO es "no ha cambiado", es que no se puede
+    # saber. Eso se pregunta, y por eso esta comprobación exige las dos
+    # apariciones y no solo la del texto nuevo.
+    if _apariciones(valor, texto_viejo) >= 1 and _apariciones(valor, texto_nuevo) >= 1:
+        return resultado(None, (
+            "El valor sigue apareciendo igual en el texto nuevo, así que la "
+            "prosa que lo respalda no lo ha tocado. Lo doy por revisado sin "
+            "cambio; desmárcalo si no estás de acuerdo."
+        ), revisado_sin_cambio=True)
+
+    # A partir de aquí el valor ya no está en el texto nuevo. Si además ni
+    # siquiera aparecía literalmente una vez en el texto anterior, da igual
+    # que sea o no un número: no hay nada de lo que partir. Comprobar esto
+    # antes que la numericidad importa para los valores
     # que no son números (listas, texto libre): también ellos deben salir
     # con "no aparece literalmente" cuando ese es el motivo real, no con un
     # "no es un número" que oculta el motivo verdadero.
@@ -145,12 +180,6 @@ def _evaluar(criterio, clave: str, valor: str, texto_viejo: str, texto_nuevo: st
             "Este valor no es un número, así que su relación con el texto no es "
             "literal. Revisa a mano si el cambio le afecta."
         ))
-
-    # "Sigue apareciendo" cubre tanto el caso normal (una vez) como el caso
-    # en que ahora aparece dos o más veces: en ambos, el valor sigue en el
-    # texto, así que no ha "desaparecido" y no hay que proponer nada.
-    if _apariciones(valor, texto_nuevo) >= 1:
-        return resultado(None, "El valor sigue apareciendo igual en el texto nuevo.")
 
     # El localizador por contexto es la única vía para proponer: es lo que
     # da derecho a decir "en el mismo sitio". Si no encuentra un candidato

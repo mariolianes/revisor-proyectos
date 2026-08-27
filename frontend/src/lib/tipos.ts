@@ -27,6 +27,12 @@ export interface Propuesta {
   valor_actual: string
   valor_propuesto: string | null
   motivo: string
+  /**
+   * El valor sigue apareciendo, palabra por palabra, en el texto nuevo: la
+   * prosa que lo respalda no lo ha tocado, así que llega al diálogo ya
+   * marcado como revisado sin cambio. El docente puede desmarcarlo.
+   */
+  revisado_sin_cambio?: boolean
 }
 
 export interface CambioDeValor {

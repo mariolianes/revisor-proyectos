@@ -123,3 +123,77 @@ def test_dos_criterios_numericos_cambian_a_la_vez_cada_uno_su_propuesta(repo: Pa
     cuerpo = next(p for p in propuestas if p.clave == "cuerpo")
     assert extension.valor_propuesto == "25"
     assert cuerpo.valor_propuesto == "12"
+
+
+# --- Fix round 6: no se pide decision sobre lo que no ha cambiado ---
+
+
+def test_un_valor_que_sigue_en_el_texto_llega_ya_revisado_sin_cambio(repo: Path):
+    """Corregir una errata en la sección no obliga a redecidir lo demás.
+
+    El cuerpo de letra sigue diciendo 11 en el texto nuevo: la prosa que lo
+    respalda no lo ha tocado, así que no hay nada que decidir sobre él y
+    llega al diálogo ya marcado. El docente puede desmarcarlo si no está de
+    acuerdo, pero no tiene que tocarlo.
+    """
+    texto = (
+        "## 6. Estándar académico\n\n"
+        "El contenido principal tendrá un mínimo de 25 páginas, excluidas portada,\n"
+        "índice y anexos. La tipografía será Arial 11.\n"
+    )
+    propuestas = proponer(repo, "maestro#6-estandar-academico", texto)
+    cuerpo = next(p for p in propuestas if p.clave == "cuerpo")
+    assert cuerpo.revisado_sin_cambio
+    assert "sigue apareciendo igual" in cuerpo.motivo
+
+    # Lo que sí ha cambiado se sigue preguntando: se propone, no se marca.
+    extension = next(p for p in propuestas if p.clave == "minimo_paginas_contenido")
+    assert not extension.revisado_sin_cambio
+    assert extension.valor_propuesto == "25"
+
+
+def test_un_valor_que_no_es_numero_pero_sigue_en_el_texto_tambien_llega_marcado(
+    repo: Path,
+):
+    """La marca no es cosa de números: es que el valor siga estando.
+
+    «Arial» no es un número y nunca se podrá proponer un sustituto para él,
+    pero sigue escrito palabra por palabra en el texto nuevo. Preguntar por
+    él era el grueso de las treinta y seis decisiones del §8.
+    """
+    texto = (
+        "## 6. Estándar académico\n\n"
+        "El contenido principal tendrá un mínimo de 25 páginas.\n"
+        "La tipografía será Arial 11.\n"
+    )
+    propuestas = proponer(repo, "maestro#6-estandar-academico", texto)
+    familia = next(p for p in propuestas if p.clave == "familia")
+    assert familia.valor_actual == "Arial"
+    assert familia.revisado_sin_cambio
+
+
+def test_un_valor_que_no_aparece_literalmente_nunca_llega_marcado(repo: Path):
+    """Que no se pueda comprobar no es que no haya cambiado.
+
+    'activa_en' vale una lista que no está escrita literalmente en la prosa,
+    ni antes ni después. Darlo por «no ha cambiado» sería declarar revisado
+    algo que nadie ha mirado, que es justo lo que R1 impide. Se pregunta.
+    """
+    texto = "## 8. Dimensiones de evaluación\n\nTrece dimensiones, con peso variable.\n"
+    propuestas = proponer(repo, "maestro#8-dimensiones", texto)
+    activa = next(p for p in propuestas if p.clave == "activa_en")
+    assert not activa.revisado_sin_cambio
+    assert "no aparece literalmente" in activa.motivo
+
+
+def test_un_valor_que_desaparece_del_texto_no_llega_marcado(repo: Path):
+    """Si el valor ya no está, hay algo que decidir."""
+    texto = (
+        "## 6. Estándar académico\n\n"
+        "El contenido principal tendrá un mínimo de 25 páginas.\n"
+        "La tipografía será Times New Roman 12.\n"
+    )
+    propuestas = proponer(repo, "maestro#6-estandar-academico", texto)
+    for clave in ("familia", "cuerpo"):
+        propuesta = next(p for p in propuestas if p.clave == clave)
+        assert not propuesta.revisado_sin_cambio, clave
