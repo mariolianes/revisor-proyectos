@@ -54,6 +54,9 @@ def _trocear(texto: str) -> list[tuple[str, str, str]]:
 
 def listar_documentos(raiz: Path) -> list[Documento]:
     """Los documentos presentes, con sus secciones en el orden del fichero."""
+    from backend.servicios.dependencias import contar_por_ancla
+
+    conteo = contar_por_ancla(raiz)
     documentos = []
     for clave, nombre in DOCUMENTOS.items():
         ruta = raiz / "docs" / "maestro" / nombre
@@ -66,6 +69,7 @@ def listar_documentos(raiz: Path) -> list[Documento]:
                 titulo=titulo,
                 texto=cuerpo,
                 hash=hash_de_seccion(raiz, ancla) or "",
+                criterios_que_la_citan=conteo.get(ancla, 0),
             )
             for ancla, titulo, cuerpo in _trocear(texto)
         ]

@@ -43,3 +43,10 @@ def test_ruta_de_documento_rechaza_una_clave_desconocida(repo: Path):
     assert ruta_de_documento(repo, "maestro") is not None
     assert ruta_de_documento(repo, "../../etc/passwd") is None
     assert ruta_de_documento(repo, "inventado") is None
+
+
+def test_cada_seccion_sabe_cuantos_criterios_la_citan(repo: Path):
+    secciones = {s.ancla: s for s in listar_documentos(repo)[0].secciones}
+    assert secciones["maestro#6-estandar-academico"].criterios_que_la_citan == 2
+    assert secciones["maestro#8-dimensiones"].criterios_que_la_citan == 1
+    assert secciones["maestro#19-privacidad"].criterios_que_la_citan == 0
