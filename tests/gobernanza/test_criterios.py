@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from tools.gobernanza.criterios import cargar_anclas, entradas_de, verificar_r1
+from tools.gobernanza.criterios import (
+    bloques_raiz,
+    cargar_anclas,
+    entradas_de,
+    verificar_r1,
+)
 
 
 @pytest.fixture
@@ -121,6 +126,64 @@ def test_r1_rechaza_una_fuente_con_formato_invalido(repo: Path):
     infracciones = verificar_r1(repo)
     assert len(infracciones) == 1
     assert "formato" in infracciones[0].detalle
+
+
+def test_r1_rechaza_un_bloque_sin_fuente_en_un_fichero_con_forma_de_mapa(repo: Path):
+    # Reproduce el hueco que demostro el revisor: en un fichero de mapa, un
+    # bloque sin 'fuente' era invisible para R1, porque 'entradas_de' decide
+    # que algo es un criterio por la presencia de 'fuente' o 'codigo'.
+    (repo / "criteria" / "v2026-2027" / "formato.yaml").write_text(
+        "tipografia:\n"
+        "  familia: Arial\n"
+        "  fuente: maestro#8-dimensiones\n"
+        "citas:\n"
+        "  estilo: APA\n",
+        encoding="utf-8",
+    )
+    infracciones = verificar_r1(repo)
+    assert len(infracciones) == 1
+    assert infracciones[0].regla == "R1"
+    assert "citas" in infracciones[0].detalle
+    assert "'fuente'" in infracciones[0].detalle
+
+
+def test_r1_rechaza_un_fichero_entero_sin_ninguna_fuente(repo: Path):
+    (repo / "criteria" / "v2026-2027" / "rubrica.yaml").write_text(
+        "estado: PENDIENTE_OFICIAL\n"
+        "niveles:\n"
+        "  - Solido\n"
+        "  - Adecuado\n",
+        encoding="utf-8",
+    )
+    infracciones = verificar_r1(repo)
+    assert infracciones
+    assert {i.regla for i in infracciones} == {"R1"}
+    detalles = " ".join(i.detalle for i in infracciones)
+    assert "estado" in detalles
+    assert "niveles" in detalles
+
+
+def test_r1_no_avisa_dos_veces_del_mismo_bloque_de_una_lista(repo: Path):
+    # Una entrada de lista sin 'fuente' ya la detecta el recorrido de
+    # entradas: el invariante de primer nivel no debe duplicar el aviso.
+    (repo / "criteria" / "v2026-2027" / "dimensiones.yaml").write_text(
+        "- codigo: D05\n"
+        "  nombre: Fundamentacion y fuentes\n",
+        encoding="utf-8",
+    )
+    assert len(verificar_r1(repo)) == 1
+
+
+def test_bloques_raiz_nombra_los_hijos_de_una_lista_y_de_un_mapa(tmp_path: Path):
+    lista = tmp_path / "l.yaml"
+    lista.write_text("- codigo: D01\n- nombre: sin codigo\n", encoding="utf-8")
+    assert [nombre for nombre, _ in bloques_raiz(lista)] == ["D01", "elemento 2"]
+
+    mapa = tmp_path / "m.yaml"
+    mapa.write_text(
+        "extension:\n  minimo: 20\ncitas:\n  estilo: APA\n", encoding="utf-8"
+    )
+    assert [nombre for nombre, _ in bloques_raiz(mapa)] == ["extension", "citas"]
 
 
 def test_r1_pasa_sobre_los_criterios_reales_del_repositorio():
