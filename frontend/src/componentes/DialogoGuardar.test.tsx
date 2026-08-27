@@ -59,4 +59,66 @@ describe("DialogoGuardar", () => {
     render(<DialogoGuardar propuestas={propuestas} alConfirmar={vi.fn()} alCancelar={vi.fn()} />)
     expect(screen.getByText(/revísalo a mano/i)).toBeInTheDocument()
   })
+
+  it("envia el valor que el profesor escribe en un criterio de revision manual", () => {
+    const alConfirmar = vi.fn()
+    render(<DialogoGuardar propuestas={propuestas} alConfirmar={alConfirmar} alCancelar={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText(/valor nuevo de tipografia\.familia/i), {
+      target: { value: "Times New Roman" },
+    })
+    fireEvent.change(screen.getByLabelText(/por qué/i), { target: { value: "motivo" } })
+    fireEvent.change(screen.getByLabelText(/fuente/i), { target: { value: "fuente" } })
+    fireEvent.click(screen.getByRole("button", { name: /^guardar$/i }))
+
+    expect(alConfirmar).toHaveBeenCalledWith({
+      cambios: [
+        {
+          fichero: "criteria/v2026-2027/formato.yaml",
+          identificador: "extension",
+          clave: "minimo_paginas_contenido",
+          valor_nuevo: "25",
+        },
+        {
+          fichero: "criteria/v2026-2027/formato.yaml",
+          identificador: "tipografia",
+          clave: "familia",
+          valor_nuevo: "Times New Roman",
+        },
+      ],
+      motivo: "motivo",
+      fuente: "fuente",
+    })
+  })
+
+  it("marcar «lo he revisado y no cambia» tambien es una decision", () => {
+    const alConfirmar = vi.fn()
+    render(<DialogoGuardar propuestas={propuestas} alConfirmar={alConfirmar} alCancelar={vi.fn()} />)
+
+    fireEvent.click(screen.getByLabelText(/sin cambio en tipografia\.familia/i))
+    fireEvent.change(screen.getByLabelText(/por qué/i), { target: { value: "motivo" } })
+    fireEvent.change(screen.getByLabelText(/fuente/i), { target: { value: "fuente" } })
+    fireEvent.click(screen.getByRole("button", { name: /^guardar$/i }))
+
+    const { cambios } = alConfirmar.mock.calls[0][0]
+    expect(cambios).toContainEqual({
+      fichero: "criteria/v2026-2027/formato.yaml",
+      identificador: "tipografia",
+      clave: "familia",
+      valor_nuevo: null,
+    })
+  })
+
+  it("mientras se guarda, el boton no admite un segundo clic", () => {
+    const alConfirmar = vi.fn()
+    render(
+      <DialogoGuardar propuestas={propuestas} enviando alConfirmar={alConfirmar}
+                      alCancelar={vi.fn()} />,
+    )
+    fireEvent.change(screen.getByLabelText(/por qué/i), { target: { value: "motivo" } })
+    fireEvent.change(screen.getByLabelText(/fuente/i), { target: { value: "fuente" } })
+
+    expect(screen.getByRole("button", { name: /guardando/i })).toBeDisabled()
+    expect(alConfirmar).not.toHaveBeenCalled()
+  })
 })

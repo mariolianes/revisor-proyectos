@@ -4,9 +4,19 @@ import { api } from "../lib/api"
 import type { Pendiente } from "../lib/tipos"
 
 export function Pendientes() {
-  const [pendientes, setPendientes] = useState<Pendiente[]>([])
+  const [pendientes, setPendientes] = useState<Pendiente[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { api.pendientes().then(setPendientes) }, [])
+  useEffect(() => {
+    api.pendientes().then(setPendientes).catch((e: Error) => setError(e.message))
+  }, [])
+
+  // Sin esto, un fallo al pedir la lista pintaba la cabecera -«lo que el
+  // sistema no sabe y no va a inventar»- encima de una lista vacía, y eso se
+  // lee como «no hay nada pendiente»: una afirmación falsa y confiada sobre
+  // lo único que esta pantalla existe para contar.
+  if (error) return <p className="text-tinta">{error}</p>
+  if (!pendientes) return <p className="text-gris">Cargando…</p>
 
   return (
     <div className="max-w-lectura">

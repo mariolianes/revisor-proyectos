@@ -1,13 +1,29 @@
 import { useState } from "react"
 
 import { formatearValor } from "../lib/formato"
-import type { CambioDeValor, Propuesta } from "../lib/tipos"
+import type { CambioDeValor, Propuesta, Resultado } from "../lib/tipos"
 
 interface Props {
   propuestas: Propuesta[]
+  /** Hay una petición de guardado en vuelo. */
+  enviando?: boolean
+  /** El resultado de un guardado que no salió: se enseña aquí dentro. */
+  resultado?: Resultado | null
+  /** Un fallo que no llegó ni a ser resultado, como quedarse sin servidor. */
+  error?: string | null
   alConfirmar: (datos: { cambios: CambioDeValor[]; motivo: string; fuente: string }) => void
   alCancelar: () => void
 }
+
+/** La decisión del docente sobre un criterio, mientras la está tomando. */
+interface Decision {
+  /** Lo que ha escrito como valor nuevo. Vacío: no ha escrito nada. */
+  valor: string
+  /** Ha declarado que ese criterio sigue siendo correcto tal como está. */
+  sigueIgual: boolean
+}
+
+const llaveDe = (propuesta: Propuesta) => `${propuesta.identificador}.${propuesta.clave}`
 
 /**
  * El paso que convierte una edición en un cambio registrado.
@@ -15,35 +31,121 @@ interface Props {
  * Motivo y fuente son obligatorios porque es lo que R5 exige y lo que
  * permitirá entender la decisión dentro de un año. No hay forma de
  * saltárselos: sin ellos el botón no se activa.
+ *
+ * Y cada criterio que deriva de la sección se decide aquí, uno por uno:
+ * escribiendo lo que pasa a valer, o declarando que sigue siendo correcto.
+ * Antes solo se podía aceptar o descartar lo que el editor había sabido
+ * inferir, y para todo lo demás -reescribir una dimensión, cambiar la
+ * tipografía, un peso que la prosa no deletrea- la única salida era editar
+ * el YAML a mano, que es el procedimiento de consola que esta pantalla vino
+ * a sustituir. Un criterio que se quede sin decidir deja su sección sin
+ * sellar, y R2 lo dirá al guardar.
  */
-export function DialogoGuardar({ propuestas, alConfirmar, alCancelar }: Props) {
+export function DialogoGuardar({
+  propuestas,
+  enviando = false,
+  resultado = null,
+  error = null,
+  alConfirmar,
+  alCancelar,
+}: Props) {
   const automaticas = propuestas.filter((p) => p.valor_propuesto !== null)
   const aMano = propuestas.filter((p) => p.valor_propuesto === null)
 
-  const [aceptadas, setAceptadas] = useState<Set<string>>(
-    new Set(automaticas.map((p) => `${p.identificador}.${p.clave}`)),
-  )
+  const [decisiones, setDecisiones] = useState<Record<string, Decision>>(() => {
+    const inicial: Record<string, Decision> = {}
+    for (const propuesta of propuestas) {
+      inicial[llaveDe(propuesta)] = {
+        // Lo que el editor ha sabido inferir viene escrito, para que aceptarlo
+        // sea no tocar nada. Sigue siendo suyo: puede corregirlo o borrarlo.
+        valor: propuesta.valor_propuesto ?? "",
+        sigueIgual: false,
+      }
+    }
+    return inicial
+  })
   const [motivo, setMotivo] = useState("")
   const [fuente, setFuente] = useState("")
 
-  const puedeGuardar = motivo.trim().length > 0 && fuente.trim().length > 0
+  const decisionDe = (propuesta: Propuesta): Decision =>
+    decisiones[llaveDe(propuesta)] ?? { valor: "", sigueIgual: false }
 
-  const alternar = (llave: string) => {
-    const siguiente = new Set(aceptadas)
-    siguiente.has(llave) ? siguiente.delete(llave) : siguiente.add(llave)
-    setAceptadas(siguiente)
+  const cambiar = (propuesta: Propuesta, parte: Partial<Decision>) => {
+    const llave = llaveDe(propuesta)
+    setDecisiones({ ...decisiones, [llave]: { ...decisionDe(propuesta), ...parte } })
   }
 
+  const sinDecidir = propuestas.filter((p) => {
+    const decision = decisionDe(p)
+    return !decision.sigueIgual && decision.valor.trim().length === 0
+  })
+
+  const puedeGuardar =
+    motivo.trim().length > 0 && fuente.trim().length > 0 && !enviando
+
   const confirmar = () => {
-    const cambios: CambioDeValor[] = automaticas
-      .filter((p) => aceptadas.has(`${p.identificador}.${p.clave}`))
-      .map((p) => ({
-        fichero: p.fichero,
-        identificador: p.identificador,
-        clave: p.clave,
-        valor_nuevo: p.valor_propuesto as string,
-      }))
+    const cambios: CambioDeValor[] = []
+    for (const propuesta of propuestas) {
+      const decision = decisionDe(propuesta)
+      if (decision.sigueIgual) {
+        cambios.push({
+          fichero: propuesta.fichero,
+          identificador: propuesta.identificador,
+          clave: propuesta.clave,
+          // Sin valor nuevo: el criterio no se toca, pero queda revisado.
+          valor_nuevo: null,
+        })
+      } else if (decision.valor.trim().length > 0) {
+        cambios.push({
+          fichero: propuesta.fichero,
+          identificador: propuesta.identificador,
+          clave: propuesta.clave,
+          valor_nuevo: decision.valor.trim(),
+        })
+      }
+    }
     alConfirmar({ cambios, motivo: motivo.trim(), fuente: fuente.trim() })
+  }
+
+  const filaDeCriterio = (propuesta: Propuesta) => {
+    const llave = llaveDe(propuesta)
+    const decision = decisionDe(propuesta)
+    return (
+      <li key={llave} className="border-b border-grisclaro py-4">
+        <p className="font-mono text-[12px]">
+          {llave}{" "}
+          <span className="text-gris">
+            ahora {formatearValor(propuesta.valor_actual)}
+          </span>
+        </p>
+        <p className="text-[12px] text-gris mt-1">{propuesta.motivo}</p>
+
+        <label className="block mt-3">
+          <span className="block text-[11px] uppercase tracking-[0.08em] text-gris mb-1">
+            Pasa a decir
+          </span>
+          <input
+            value={decision.valor}
+            disabled={decision.sigueIgual || enviando}
+            onChange={(e) => cambiar(propuesta, { valor: e.target.value })}
+            aria-label={`Valor nuevo de ${llave}`}
+            className="w-full border border-grisclaro bg-white p-2 font-mono
+                       text-[13px] disabled:bg-papel disabled:text-gris"
+          />
+        </label>
+
+        <label className="flex gap-2 items-center mt-2 text-[12px] text-gris">
+          <input
+            type="checkbox"
+            checked={decision.sigueIgual}
+            disabled={enviando}
+            onChange={(e) => cambiar(propuesta, { sigueIgual: e.target.checked })}
+            aria-label={`Sin cambio en ${llave}`}
+          />
+          Lo he revisado y no cambia
+        </label>
+      </li>
+    )
   }
 
   return (
@@ -55,52 +157,32 @@ export function DialogoGuardar({ propuestas, alConfirmar, alCancelar }: Props) {
 
         {automaticas.length > 0 && (
           <section className="mb-6">
-            <p className="text-[13px] mb-3">Criterios que se actualizarán:</p>
-            <ul className="regla-fina">
-              {automaticas.map((p) => {
-                const llave = `${p.identificador}.${p.clave}`
-                return (
-                  <li key={llave} className="border-b border-grisclaro py-3 flex gap-3">
-                    <input
-                      type="checkbox"
-                      checked={aceptadas.has(llave)}
-                      onChange={() => alternar(llave)}
-                      className="mt-1"
-                      aria-label={llave}
-                    />
-                    <div>
-                      <p className="font-mono text-[12px]">
-                        {p.identificador}.{p.clave}{" "}
-                        <span className="text-gris">{formatearValor(p.valor_actual)}</span>
-                        {" → "}
-                        <span className="senal">{formatearValor(p.valor_propuesto as string)}</span>
-                      </p>
-                      <p className="text-[12px] text-gris mt-1">{p.motivo}</p>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
+            <p className="text-[13px] mb-3">
+              Esto lo he sabido leer del texto. Compruébalo y corrígelo si me he
+              equivocado:
+            </p>
+            <ul className="regla-fina">{automaticas.map(filaDeCriterio)}</ul>
           </section>
         )}
 
         {aMano.length > 0 && (
           <section className="mb-6">
             <p className="text-[13px] mb-3">
-              Esto no lo puedo decidir yo. Revísalo cuando termines:
+              Esto no lo puedo decidir yo. Dime tú qué dice ahora cada criterio,
+              o marca que sigue igual:
             </p>
-            <ul className="regla-fina">
-              {aMano.map((p) => (
-                <li key={`${p.identificador}.${p.clave}`}
-                    className="border-b border-grisclaro py-3">
-                  <p className="font-mono text-[12px]">
-                    {p.identificador}.{p.clave} = {formatearValor(p.valor_actual)}
-                  </p>
-                  <p className="text-[12px] text-gris mt-1">{p.motivo}</p>
-                </li>
-              ))}
-            </ul>
+            <ul className="regla-fina">{aMano.map(filaDeCriterio)}</ul>
           </section>
+        )}
+
+        {sinDecidir.length > 0 && (
+          <p className="text-[12px] text-gris mb-6">
+            {sinDecidir.length === 1
+              ? "Queda 1 criterio sin decidir."
+              : `Quedan ${sinDecidir.length} criterios sin decidir.`}{" "}
+            Mientras haya alguno, esta sección no se sella y R2 seguirá pidiendo
+            que se mire.
+          </p>
         )}
 
         <label className="block mb-4">
@@ -109,6 +191,7 @@ export function DialogoGuardar({ propuestas, alConfirmar, alCancelar }: Props) {
           </span>
           <textarea
             value={motivo}
+            disabled={enviando}
             onChange={(e) => setMotivo(e.target.value)}
             rows={3}
             className="w-full border border-grisclaro bg-white p-3 text-[14px]"
@@ -121,6 +204,7 @@ export function DialogoGuardar({ propuestas, alConfirmar, alCancelar }: Props) {
           </span>
           <input
             value={fuente}
+            disabled={enviando}
             onChange={(e) => setFuente(e.target.value)}
             className="w-full border border-grisclaro bg-white p-3 text-[14px]"
           />
@@ -130,14 +214,51 @@ export function DialogoGuardar({ propuestas, alConfirmar, alCancelar }: Props) {
           </span>
         </label>
 
-        <div className="flex gap-3 justify-end">
-          <button onClick={alCancelar}
-                  className="px-4 py-2 text-[13px] border border-grisclaro">
+        {/* Un guardado rechazado por las reglas es el fallo esperado, no una
+            excepción: se enseña aquí dentro, con el motivo y la fuente
+            intactos, para que corregir sea seguir escribiendo. */}
+        {error && (
+          <p className="mb-6 text-[13px] text-tinta border-t border-grisclaro pt-4">
+            {error}
+          </p>
+        )}
+
+        {resultado && (
+          <div className="mb-6 border-t border-grisclaro pt-4">
+            <p className="text-[13px]">{resultado.mensaje}</p>
+            {resultado.infracciones.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {resultado.infracciones.map((infraccion, indice) => (
+                  <li key={indice} className="text-[12px]">
+                    <span className="font-mono text-tinta">[{infraccion.regla}]</span>{" "}
+                    <span className="font-mono text-gris">{infraccion.fichero}</span>
+                    <p className="text-gris mt-1">{infraccion.detalle}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {resultado.detalle_tecnico && (
+              <p className="mt-3 font-mono text-[11px] text-gris">
+                {resultado.detalle_tecnico}
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end items-center">
+          {enviando && (
+            <span className="text-[12px] text-gris mr-auto">
+              Guardando. No cierres esta ventana ni vuelvas a pulsar.
+            </span>
+          )}
+          <button onClick={alCancelar} disabled={enviando}
+                  className="px-4 py-2 text-[13px] border border-grisclaro
+                             disabled:opacity-30">
             Cancelar
           </button>
           <button onClick={confirmar} disabled={!puedeGuardar}
                   className="px-4 py-2 text-[13px] bg-tinta text-papel disabled:opacity-30">
-            Guardar
+            {enviando ? "Guardando…" : "Guardar"}
           </button>
         </div>
       </div>

@@ -33,14 +33,27 @@ export interface CambioDeValor {
   fichero: string
   identificador: string
   clave: string
-  valor_nuevo: string
+  /**
+   * Lo que el criterio pasa a decir, o null cuando el docente ha declarado
+   * que lo ha revisado y sigue siendo correcto. Las dos cosas son
+   * decisiones suyas; no decir nada de un criterio no lo es.
+   */
+  valor_nuevo: string | null
+}
+
+export interface Infraccion {
+  regla: string
+  fichero: string
+  detalle: string
 }
 
 export interface Resultado {
   exito: boolean
   commit: string | null
-  infracciones: { regla: string; fichero: string; detalle: string }[]
+  infracciones: Infraccion[]
   mensaje: string
+  /** Salida de git o de una excepción. Para quien depure, no para el docente. */
+  detalle_tecnico?: string | null
 }
 
 export interface Regla {
@@ -48,7 +61,10 @@ export interface Regla {
   nombre: string
   vigila: string
   limite: string
+  /** 'verificada' si hay código que la comprueba, 'pendiente' si aún no. */
+  estado: string
   infracciones: number
+  detalles: Infraccion[]
 }
 
 export interface EstadoGobernanza {

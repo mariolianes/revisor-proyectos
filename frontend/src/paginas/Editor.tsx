@@ -19,6 +19,7 @@ export function Editor({ ancla, alVolver }: Props) {
   const [propuestas, setPropuestas] = useState<Propuesta[] | null>(null)
   const [resultado, setResultado] = useState<Resultado | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [enviando, setEnviando] = useState(false)
 
   useEffect(() => {
     setError(null)
@@ -51,12 +52,21 @@ export function Editor({ ancla, alVolver }: Props) {
     }
   }
 
+  // Un guardado rechazado por las reglas es el fallo ESPERADO, no una
+  // excepción: es lo que pasa cuando queda un criterio por revisar. Cerrar
+  // el diálogo al fallar desmontaba su estado y le costaba al docente el
+  // motivo y la fuente que acababa de escribir, que es lo más valioso de
+  // toda la transacción. Se queda abierto, con lo escrito intacto, y el
+  // resultado se enseña dentro.
   const guardar = async (datos: {
     cambios: CambioDeValor[]
     motivo: string
     fuente: string
   }) => {
+    if (enviando) return
     setError(null)
+    setResultado(null)
+    setEnviando(true)
     try {
       const respuesta = await api.guardar({
         ancla,
@@ -66,17 +76,18 @@ export function Editor({ ancla, alVolver }: Props) {
         fuente: datos.fuente,
         hash_esperado: seccion.hash,
       })
-      setPropuestas(null)
       setResultado(respuesta)
       if (respuesta.exito) {
+        setPropuestas(null)
         const recargada = await api.seccion(ancla)
         setSeccion(recargada.seccion)
         setCriterios(recargada.criterios)
         setTexto(recargada.seccion.texto)
       }
     } catch (e) {
-      setPropuestas(null)
       setError((e as Error).message)
+    } finally {
+      setEnviando(false)
     }
   }
 
@@ -95,7 +106,13 @@ export function Editor({ ancla, alVolver }: Props) {
 
           <textarea
             value={texto}
-            onChange={(e) => setTexto(e.target.value)}
+            onChange={(e) => {
+              setTexto(e.target.value)
+              // El aviso del guardado anterior deja de ser cierto en cuanto
+              // empieza a escribir la edición siguiente: si se queda, el
+              // recuadro dice «guardado» sobre un texto que no lo está.
+              setResultado(null)
+            }}
             className="w-full max-w-lectura min-h-[24rem] border border-grisclaro
                        bg-white p-4 text-[15px] leading-[1.65] font-base"
           />
@@ -113,11 +130,14 @@ export function Editor({ ancla, alVolver }: Props) {
             )}
           </div>
 
-          {error && (
+          {/* Mientras el diálogo está abierto, lo que ha pasado se cuenta
+              dentro de él, junto al motivo y la fuente que hay que corregir.
+              Aquí solo se enseña cuando ya está cerrado. */}
+          {error && !propuestas && (
             <p className="mt-4 text-[13px] text-tinta">{error}</p>
           )}
 
-          {resultado && (
+          {resultado && !propuestas && (
             <div className="mt-6 border-t border-grisclaro pt-4">
               <p className="text-[13px]">{resultado.mensaje}</p>
               {resultado.commit && (
@@ -136,6 +156,11 @@ export function Editor({ ancla, alVolver }: Props) {
                   ))}
                 </ul>
               )}
+              {resultado.detalle_tecnico && (
+                <p className="mt-3 font-mono text-[11px] text-gris">
+                  {resultado.detalle_tecnico}
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -148,8 +173,11 @@ export function Editor({ ancla, alVolver }: Props) {
       {propuestas && (
         <DialogoGuardar
           propuestas={propuestas}
+          enviando={enviando}
+          resultado={resultado && !resultado.exito ? resultado : null}
+          error={error}
           alConfirmar={guardar}
-          alCancelar={() => setPropuestas(null)}
+          alCancelar={() => { if (!enviando) setPropuestas(null) }}
         />
       )}
     </div>
