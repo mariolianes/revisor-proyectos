@@ -775,7 +775,7 @@ Expected: PASS, 9 tests.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: apertura del PDF, paginas y deteccion de escaneado
 
 Los PDF de prueba se construyen con PyMuPDF en un fixture y viven en
@@ -1210,7 +1210,7 @@ Expected: PASS, 18 tests (8 de `normalizar_familia` más 10 de medición).
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: tipografia, interlineado, margenes y alineacion
 
 El interlineado se mide como ratio entre el salto de linea base y el
@@ -1578,7 +1578,7 @@ Expected: PASS, 10 tests.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: indice, paginas de contenido y anexos
 
 El 6.2 cuenta las paginas excluidas portada, indice y anexos, asi que hay
@@ -1788,7 +1788,7 @@ Expected: todo en verde.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: imagenes con resolucion efectiva y superficie
 
 El dpi efectivo es lo que delata una captura de pantalla estirada: en el
@@ -1969,7 +1969,7 @@ Expected: PASS, 8 tests.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: medicion completa de un archivo en una llamada
 
 La huella se calcula por trozos: un PDF puede pesar decenas de megas y no
