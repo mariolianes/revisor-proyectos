@@ -59,14 +59,18 @@ solo. *Pendiente: se implementa con el backend.*
 3. Escribir docs/changes/AAAA-MM-DD-<asunto>.md
 4. Anotar   docs/decisions.md                    si es decisión, no ajuste
 5. Ejecutar python tools/verificar_gobernanza.py --sellar
-6. Commit, incluyendo criteria/vAAAA-AAAA/.sincronia.json
+6. Commit, incluyendo criteria/.sincronia.json
 ```
 
 El orden importa. Editar el YAML primero es exactamente lo que R2 impide.
 
-El sellado del paso 5 reescribe `criteria/vAAAA-AAAA/.sincronia.json`. Si se
-queda fuera del commit, R2 volverá a protestar sobre un repositorio que se
-cree recién sellado.
+El sellado del paso 5 reescribe `criteria/.sincronia.json`. Si se queda fuera
+del commit, R2 volverá a protestar sobre un repositorio que se cree recién
+sellado.
+
+El registro es uno solo para todo `criteria/`, no uno por versión: R2 mira las
+anclas que cita **cualquier** versión viva, y guardarlo dentro de una carpeta
+de versión haría que sellar escribiese en una versión ya congelada.
 
 ## Cuándo se congela una versión y cómo se abre la siguiente
 
