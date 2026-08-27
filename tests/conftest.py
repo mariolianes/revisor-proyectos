@@ -275,29 +275,39 @@ def pdf_con_imagenes(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def pdf_con_imagen_en_pagina_girada(tmp_path: Path) -> Path:
-    """Una imagen de 300x60 px en un rectángulo nativo de 60x300 pt, en una
-    página girada 90°.
+def pdfs_con_imagen_en_cada_rotacion(tmp_path: Path) -> dict[int, Path]:
+    """La misma imagen, en el mismo rectángulo nativo, en cuatro páginas
+    giradas 0°, 90°, 180° y 270°.
 
-    `get_image_rects` da ese rectángulo en coordenadas anteriores a
-    `/Rotate`: en la página impresa el ancho y el alto quedan
-    intercambiados. Es una imagen nítida -se imprime a 72 ppp- que sin
-    deshacer ese cruce se confundiría con una captura de pantalla estirada.
+    El rectángulo (150x50 pt) y la imagen (200x80 px) no comparten ningún
+    lado en común, a propósito: con una coincidencia numérica entre los
+    lados de la imagen y los del rectángulo, un error de ejes cruzados
+    puede pasar desapercibido -es justo lo que ocurrió con el rectángulo
+    60x300 sobre la imagen 300x60 en una versión anterior de este fichero-.
+
+    Ninguna de las cuatro páginas gira la imagen dentro de sí misma:
+    `/Rotate` es una isometría de toda la página, no una transformación del
+    contenido. El rectángulo de colocación se declara siempre en las mismas
+    coordenadas nativas, anteriores a la rotación.
     """
-    documento = pymupdf.open()
-    pagina = documento.new_page()
-    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 300, 60), False)
-    pixmap.set_rect(pixmap.irect, (10, 20, 30))
-    pagina.insert_image(
-        pymupdf.Rect(72, 72, 132, 372),  # 60 x 300 pt, en coordenadas nativas
-        pixmap=pixmap,
-        keep_proportion=False,
-    )
-    pagina.set_rotation(90)
-    ruta = tmp_path / "girada.pdf"
-    documento.save(ruta)
-    documento.close()
-    return ruta
+    rutas = {}
+    for rotacion in (0, 90, 180, 270):
+        documento = pymupdf.open()
+        pagina = documento.new_page()
+        pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 200, 80), False)
+        pixmap.set_rect(pixmap.irect, (40, 90, 140))
+        pagina.insert_image(
+            pymupdf.Rect(72, 72, 222, 122),  # 150 x 50 pt, en coordenadas nativas
+            pixmap=pixmap,
+            keep_proportion=False,
+        )
+        if rotacion:
+            pagina.set_rotation(rotacion)
+        ruta = tmp_path / f"girada-{rotacion}.pdf"
+        documento.save(ruta)
+        documento.close()
+        rutas[rotacion] = ruta
+    return rutas
 
 
 @pytest.fixture

@@ -4,6 +4,16 @@ Aquí no se juzga si una imagen está numerada, titulada o citada en el
 texto: eso exige leer y relacionar, y es trabajo de la segunda parte. Aquí
 solo hay geometría y píxeles.
 
+`dpi_efectivo` es invariante bajo la rotación de la página (`/Rotate` a 0,
+90, 180 o 270): una rotación es una isometría, mueve la imagen y su
+rectángulo juntos sin estirar ninguno de los dos, así que no puede cambiar
+la densidad de píxeles por punto. `get_image_rects()` da el rectángulo en
+coordenadas nativas del MediaBox, anteriores a `/Rotate`, y ese es
+precisamente el rectángulo correcto contra el que dividir: da igual la
+rotación de la página, ancho contra ancho y alto contra alto, sin mirar
+`pagina.rotation`. Cambiarlo para "corregir" un caso apaisado sería
+reintroducir el error que aquí se descartó tras medirlo con un render.
+
 Dos límites conocidos, documentados y no resueltos, porque
 `proporcion_de_pagina` hoy no decide nada por sí sola -el criterio de
 imágenes sale NO_VERIFICABLE en la comprobación de formato, porque juzgar
@@ -42,24 +52,13 @@ def leer_imagenes(documento: pymupdf.Document) -> list[Imagen]:
     imagenes = []
     for numero, pagina in enumerate(documento, start=1):
         area_pagina = pagina.rect.get_area()
-        # get_image_rects() da el rectángulo en coordenadas nativas del
-        # MediaBox, anteriores a aplicar /Rotate. En una página girada 90 o
-        # 270 grados, ese rectángulo trae el ancho y el alto intercambiados
-        # respecto a como se ve de verdad la página impresa: hay que
-        # deshacer el cruce antes de dividir entre píxeles, o el dpi
-        # horizontal queda calculado contra el lado que en el papel es
-        # vertical, y viceversa. Con 0 y 180 no hay cruce de ejes que
-        # deshacer.
-        pagina_de_lado = pagina.rotation in (90, 270)
         for referencia in pagina.get_images(full=True):
             xref, _, ancho_px, alto_px = referencia[0], referencia[1], referencia[2], referencia[3]
             for rectangulo in pagina.get_image_rects(xref):
                 if rectangulo.width <= 0 or rectangulo.height <= 0:
                     continue
-                ancho_impreso_pt = rectangulo.height if pagina_de_lado else rectangulo.width
-                alto_impreso_pt = rectangulo.width if pagina_de_lado else rectangulo.height
-                dpi_horizontal = ancho_px / (ancho_impreso_pt / PUNTOS_POR_PULGADA)
-                dpi_vertical = alto_px / (alto_impreso_pt / PUNTOS_POR_PULGADA)
+                dpi_horizontal = ancho_px / (rectangulo.width / PUNTOS_POR_PULGADA)
+                dpi_vertical = alto_px / (rectangulo.height / PUNTOS_POR_PULGADA)
                 imagenes.append(Imagen(
                     pagina=numero,
                     ancho_px=ancho_px,

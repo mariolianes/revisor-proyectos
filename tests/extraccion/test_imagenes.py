@@ -56,22 +56,28 @@ def test_un_documento_sin_imagenes_da_lista_vacia(pdf_simple: Path) -> None:
         assert leer_imagenes(documento) == []
 
 
-def test_dpi_efectivo_no_cruza_ejes_en_pagina_girada(
-    pdf_con_imagen_en_pagina_girada: Path,
+def test_el_dpi_no_cambia_con_la_rotacion_de_la_pagina(
+    pdfs_con_imagen_en_cada_rotacion: dict[int, Path],
 ) -> None:
-    """300x60 px en un rectángulo nativo de 60x300 pt, en una página a 90°.
+    """Una rotación de página es una isometría: mueve la imagen y su
+    rectángulo juntos, sin estirar ninguno de los dos, así que no puede
+    cambiar cuántos píxeles hay repartidos por punto.
 
-    `get_image_rects` da el rectángulo en coordenadas anteriores a
-    `/Rotate`, con el ancho y el alto intercambiados respecto a como se
-    imprime de verdad. Sin deshacer ese cruce saldría 60/(300/72) = 14,4
-    ppp -el umbral de "estirada"- para una imagen que en realidad se
-    imprime nítida: deshecho el cruce, los dos lados dan 72 ppp.
+    200x80 px en un rectángulo nativo de 150x50 pt da 96 ppp
+    (200 / (150/72), el peor de los dos lados) sea cual sea la rotación de
+    la página: 0°, 90°, 180° o 270° tienen que dar el mismo número.
     """
-    with abrir(pdf_con_imagen_en_pagina_girada) as documento:
-        imagenes = leer_imagenes(documento)
+    dpis = {}
+    for rotacion, ruta in pdfs_con_imagen_en_cada_rotacion.items():
+        with abrir(ruta) as documento:
+            imagenes = leer_imagenes(documento)
+        assert len(imagenes) == 1
+        dpis[rotacion] = imagenes[0].dpi_efectivo
 
-    assert len(imagenes) == 1
-    assert imagenes[0].dpi_efectivo == pytest.approx(72.0, abs=0.1)
+    assert dpis[0] == pytest.approx(96.0, abs=0.1)
+    assert dpis[90] == pytest.approx(dpis[0])
+    assert dpis[180] == pytest.approx(dpis[0])
+    assert dpis[270] == pytest.approx(dpis[0])
 
 
 def test_dpi_efectivo_toma_el_lado_peor_mandado(
