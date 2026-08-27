@@ -26,6 +26,7 @@ lo que hacen es constar.
 - **defensa** — duración, soporte, composición del tribunal y procedimiento de evaluación de la exposición. Se espera del centro.
 - **politica_ia** — política institucional sobre autoría, uso de IA y evidencias admitidas. La Guía y el Índice comentado ya fijan la norma para el alumnado; falta la posición institucional que la respalde.
 - **proteccion_datos** — condiciones de tratamiento aplicables y régimen de uso de herramientas externas. Bloquea el piloto con entregas reales.
+- **tolerancias_formato** — cuánta desviación se admite al comprobar el formato de un PDF antes de darlo por incumplido. `criteria/v2026-2027/formato.yaml` trabaja con ±0,5 puntos en el cuerpo de letra, ±0,1 en el interlineado y ±0,5 cm en los márgenes. Solo la de los márgenes tiene apoyo en la prosa, en el «aproximadamente 2,5 cm» del §6.2; las otras dos las puso quien destiló el YAML para que un PDF real no incumpla por redondeo. La del cuerpo de letra decide si un documento maquetado a 11,5 cumple o no, y esa es una decisión del docente. Registradas en `docs/changes/2026-08-27-interpretaciones-de-formato-dimensiones-y-fases.md`. Se espera del docente.
 - **tutorias** — procedimiento de tutorías, correcciones y plazos de respuesta. Se espera del centro.
 - **casos_especiales** — reglas para retrasos, cambios de tema y recuperación. Se espera del centro.
 - **canal_devolucion** — cómo llega el feedback aprobado al alumno y qué marca exactamente el estado COMUNICADO. Decisión D-004, pendiente del docente.
