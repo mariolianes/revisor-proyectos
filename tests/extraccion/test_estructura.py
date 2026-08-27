@@ -161,6 +161,41 @@ def test_lee_las_entradas_de_un_indice_repartido_en_dos_paginas(
     assert estructura.paginas_de_contenido == 4
 
 
+def test_lee_las_entradas_de_un_indice_repartido_en_tres_paginas(
+    escribir_pdf, tmp_path: Path
+) -> None:
+    """El de dos páginas no distingue "avanza mientras siga siendo índice" de
+    "avanza una página como mucho": con dos, ambas reglas dan el mismo
+    resultado. El de tres sí lo distingue.
+    """
+    ruta = escribir_pdf(
+        tmp_path / "indice-en-tres-paginas.pdf",
+        [
+            ["PORTADA"],
+            ["INDICE", "1. Introduccion .... 5", "2. Objetivos .... 6"],
+            ["3. Desarrollo .... 7", "4. Metodologia .... 8"],
+            ["5. Resultados .... 9", "6. Conclusiones .... 10"],
+            ["1. Introduccion", "Texto."],
+            ["2. Objetivos", "Texto."],
+            ["3. Desarrollo", "Texto."],
+            ["4. Metodologia", "Texto."],
+            ["5. Resultados", "Texto."],
+            ["6. Conclusiones", "Texto."],
+        ],
+    )
+
+    with abrir(ruta) as documento:
+        estructura = medir_estructura(documento)
+
+    titulos = [entrada.titulo for entrada in estructura.entradas_de_indice]
+    assert titulos == [
+        "1. Introduccion", "2. Objetivos", "3. Desarrollo",
+        "4. Metodologia", "5. Resultados", "6. Conclusiones",
+    ]
+    assert estructura.primera_pagina_de_contenido == 5
+    assert estructura.paginas_de_contenido == 6
+
+
 def test_el_indice_declarado_de_anexos_gana_a_un_falso_positivo(
     escribir_pdf, tmp_path: Path
 ) -> None:
