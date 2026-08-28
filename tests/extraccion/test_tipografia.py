@@ -132,7 +132,7 @@ def test_un_pdf_sin_texto_no_inventa_medidas(pdf_escaneado: Path) -> None:
         medidas = medir_texto(documento)
 
     assert medidas.familia_dominante == ""
-    assert medidas.cuerpo_dominante == 0.0
+    assert medidas.cuerpo_dominante is None
     assert medidas.ratio_interlineado is None
     assert medidas.margen_izquierdo_cm is None
     assert medidas.proporcion_lineas_al_margen_derecho is None

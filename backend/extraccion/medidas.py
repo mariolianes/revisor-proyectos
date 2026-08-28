@@ -28,7 +28,7 @@ class MedidasDeTexto(BaseModel):
     """
 
     familia_dominante: str
-    cuerpo_dominante: float
+    cuerpo_dominante: float | None = None
     proporcion_cuerpo_dominante: float
     ratio_interlineado: float | None = None
     margen_izquierdo_cm: float | None = None

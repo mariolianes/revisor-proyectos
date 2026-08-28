@@ -160,7 +160,7 @@ export interface PaginaMedida {
 
 export interface MedidasDeTexto {
   familia_dominante: string
-  cuerpo_dominante: number
+  cuerpo_dominante: number | null
   proporcion_cuerpo_dominante: number
   ratio_interlineado: number | null
   margen_izquierdo_cm: number | null

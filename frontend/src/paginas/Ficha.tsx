@@ -100,6 +100,7 @@ export function Ficha({ id, alVolver }: Props) {
             <Dato
               rotulo="Tipografía"
               valor={medidas.texto.familia_dominante
+                && medidas.texto.cuerpo_dominante !== null
                 ? `${medidas.texto.familia_dominante} ${medidas.texto.cuerpo_dominante}`
                 : "sin texto extraíble"}
             />

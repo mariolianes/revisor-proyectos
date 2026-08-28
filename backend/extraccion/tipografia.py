@@ -133,9 +133,14 @@ def medir_texto(documento: pymupdf.Document) -> MedidasDeTexto:
             )
 
     if not por_estilo:
+        # `cuerpo_dominante` a None y no a 0.0: un documento sin texto no
+        # tiene un cuerpo de 0 puntos, no tiene cuerpo. El 0.0 era un valor
+        # supuesto en un modelo cuyo docstring dice que nunca los lleva, y
+        # el primero que pintara «cuerpo medio del documento» habría
+        # publicado «cuerpo 0» como un hecho medido.
         return MedidasDeTexto(
             familia_dominante="",
-            cuerpo_dominante=0.0,
+            cuerpo_dominante=None,
             proporcion_cuerpo_dominante=0.0,
         )
 

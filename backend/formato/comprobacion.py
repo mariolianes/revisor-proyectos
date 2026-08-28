@@ -183,6 +183,13 @@ def _tipografia(bloque: dict, medidas: Medidas) -> Comprobacion:
     tolerancia = float(bloque.get("tolerancia_cuerpo", 0))
     medido = medidas.texto
 
+    # Esta salida cubre también el `cuerpo_dominante` a None: los dos
+    # salen de la misma rama de `medir_texto` -no hay ni un fragmento de
+    # texto del que sacar familia ni cuerpo-, así que una familia vacía y
+    # un cuerpo nulo van siempre juntos. Si alguna vez dejaran de ir
+    # juntos, la resta de abajo daría un TypeError, que el `try/except` de
+    # `comprobar` convierte en un NO_VERIFICABLE con el motivo a la vista:
+    # se vería, no se inventaría un veredicto.
     if not medido.familia_dominante:
         return Comprobacion(
             criterio="tipografia",

@@ -146,6 +146,28 @@ describe("Ficha", () => {
     expect(bloqueada.container.querySelectorAll(".senal").length).toBeGreaterThan(0)
   })
 
+  it("un documento sin texto no publica un cuerpo de 0 puntos", async () => {
+    // `cuerpo_dominante` es nulo cuando no hay texto del que sacarlo. Un
+    // 0 pintado ahí sería un dato inventado con aspecto de medida.
+    vi.mocked(api.ficha).mockResolvedValue({
+      ...COMPLETA,
+      medidas: {
+        ...COMPLETA.medidas!,
+        escaneado: true,
+        texto: {
+          ...COMPLETA.medidas!.texto,
+          familia_dominante: "", cuerpo_dominante: null,
+          proporcion_cuerpo_dominante: 0,
+        },
+      },
+    })
+
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText("sin texto extraíble")).toBeInTheDocument()
+    expect(screen.queryByText(/ 0$/)).not.toBeInTheDocument()
+  })
+
   it("enseña el aviso cuando no se ha podido comparar", async () => {
     vi.mocked(api.ficha).mockResolvedValue({
       ...COMPLETA, evolucion: null, comparada_con: null,
