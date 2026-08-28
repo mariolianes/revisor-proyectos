@@ -703,6 +703,10 @@ Posible formato : `CODIGO_CICLO_FASE_FECHA_VERSION.ext`. Ejemplo: `AF023_E2_2026
 > **Modificado por D-001 el 2026-08-26.** La versión original de este apartado
 > presuponía un sistema estrictamente local. La arquitectura acordada es otra y
 > se describe aquí.
+>
+> **Corregido por D-010 el 2026-08-29.** Este apartado daba por supuesta una
+> anonimización previa al envío al proveedor de análisis que no se aplica: el
+> texto se transmite íntegro.
 
 Circuito de datos del sistema:
 
@@ -714,8 +718,8 @@ Circuito de datos del sistema:
 - Una evidencia citada es la referencia al apartado y la página más un
   fragmento literal de 1.500 caracteres como máximo. El límite lo verifica el
   backend e impide que la suma de evidencias reconstruya el trabajo.
-- Durante el análisis, el texto de la entrega, ya anonimizado, se transmite al
-  proveedor de análisis. No se almacena allí.
+- Durante el análisis, el texto íntegro de la entrega se transmite al
+  proveedor de análisis. No se almacena allí ni en la base de datos.
 - Las credenciales técnicas residen en el backend local, nunca en el frontend.
 
 Las cautelas de tratamiento se mantienen íntegras:
