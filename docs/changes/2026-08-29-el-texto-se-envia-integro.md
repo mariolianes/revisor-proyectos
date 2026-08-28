@@ -78,3 +78,15 @@ de un alumno se envíe al proveedor.
 
 Ninguna. No se ha corregido todavía ninguna entrega con este sistema, y el
 cambio no toca criterio alguno.
+
+## Tercera pasada: redacción
+
+La frase quedó como «Qué retiene el proveedor con el texto una vez recibido lo
+rigen sus propias condiciones», que no concuerda: el sujeto es singular y el
+verbo, plural. Se reescribe como «Lo que el proveedor retenga se rige por sus
+propias condiciones» en el §19 y en las dos apariciones paralelas de
+`docs/decisions.md`.
+
+El significado no cambia. Se registra porque R5 no distingue entre cambiar lo
+que dice la prosa maestra y cambiar cómo lo dice, y esa indistinción es
+deliberada: quien audite el documento debe poder ver toda mano que lo tocó.

@@ -50,9 +50,8 @@ El análisis académico lo realiza la API de OpenAI. El backend define un puerto
 
 Circuito de datos, a efectos de arquitectura: el texto de la entrega se
 transmite íntegro al proveedor durante el procesamiento. Por parte del
-sistema no se guarda copia: ni en Supabase, ni en el repositorio. Qué
-retiene el proveedor con el texto una vez recibido lo rigen sus propias
-condiciones, sin confirmar. Quien mantenga el sistema debe conocer este
+sistema no se guarda copia: ni en Supabase, ni en el repositorio. Lo que el
+proveedor retenga se rige por sus propias condiciones, sin confirmar. Quien mantenga el sistema debe conocer este
 circuito para no alterarlo por descuido.
 
 **Corregido por D-010 el 2026-08-29:** este párrafo dijo dos cosas que no
@@ -212,9 +211,9 @@ describían el circuito de análisis dando por supuesta una anonimización
 previa al envío al proveedor. Esa anonimización no se aplica y nunca se ha
 aplicado: el circuito real transmite el texto íntegro de la entrega durante
 el procesamiento. Por parte del sistema no se guarda copia: ni en Supabase,
-ni en el repositorio. Qué retiene el proveedor con el texto una vez recibido
-lo rigen sus propias condiciones, que no están confirmadas; confirmarlas
-sigue siendo, como ya fijaba el §19, condición previa a usar entregas reales.
+ni en el repositorio. Lo que el proveedor retenga se rige por sus propias
+condiciones, que no están confirmadas; confirmarlas sigue siendo, como ya
+fijaba el §19, condición previa a usar entregas reales.
 La clave de la API reside solo en el backend local.
 
 Una fuente superior no puede quedar contradiciendo al código: es el mismo

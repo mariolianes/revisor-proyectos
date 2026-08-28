@@ -719,11 +719,10 @@ Circuito de datos del sistema:
   fragmento literal de 1.500 caracteres como máximo. El límite lo verifica el
   backend e impide que la suma de evidencias reconstruya el trabajo.
 - Durante el análisis, el texto íntegro de la entrega se transmite al
-  proveedor de análisis. El sistema no guarda copia, como se ha dicho. Qué
-  retiene el proveedor con el texto una vez recibido lo rigen sus propias
-  condiciones, ajenas a este sistema y sin confirmar: confirmarlas es la
-  condición que la última cautela de este apartado exige antes de usar
-  entregas reales.
+  proveedor de análisis. El sistema no guarda copia de ese texto. Lo que el
+  proveedor retenga se rige por sus propias condiciones, ajenas a este sistema
+  y sin confirmar: confirmarlas es la condición que la última cautela de este
+  apartado exige antes de usar entregas reales.
 - Las credenciales técnicas residen en el backend local, nunca en el frontend.
 
 Las cautelas de tratamiento se mantienen íntegras:
