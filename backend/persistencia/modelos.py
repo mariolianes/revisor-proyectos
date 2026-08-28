@@ -31,6 +31,27 @@ ESTADO_INICIAL = "RECIBIDO"
 BLOQUEADO = "BLOQUEADO"
 
 
+def _normalizar_identidad(valor: str) -> str:
+    """Quita todo carácter de espacio -no solo los de los extremos- y pasa
+    a mayúsculas.
+
+    `"".join(valor.split())` reparte por cualquier carácter de espacio
+    Unicode -espacio normal, tabulador, NBSP- y los descarta todos, estén
+    en los extremos o en medio. Un `strip()` solo limpia los bordes y deja
+    pasar un espacio, un tabulador o un NBSP pegado en medio del código
+    -justo lo que aparece al copiar desde un PDF o una web-, y un
+    `replace(" ", "")` solo se lleva el espacio ASCII normal y deja el
+    NBSP intacto. Ni un código de alumno, ni unas siglas de ciclo, ni el
+    nombre de una fase llevan espacios legítimos, así que no hay nada que
+    preservar.
+
+    Normalizar y no rechazar es deliberado: el docente puede escribir la
+    fase en minúsculas en el formulario, o pegar el código con algún
+    espacio de más, y eso no debe fallarle.
+    """
+    return "".join(valor.split()).upper()
+
+
 class EntregaNueva(BaseModel):
     """Una entrega que el docente acaba de confirmar."""
 
@@ -45,21 +66,19 @@ class EntregaNueva(BaseModel):
     @field_validator("codigo_alumno", "ciclo", "fase")
     @classmethod
     def _normalizar(cls, valor: str) -> str:
-        """Quita espacios de los extremos y pasa a mayúsculas.
-
-        Normalizar y no rechazar es deliberado: el docente puede escribir la
-        fase en minúsculas en el formulario, o el código con un espacio de
-        más, y eso no debe fallarle. La alternativa —guardar el valor tal
-        cual y confiar en que cada llamador lo normalice antes de comparar—
-        es lo que dejaba a un mismo alumno registrado bajo dos claves
-        distintas ("AF023" y "  AF023  ") y rompía `anterior_de` en
-        silencio.
-        """
-        return valor.strip().upper()
+        return _normalizar_identidad(valor)
 
 
 class EntregaRegistrada(BaseModel):
-    """Una entrega ya guardada."""
+    """Una entrega ya guardada.
+
+    Lleva la misma normalización que `EntregaNueva` en los mismos tres
+    campos, y no solo por si acaso: quien construye esto no siempre parte
+    de un `EntregaNueva` ya limpio. Una fila leída de Supabase puede venir
+    de antes de que esta regla existiera, y sin este validador aquí
+    también, un alumno guardado con un NBSP en el código volvería a quedar
+    bajo una clave que `anterior_de` no reconoce.
+    """
 
     id: str
     codigo_alumno: str
@@ -72,6 +91,11 @@ class EntregaRegistrada(BaseModel):
     estado: str
     motivo_bloqueo: str | None
     version_criterios: str
+
+    @field_validator("codigo_alumno", "ciclo", "fase")
+    @classmethod
+    def _normalizar(cls, valor: str) -> str:
+        return _normalizar_identidad(valor)
 
 
 class Almacen(Protocol):

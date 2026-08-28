@@ -1,9 +1,11 @@
 """El almacén en memoria, que es también el contrato del puerto."""
 
+from datetime import datetime
+
 import pytest
 
 from backend.persistencia.memoria import AlmacenEnMemoria
-from backend.persistencia.modelos import EntregaNueva
+from backend.persistencia.modelos import EntregaNueva, EntregaRegistrada
 
 
 def _entrega(**cambios) -> EntregaNueva:
@@ -224,3 +226,43 @@ def test_la_anterior_es_la_inmediatamente_previa_entre_varias_candidatas() -> No
 
     assert anterior is not None
     assert anterior.fase == "E2"
+
+
+@pytest.mark.parametrize(
+    "codigo_sucio",
+    [
+        "AF 023",  # espacio normal en medio
+        "AF\t023",  # tabulador en medio
+        "AF\xa0023",  # espacio de no separación (NBSP) en medio
+    ],
+)
+def test_un_espacio_en_medio_del_codigo_tambien_se_quita(codigo_sucio: str) -> None:
+    """No solo los extremos: strip() los deja pasar, esto no."""
+    almacen = AlmacenEnMemoria()
+
+    guardada = almacen.registrar(_entrega(codigo_alumno=codigo_sucio))
+
+    assert guardada.codigo_alumno == "AF023"
+
+
+def test_entrega_registrada_normaliza_igual_que_entrega_nueva() -> None:
+    """La Task 11 construye EntregaRegistrada directo desde una fila de
+    Supabase que puede ser anterior a esta regla: tiene que normalizar por
+    su cuenta, no solo confiar en que ya llegó limpia."""
+    registrada = EntregaRegistrada(
+        id="cualquier-id",
+        codigo_alumno="AF\xa0023",
+        ciclo=" dam ",
+        fase="e2",
+        version=1,
+        nombre_archivo="AF023_DAM_E2_20260115_v1.pdf",
+        huella="a" * 64,
+        recibida_en=datetime.now(),
+        estado="RECIBIDO",
+        motivo_bloqueo=None,
+        version_criterios="v2026-2027",
+    )
+
+    assert registrada.codigo_alumno == "AF023"
+    assert registrada.ciclo == "DAM"
+    assert registrada.fase == "E2"
