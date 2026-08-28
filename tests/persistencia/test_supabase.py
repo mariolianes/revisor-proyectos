@@ -9,6 +9,7 @@ convierte en un mensaje que el docente entiende.
 import httpx
 import pytest
 
+from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva
 from backend.persistencia.supabase import AlmacenSupabase, ErrorDeAlmacen
 
@@ -176,11 +177,19 @@ def test_la_consulta_fuerza_el_cruce_interno() -> None:
     filas de la raíz, con el embebido a null en las que no casan. Es decir:
     devolvería las entregas de todos los alumnos. Se comprueba en la petición
     porque contra un transporte simulado no hay servidor que lo demuestre.
+
+    Se lee el valor ya decodificado de `select` (`peticion.url.params`), no
+    la representación literal de la URL: httpx transmite `!` como `%21` al
+    construir la query string desde `params=`, y eso es irrelevante para
+    PostgREST -el servidor decodifica la query string antes de que su
+    parser de filtros vea el valor-, así que comprobar el texto crudo de la
+    URL sería fijar un detalle de cómo httpx escribe la petición, no la
+    intención real de la consulta.
     """
     vistas: list[str] = []
 
     def responder(peticion: httpx.Request) -> httpx.Response:
-        vistas.append(str(peticion.url))
+        vistas.append(peticion.url.params["select"])
         return httpx.Response(200, json=[])
 
     _almacen(responder).listar()
@@ -234,3 +243,28 @@ def test_bloquear_sin_motivo_se_rechaza_antes_de_la_red() -> None:
 
 def test_el_almacen_de_supabase_es_duradero() -> None:
     assert _almacen(lambda p: httpx.Response(200, json=[])).es_duradero is True
+
+
+def test_una_fase_desconocida_en_anterior_de_da_el_mismo_mensaje_en_los_dos_almacenes() -> None:
+    """El docente tiene que ver el mismo fallo, tenga o no credenciales.
+
+    `AlmacenEnMemoria.anterior_de` valida la fase antes de indexar `FASES` y
+    falla en castellano. El brief de Supabase no llamaba a `validar_fase`, así
+    que una fase inventada llegaba a `FASES.index(fase)` y reventaba con el
+    `ValueError` de `tuple.index`, en inglés -y solo después de una llamada
+    de red que además sobraba-. Se comprueba que los dos den literalmente el
+    mismo mensaje, no que cada uno tenga por separado uno en castellano: lo
+    que hay que impedir es que diverjan según cómo esté configurado el
+    almacén.
+    """
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        raise AssertionError("no debería llegar a la red: la fase se valida antes")
+
+    with pytest.raises(ValueError) as fallo_memoria:
+        AlmacenEnMemoria().anterior_de("AF023", "FASE_INVENTADA")
+
+    with pytest.raises(ValueError) as fallo_supabase:
+        _almacen(responder).anterior_de("AF023", "FASE_INVENTADA")
+
+    assert str(fallo_memoria.value) == str(fallo_supabase.value)

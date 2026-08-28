@@ -11,7 +11,6 @@ cualquiera.
 """
 
 from datetime import datetime
-from urllib.parse import quote
 
 import httpx
 
@@ -20,6 +19,7 @@ from backend.persistencia.modelos import (
     EntregaRegistrada,
     validar,
     validar_estado,
+    validar_fase,
 )
 
 ESPERA = 15.0
@@ -64,33 +64,15 @@ class AlmacenSupabase:
     def es_duradero(self) -> bool:
         return True
 
-    def _url(self, tabla: str, **parametros) -> str:
-        """La URL con su consulta ya montada, sin pasar por `params=`.
-
-        httpx escapa `!` a `%21` cuando el diccionario de `params=` se lo
-        entrega a construir; PostgREST lo entiende igual, pero deja la URL
-        sin el `!inner` legible que exige la prueba que comprueba el cruce
-        interno. Se construye aquí a mano, dejando sin escapar los símbolos
-        que la sintaxis de PostgREST usa y que son válidos en una consulta
-        según RFC 3986: `!`, `*`, `(`, `)`, `,`, `.` y `:`.
-        """
-        base = f"{self._base}/{tabla}"
-        if not parametros:
-            return base
-        consulta = "&".join(
-            f"{clave}={quote(str(valor), safe='!*(),.:')}"
-            for clave, valor in parametros.items()
-        )
-        return f"{base}?{consulta}"
-
     def _pedir(
         self, metodo: str, tabla: str, *, parametros: dict | None = None, json=None
     ) -> list[dict]:
         try:
             respuesta = self._cliente.request(
                 metodo,
-                self._url(tabla, **(parametros or {})),
+                f"{self._base}/{tabla}",
                 headers=self._cabeceras,
+                params=parametros,
                 json=json,
             )
         except httpx.HTTPError as fallo:
@@ -160,6 +142,14 @@ class AlmacenSupabase:
     # entregas de todos los alumnos. Como toda entrega tiene proyecto y todo
     # proyecto tiene alumno —ambas claves son NOT NULL—, el cruce interno no
     # descarta ninguna fila legítima.
+    #
+    # httpx transmite el `!` de aquí percent-codificado (`%21`) al construir
+    # la query string a partir de `params=`. Eso no cambia nada: el servidor
+    # (Warp/WAI, en el que corre PostgREST) hace percent-decoding de la query
+    # string antes de que el parser de filtros de PostgREST vea el valor de
+    # `select`, así que `%21inner` y `!inner` llegan como la misma cadena. Es
+    # el comportamiento estándar de cualquier framework HTTP al partir una
+    # query string, no una particularidad de PostgREST.
     SELECCION = "*,proyecto!inner(alumno!inner(codigo,ciclo))"
 
     def _aplanar(self, fila: dict) -> dict:
@@ -229,6 +219,7 @@ class AlmacenSupabase:
         alumno y la alternativa sería codificar el orden de las fases dentro
         de una cadena de consulta.
         """
+        validar_fase(fase)
         from backend.vigilancia.nombres import FASES
 
         filas = self._pedir("GET", "entrega", parametros={
