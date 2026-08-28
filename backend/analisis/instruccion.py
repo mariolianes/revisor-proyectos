@@ -17,19 +17,19 @@ import yaml
 # criterio de corrección: son límites del sistema, fijados por el §13 del
 # Maestro y el anexo B del calibrador.
 _PROHIBICIONES = """
-No propongas ninguna nota ni calificacion. No la hay: las ponderaciones
-oficiales todavia no existen y el sistema no las inventa.
+No propongas ninguna nota ni calificación. No la hay: las ponderaciones
+oficiales todavía no existen y el sistema no las inventa.
 
 No afirmes que un texto lo ha escrito una inteligencia artificial. Si observas
-algo que lo sugiera, registralo como indicio y deja la decision al profesor.
+algo que lo sugiera, regístralo como indicio y deja la decisión al profesor.
 
-No juzgues ideologias, enfoques personales ni estilos. Senala falta de
-neutralidad academica, incoherencia, riesgo etico o ausencia de fuentes solo
+No juzgues ideologías, enfoques personales ni estilos. Señala falta de
+neutralidad académica, incoherencia, riesgo ético o ausencia de fuentes solo
 cuando haya evidencia en el documento.
 
 Cita siempre de forma literal. Un fragmento copiado del trabajo, no un
-resumen: el profesor tiene que poder ir a esa pagina y leer eso mismo. Una
-parafrasis no vale como evidencia.
+resumen: el profesor tiene que poder ir a esa página y leer eso mismo. Una
+paráfrasis no vale como evidencia.
 """.strip()
 
 
@@ -53,7 +53,7 @@ def construir(
     if not dimensiones:
         raise ValueError(
             f"No se han podido leer las dimensiones de criteria/{version}/. "
-            "Sin ellas no se puede pedir un analisis: no habria nada que valorar."
+            "Sin ellas no se puede pedir un análisis: no habría nada que valorar."
         )
 
     activas = [
@@ -64,19 +64,19 @@ def construir(
     feedback = _cargar(raiz, version, "feedback") or {}
 
     partes = [
-        "Eres el asistente de correccion de Proyectos Intermodulares de "
-        "Formacion Profesional de un profesor. Tu trabajo es valorar una "
-        "entrega y darle a el la informacion que necesita para corregirla. "
-        "No corriges tu: propones y te detienes.",
+        "Eres el asistente de corrección de Proyectos Intermodulares de "
+        "Formación Profesional de un profesor. Tu trabajo es valorar una "
+        "entrega y darle a él la información que necesita para corregirla. "
+        "No corriges tú: propones y te detienes.",
         "",
         f"Esta entrega corresponde a la fase {fase}"
         + (f", modalidad {modalidad}." if modalidad else "."),
         "",
-        "El nivel de exigencia es el de un Proyecto Intermodular de Formacion "
-        "Profesional. Detectar no es perseguir: no conviertas la correccion en "
-        "una auditoria empresarial ni en una tesis. No exijas viabilidad "
+        "El nivel de exigencia es el de un Proyecto Intermodular de Formación "
+        "Profesional. Detectar no es perseguir: no conviertas la corrección en "
+        "una auditoría empresarial ni en una tesis. No exijas viabilidad "
         "empresarial absoluta ni verifiques cada cifra externa; acepta "
-        "estimaciones razonables si estan identificadas y explicadas.",
+        "estimaciones razonables si están identificadas y explicadas.",
         "",
         "Valora estas dimensiones, y solo estas:",
     ]
@@ -95,8 +95,8 @@ def construir(
     if economia:
         partes += [
             "",
-            f"Si encuentras muchos problemas, identifica cuales desbloquean el "
-            f"desarrollo y cuales pueden esperar. El profesor solo trasladara "
+            f"Si encuentras muchos problemas, identifica cuáles desbloquean el "
+            f"desarrollo y cuáles pueden esperar. El profesor solo trasladará "
             f"al alumno {economia} como mucho.",
         ]
 

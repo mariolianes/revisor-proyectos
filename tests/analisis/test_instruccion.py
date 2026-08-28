@@ -88,3 +88,36 @@ def test_sin_criterios_no_se_inventa_una_instruccion(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="dimensiones"):
         construir(tmp_path, "v2026-2027", "E2")
+
+
+def test_el_limite_de_economia_pedagogica_aparece_y_cambia_con_el_criterio(
+    criterios_de_analisis: Path,
+) -> None:
+    """El "como mucho N" no puede estar escrito en el código: si el YAML no
+    lo trae, no debe aparecer, y si el YAML lo cambia, el número cambia con
+    él. Sin esta prueba, borrar el bloque entero deja pasar los demás tests
+    igual de verdes.
+    """
+    feedback = criterios_de_analisis / "criteria" / "v2026-2027" / "feedback.yaml"
+    con_limite = construir(criterios_de_analisis, "v2026-2027", "E2")
+    assert "4" in con_limite
+
+    feedback.write_text(
+        feedback.read_text(encoding="utf-8").replace(
+            "prioridades_maximas: 4", "prioridades_maximas: 2"
+        ),
+        encoding="utf-8",
+    )
+    con_otro_limite = construir(criterios_de_analisis, "v2026-2027", "E2")
+
+    assert "2" in con_otro_limite
+    assert con_limite != con_otro_limite
+
+
+def test_las_dimensiones_salen_en_el_orden_del_criterio(
+    criterios_de_analisis: Path,
+) -> None:
+    """D05 va antes que D06 en dimensiones.yaml; en la instrucción, también."""
+    texto = construir(criterios_de_analisis, "v2026-2027", "E2")
+
+    assert texto.index("D05") < texto.index("D06")
