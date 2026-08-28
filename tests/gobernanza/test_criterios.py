@@ -190,3 +190,30 @@ def test_r1_pasa_sobre_los_criterios_reales_del_repositorio():
     raiz = Path(__file__).resolve().parents[2]
     infracciones = verificar_r1(raiz)
     assert infracciones == [], "\n".join(i.detalle for i in infracciones)
+
+
+def test_la_calibracion_es_un_documento_valido_en_una_fuente() -> None:
+    """El cuarto documento entró después que los tres primeros.
+
+    Se comprueba aquí porque ampliar la lista de documentos válidos es un
+    cambio de una palabra en una expresión regular, y sin este test nadie
+    notaría que se ha quitado: los criterios que citan la calibración
+    dejarían de tener fuente válida y R1 los rechazaría en bloque.
+    """
+    from tools.gobernanza.criterios import PATRON_FUENTE
+
+    assert PATRON_FUENTE.match("calibracion#7-prioridades")
+    assert PATRON_FUENTE.match("maestro#8-dimensiones")
+    assert not PATRON_FUENTE.match("inventado#8-dimensiones")
+
+
+def test_las_anclas_de_la_calibracion_se_reconocen(repo: Path) -> None:
+    """Un ancla del documento nuevo se lee igual que la de los otros tres."""
+    from tools.gobernanza.criterios import PATRON_ANCLA
+
+    encontradas = PATRON_ANCLA.findall(
+        "<!-- ancla: calibracion#9-semaforo -->\n"
+        "<!-- ancla: maestro#6-estandar-academico -->\n"
+        "<!-- ancla: ajeno#9-semaforo -->\n"
+    )
+    assert encontradas == ["calibracion#9-semaforo", "maestro#6-estandar-academico"]
