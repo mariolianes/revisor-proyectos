@@ -8,9 +8,18 @@ from backend.analisis.contrato import (
     PRIORIDADES,
     AnalisisDelMotor,
     Evidencia,
+    Fortaleza,
+    IndicioDeAutoria,
     Valoracion,
     esquema_estricto,
 )
+
+
+def _evidencia(**cambios) -> dict:
+    datos = dict(cita="El presupuesto asciende a 4.500 euros.",
+                  apartado="5. Presupuesto")
+    datos.update(cambios)
+    return datos
 
 
 def _valoracion(**cambios) -> dict:
@@ -76,13 +85,33 @@ def test_las_prioridades_son_las_del_calibrador() -> None:
 def test_un_analisis_completo_se_acepta() -> None:
     a = AnalisisDelMotor(
         valoraciones=[Valoracion(**_valoracion())],
-        fortalezas=["La estructura del documento es clara."],
+        fortalezas=[Fortaleza(
+            descripcion="La estructura del documento es clara.",
+            evidencia=_evidencia(),
+        )],
         patrones=[],
         dudas_para_el_docente=[],
-        indicios_de_autoria=[],
+        indicios_de_autoria=[IndicioDeAutoria(
+            descripcion="El estilo cambia bruscamente en el apartado 4.",
+            evidencia=_evidencia(apartado="4. Desarrollo"),
+        )],
     )
 
     assert len(a.valoraciones) == 1
+    assert len(a.fortalezas) == 1
+    assert len(a.indicios_de_autoria) == 1
+
+
+def test_una_fortaleza_sin_evidencia_se_rechaza() -> None:
+    """Una fortaleza llega al alumno; inventada, es tan falsa como una carencia."""
+    with pytest.raises(ValidationError):
+        Fortaleza(descripcion="La estructura del documento es clara.")
+
+
+def test_un_indicio_de_autoria_sin_evidencia_se_rechaza() -> None:
+    """Sin cita, un indicio es una sospecha que el docente no puede comprobar."""
+    with pytest.raises(ValidationError):
+        IndicioDeAutoria(descripcion="El estilo cambia bruscamente en el apartado 4.")
 
 
 def test_el_analisis_no_admite_campos_de_mas() -> None:
@@ -117,3 +146,13 @@ def test_el_esquema_obliga_a_decidir_la_prioridad() -> None:
     assert "prioridad" in valoracion["required"]
     tipos = valoracion["properties"]["prioridad"]["anyOf"]
     assert {"type": "null"} in tipos
+
+
+def test_el_esquema_estricto_exige_evidencia_en_fortalezas_e_indicios() -> None:
+    """Fortaleza e IndicioDeAutoria, anidados, también pasan el modo estricto."""
+    esquema = esquema_estricto()
+
+    for nombre in ("Fortaleza", "IndicioDeAutoria"):
+        modelo = esquema["$defs"][nombre]
+        assert modelo["additionalProperties"] is False
+        assert set(modelo["required"]) == {"descripcion", "evidencia"}

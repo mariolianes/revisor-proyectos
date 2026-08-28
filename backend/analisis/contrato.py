@@ -86,6 +86,36 @@ class Patron(BaseModel):
     evidencia: Evidencia
 
 
+class Fortaleza(BaseModel):
+    """Un punto fuerte del trabajo, con la evidencia que lo sostiene.
+
+    Llega al alumno a través del borrador de devolución, y una fortaleza
+    inventada es tan falsa como una carencia inventada.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    descripcion: str
+    evidencia: Evidencia
+
+
+class IndicioDeAutoria(BaseModel):
+    """Un indicio de autoría, con la evidencia que lo sostiene.
+
+    El §13 reserva al docente la decisión sobre autoría; este campo solo
+    registra el indicio. Pero un indicio sin cita es una sospecha que el
+    docente no puede comprobar, y este sistema entero se sostiene sobre que
+    nada llegue sin evidencia localizable en el PDF. La dimensión D12 ya
+    valora la autoría por el canal que exige cita; este campo era la puerta
+    de atrás.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    descripcion: str
+    evidencia: Evidencia
+
+
 class AnalisisDelMotor(BaseModel):
     """Todo lo que el motor devuelve, antes de comprobarlo.
 
@@ -94,15 +124,20 @@ class AnalisisDelMotor(BaseModel):
 
     No hay campo para la nota, y no es un olvido: `extra="forbid"` hace que
     una nota devuelta por el motor sea un error de validación.
+
+    `dudas_para_el_docente` sigue siendo texto libre: una duda suele ser sobre
+    algo que no está en el trabajo, y de una ausencia no hay cita que aportar.
+    Tampoco llega al alumno. `fortalezas` e `indicios_de_autoria` sí exigen
+    evidencia, por la misma razón que `valoraciones` y `patrones`.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     valoraciones: list[Valoracion]
-    fortalezas: list[str]
+    fortalezas: list[Fortaleza]
     patrones: list[Patron]
     dudas_para_el_docente: list[str]
-    indicios_de_autoria: list[str]
+    indicios_de_autoria: list[IndicioDeAutoria]
 
 
 def esquema_estricto() -> dict:
