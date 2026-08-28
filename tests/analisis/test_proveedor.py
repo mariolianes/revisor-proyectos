@@ -44,15 +44,15 @@ futura implantación real del negocio descrito en los apartados anteriores.
 def test_devuelve_la_respuesta_que_se_le_dio() -> None:
     p = ProveedorSimulado(respuestas=[VACIO])
 
-    assert p.analizar("instruccion", "texto", AnalisisDelMotor) is VACIO
+    assert p.analizar("instrucción", "texto", AnalisisDelMotor) is VACIO
 
 
 def test_registra_lo_que_se_le_pidio() -> None:
-    """Los tests de la instruccion necesitan ver que llego al proveedor."""
+    """Los tests de la instrucción necesitan ver que llegó al proveedor."""
     p = ProveedorSimulado(respuestas=[VACIO])
-    p.analizar("la instruccion", "el texto del trabajo", AnalisisDelMotor)
+    p.analizar("la instrucción", "el texto del trabajo", AnalisisDelMotor)
 
-    assert p.llamadas == [("la instruccion", "el texto del trabajo")]
+    assert p.llamadas == [("la instrucción", "el texto del trabajo")]
 
 
 def test_se_puede_programar_un_fallo() -> None:
@@ -60,6 +60,19 @@ def test_se_puede_programar_un_fallo() -> None:
 
     with pytest.raises(RespuestaNoValida):
         p.analizar("i", "t", AnalisisDelMotor)
+
+
+def test_una_llamada_que_falla_tambien_se_registra() -> None:
+    """El registro de llamadas tiene que servir para depurar un fallo real
+    del proveedor, no solo el camino feliz: si se registrara después de
+    comprobar los fallos programados, una llamada que termina en error
+    desaparecería de `llamadas` justo cuando más falta hace verla."""
+    p = ProveedorSimulado(fallos=[RespuestaNoValida("mal")])
+
+    with pytest.raises(RespuestaNoValida):
+        p.analizar("la instrucción", "el texto", AnalisisDelMotor)
+
+    assert p.llamadas == [("la instrucción", "el texto")]
 
 
 def test_un_fallo_y_luego_una_respuesta() -> None:
@@ -72,7 +85,7 @@ def test_un_fallo_y_luego_una_respuesta() -> None:
 
 
 def test_quedarse_sin_respuestas_es_un_error_del_test() -> None:
-    """Si un test pide mas analisis de los que programo, que se note."""
+    """Si un test pide más análisis de los que programó, que se note."""
     p = ProveedorSimulado(respuestas=[])
 
     with pytest.raises(AssertionError, match="sin respuestas"):
@@ -80,7 +93,7 @@ def test_quedarse_sin_respuestas_es_un_error_del_test() -> None:
 
 
 def test_el_simulado_dice_que_lo_es() -> None:
-    """El frontend lo ensena: un analisis simulado no es un analisis."""
+    """El frontend lo enseña: un análisis simulado no es un análisis."""
     assert ProveedorSimulado(respuestas=[VACIO]).nombre == "simulado"
 
 
@@ -90,8 +103,8 @@ def test_respuesta_no_valida_es_un_error_del_proveedor() -> None:
 
 def test_el_puerto_es_generico_en_el_formulario_pedido() -> None:
     """El mismo proveedor sirve para pedir cualquier formulario, no solo el
-    analisis: es el punto de diseno que permite reutilizarlo para el
-    borrador de devolucion en una tarea posterior."""
+    análisis: es el punto de diseño que permite reutilizarlo para el
+    borrador de devolución en una tarea posterior."""
 
     class OtroFormulario(BaseModel):
         campo: str
@@ -102,9 +115,26 @@ def test_el_puerto_es_generico_en_el_formulario_pedido() -> None:
     assert p.analizar("i", "t", OtroFormulario) is otro
 
 
+def test_las_respuestas_se_devuelven_en_el_orden_en_que_se_programaron() -> None:
+    """FIFO, no LIFO: es el orden que documenta el reintento -falla una vez,
+    la siguiente respuesta programada es la que le toca-. Con una sola
+    respuesta programada, como en el resto de los tests, ese orden nunca se
+    llegaría a comprobar."""
+
+    class OtroFormulario(BaseModel):
+        campo: str
+
+    primera = OtroFormulario(campo="primera")
+    segunda = OtroFormulario(campo="segunda")
+    p = ProveedorSimulado(respuestas=[primera, segunda])
+
+    assert p.analizar("i", "t", OtroFormulario) is primera
+    assert p.analizar("i", "t", OtroFormulario) is segunda
+
+
 def test_analisis_de_ejemplo_tiene_citas_localizables_en_el_texto() -> None:
     """El simulado no puede probar el camino feliz con citas inventadas: las
-    defensas de verificacion las rechazarian. Esta prueba ata el generador
+    defensas de verificación las rechazarían. Esta prueba ata el generador
     de ejemplos a la defensa real (`cita_localizada`), no a la idea de lo
     que esa defensa hace."""
     analisis = analisis_de_ejemplo(TEXTO_DE_EJEMPLO)
@@ -116,7 +146,7 @@ def test_analisis_de_ejemplo_tiene_citas_localizables_en_el_texto() -> None:
         + [i.evidencia.cita for i in analisis.indicios_de_autoria]
     )
 
-    assert citas, "El analisis de ejemplo deberia traer al menos una cita"
+    assert citas, "El análisis de ejemplo debería traer al menos una cita"
     for cita in citas:
         assert cita_localizada(cita, TEXTO_DE_EJEMPLO), (
             f"La cita {cita!r} no se localiza en el texto de origen"
@@ -125,16 +155,16 @@ def test_analisis_de_ejemplo_tiene_citas_localizables_en_el_texto() -> None:
 
 def test_analisis_de_ejemplo_es_determinista() -> None:
     """Si variara entre llamadas, los tests de las tareas siguientes que se
-    apoyen en el serian intermitentes."""
+    apoyen en él serían intermitentes."""
     assert analisis_de_ejemplo(TEXTO_DE_EJEMPLO) == analisis_de_ejemplo(TEXTO_DE_EJEMPLO)
 
 
 def test_desde_texto_programa_un_proveedor_simulado_con_citas_reales() -> None:
-    """La forma en que las tareas siguientes usaran el simulado: construido
+    """La forma en que las tareas siguientes usarán el simulado: construido
     directamente a partir del texto del trabajo."""
     p = ProveedorSimulado.desde_texto(TEXTO_DE_EJEMPLO)
 
-    analisis = p.analizar("instruccion", TEXTO_DE_EJEMPLO, AnalisisDelMotor)
+    analisis = p.analizar("instrucción", TEXTO_DE_EJEMPLO, AnalisisDelMotor)
 
     assert isinstance(analisis, AnalisisDelMotor)
     assert analisis.valoraciones
@@ -144,18 +174,18 @@ def test_desde_texto_programa_un_proveedor_simulado_con_citas_reales() -> None:
 
 
 def test_un_texto_por_debajo_del_minimo_falla_a_la_cara() -> None:
-    """Sin este error, el análisis se construiría igual, con apariencia
-    correcta, y sus citas las rechazaría cita_localizada más adelante: quien
-    lo use en una tarea siguiente perseguiría el fallo en el sitio
-    equivocado."""
+    """Sin esta guarda temprana, el análisis se construiría igual, con
+    apariencia correcta, y sus citas las rechazaría cita_localizada más
+    adelante: quien lo use en una tarea siguiente perseguiría el fallo en
+    el sitio equivocado."""
     texto_corto = "x" * (LONGITUD_MINIMA_DE_TEXTO - 1)
 
     with pytest.raises(ValueError, match=str(LONGITUD_MINIMA_DE_TEXTO)):
         analisis_de_ejemplo(texto_corto)
 
 
-def test_un_texto_justo_en_el_limite_funciona_y_sus_citas_se_localizan() -> None:
-    """Fija la frontera: un off-by-one en el cálculo de
+def test_un_texto_justo_en_el_limite_sin_artefactos_funciona() -> None:
+    """Fija la frontera del caso limpio: un off-by-one en el cálculo de
     LONGITUD_MINIMA_DE_TEXTO no se notaría solo con el test del texto
     corto."""
     texto_en_el_limite = "x" * LONGITUD_MINIMA_DE_TEXTO
@@ -170,3 +200,32 @@ def test_un_texto_justo_en_el_limite_funciona_y_sus_citas_se_localizan() -> None
     )
     for cita in citas:
         assert cita_localizada(cita, texto_en_el_limite)
+
+
+def test_un_texto_en_el_limite_con_artefactos_de_pdf_falla_con_error_claro() -> None:
+    """El caso incómodo: alcanzar LONGITUD_MINIMA_DE_TEXTO no basta cuando
+    el texto trae los artefactos que introduce un PDF real -aquí, espacios
+    dobles pegados justo donde se recorta el último fragmento-, porque
+    colapsan al normalizar y la cita se queda por debajo de CITA_MINIMA.
+
+    Antes de verificar cada cita contra `cita_localizada`, esto pasaba en
+    silencio: el análisis se construía igual, con una cita que la
+    verificación real rechazaría más adelante. Ahora tiene que fallar aquí,
+    con un error que señale cuál cita es y por qué."""
+    texto = "b" * 113 + "a  aa  aa  aa  aa  aa"
+    assert len(texto) == LONGITUD_MINIMA_DE_TEXTO
+
+    with pytest.raises(ValueError, match="no se localiza"):
+        analisis_de_ejemplo(texto)
+
+
+def test_un_texto_en_el_limite_con_guion_de_maquetacion_falla_con_error_claro() -> None:
+    """La misma incomodidad que el test anterior, con el otro artefacto que
+    `normalizar_para_buscar` existe para tratar: un guion de maquetación al
+    final de línea, que desaparece por completo al normalizar y también
+    puede dejar la cita por debajo de CITA_MINIMA."""
+    texto = "b" * 132 + "-\n"
+    assert len(texto) == LONGITUD_MINIMA_DE_TEXTO
+
+    with pytest.raises(ValueError, match="no se localiza"):
+        analisis_de_ejemplo(texto)

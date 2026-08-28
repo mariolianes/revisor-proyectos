@@ -32,7 +32,7 @@ from backend.analisis.contrato import (
     Patron,
     Valoracion,
 )
-from backend.analisis.verificacion import CITA_MINIMA
+from backend.analisis.verificacion import CITA_MINIMA, cita_localizada
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -129,13 +129,37 @@ def _fragmento_literal(texto: str, proporcion: float, longitud: int = 80) -> str
 # `texto` como mínimo.
 _PROPORCION_MAS_EXIGENTE = 0.85
 
-# La longitud mínima de `texto` que garantiza que ese fragmento más exigente
-# supere `CITA_MINIMA`. Se calcula, no se fija a mano: si `CITA_MINIMA` sube
-# en `verificacion.py`, este número tiene que subir con él y no quedarse
-# mintiendo. La cota es conservadora a propósito -se mide sobre la longitud
-# en bruto del fragmento, no sobre su versión normalizada-, porque normalizar
-# solo puede acortarlo (colapsa espacios, quita tildes) o dejarlo igual.
+# Una guarda barata y temprana para el caso obvio -un texto de una frase-,
+# calculada desde `CITA_MINIMA` en vez de fijada a mano: si el mínimo de
+# `cita_localizada` sube en `verificacion.py`, este número sube con él.
+#
+# No es la garantía: se mide sobre la longitud en bruto del fragmento, y
+# normalizar puede acortarlo más de lo que esta cuenta prevé -espacios
+# dobles que colapsan a uno, un guion de maquetación que desaparece- porque
+# esos son exactamente los artefactos que introduce un PDF real. Un texto
+# que supera esta guarda puede seguir produciendo una cita que
+# `cita_localizada` rechace; la garantía real es la verificación que hace
+# `analisis_de_ejemplo` después de construir cada fragmento.
 LONGITUD_MINIMA_DE_TEXTO = math.ceil(CITA_MINIMA / (1 - _PROPORCION_MAS_EXIGENTE))
+
+
+def _citas_con_etiqueta(analisis: AnalisisDelMotor) -> list[tuple[str, str]]:
+    """Todas las citas del análisis, con una etiqueta que dice de dónde sale
+    cada una.
+
+    Sirve para poder señalar, si `cita_localizada` rechaza alguna, cuál es y
+    no solo que "una de las citas" ha fallado.
+    """
+    citas: list[tuple[str, str]] = []
+    for valoracion in analisis.valoraciones:
+        citas.append((f"la valoración de {valoracion.dimension}", valoracion.evidencia.cita))
+    for fortaleza in analisis.fortalezas:
+        citas.append(("la fortaleza", fortaleza.evidencia.cita))
+    for patron in analisis.patrones:
+        citas.append((f"el patrón «{patron.nombre}»", patron.evidencia.cita))
+    for indicio in analisis.indicios_de_autoria:
+        citas.append(("el indicio de autoría", indicio.evidencia.cita))
+    return citas
 
 
 def analisis_de_ejemplo(texto: str) -> AnalisisDelMotor:
@@ -152,11 +176,19 @@ def analisis_de_ejemplo(texto: str) -> AnalisisDelMotor:
     `texto` debe tener una longitud razonable -la de un documento real, no la
     de una frase suelta-, porque los fragmentos se toman en distintos puntos
     de su extensión para simular evidencia repartida por el trabajo. Si es
-    más corto que `LONGITUD_MINIMA_DE_TEXTO`, se falla aquí, a la cara: sin
-    esta comprobación, quien escriba un texto de prueba corto en una tarea
-    posterior obtendría un análisis con apariencia correcta cuyas citas
-    `cita_localizada` rechazaría más adelante, y perseguiría el fallo en la
-    defensa en vez de en el texto de prueba que lo origina.
+    más corto que `LONGITUD_MINIMA_DE_TEXTO`, se falla aquí, a la cara, sin
+    llegar a construir nada.
+
+    Pero esa longitud es solo una guarda barata para el caso obvio, no la
+    garantía: alcanzarla no basta si el texto tiene artefactos de PDF
+    -espacios dobles, un guion de maquetación- que colapsan justo donde se
+    recorta un fragmento, porque entonces la cita puede quedar por debajo de
+    `CITA_MINIMA` una vez normalizada aunque el texto en bruto pareciera de
+    sobra. Por eso, después de construir el análisis, cada cita se
+    comprueba de verdad con `cita_localizada` contra `texto`; si alguna no
+    se localiza, se falla también aquí, con un error que dice cuál es, en
+    vez de devolver un análisis con apariencia correcta y una cita que la
+    verificación real rechazaría más adelante.
     """
     if len(texto) < LONGITUD_MINIMA_DE_TEXTO:
         raise ValueError(
@@ -166,7 +198,7 @@ def analisis_de_ejemplo(texto: str) -> AnalisisDelMotor:
             f"cita_localizada una vez normalizadas; se han recibido "
             f"{len(texto)}."
         )
-    return AnalisisDelMotor(
+    analisis = AnalisisDelMotor(
         valoraciones=[
             Valoracion(
                 dimension="D01",
@@ -236,3 +268,16 @@ def analisis_de_ejemplo(texto: str) -> AnalisisDelMotor:
             ),
         ],
     )
+
+    for etiqueta, cita in _citas_con_etiqueta(analisis):
+        if not cita_localizada(cita, texto):
+            raise ValueError(
+                f"El fragmento de ejemplo para {etiqueta} no se localiza en "
+                f"`texto` una vez normalizado (cita: {cita!r}). El texto "
+                f"recibido probablemente tiene artefactos -espacios dobles, "
+                f"un guion de maquetación- que colapsan justo donde se "
+                f"recorta este fragmento; prueba con un texto más largo o "
+                f"sin esos artefactos en ese tramo."
+            )
+
+    return analisis
