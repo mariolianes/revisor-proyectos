@@ -192,6 +192,24 @@ def test_una_dimension_repetida_se_queda_con_la_primera(criterios_de_analisis: P
     assert any("dos veces" in r.detalle for r in v.reparos)
 
 
+def test_una_dimension_con_cita_inventada_no_aparece_tambien_como_ausente(
+    criterios_de_analisis: Path,
+) -> None:
+    """Una dimensión con evidencia inventada sigue contando como vista: se
+    marca `evidencia_localizada=False`, pero no se declara además ausente.
+    Que apareciera en las dos listas a la vez sería la contradicción entre
+    dos defensas que este test existe para impedir: `vistas.add` tiene que
+    ocurrir antes de comprobar la cita, no después ni solo si la cita
+    resulta válida."""
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis([_val(dimension="D05", cita="Una cita que no existe en el trabajo")]),
+    )
+
+    assert v.valoraciones[0].evidencia_localizada is False
+    assert "D05" not in v.dimensiones_ausentes
+
+
 # --- Defensa: ninguna nota, venga como venga ---
 
 def test_una_nota_en_una_observacion_no_convierte_nada_en_nota(criterios_de_analisis: Path) -> None:
@@ -206,7 +224,7 @@ def test_una_nota_en_una_observacion_no_convierte_nada_en_nota(criterios_de_anal
     assert not hasattr(v.valoraciones[0], "nota")
 
 
-# --- Defensa: ninguna afirmación categórica de autoría ---
+# --- Defensa: el aviso del §13 es estructural, no depende de la redacción ---
 
 def test_los_indicios_de_autoria_se_conservan_como_indicios(criterios_de_analisis: Path) -> None:
     v = verificar(
@@ -216,11 +234,39 @@ def test_los_indicios_de_autoria_se_conservan_como_indicios(criterios_de_analisi
 
     assert v.indicios_de_autoria[0].descripcion == "Registro uniforme en todo el texto."
     assert v.indicios_de_autoria[0].evidencia_localizada is True
-    assert v.reparos == []
+    # El aviso del §13 acompaña a todo indicio, aunque su redacción sea
+    # neutra y no dispare el realce de frases categóricas.
+    assert any(r.regla == "autoria_es_indicio" for r in v.reparos)
+    assert not any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos)
+
+
+def test_un_indicio_redactado_de_la_forma_mas_neutra_posible_tambien_lleva_el_aviso(
+    criterios_de_analisis: Path,
+) -> None:
+    """Esta es la prueba que fija la garantía nueva: no depende de que el
+    indicio suene a veredicto. Un indicio redactado con la máxima cautela
+    -sin verbo de atribución, sin nombrar ninguna IA- lleva el aviso igual
+    que uno redactado como titular."""
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis(
+            [_val()],
+            indicios_de_autoria=[_indicio(
+                descripcion="El vocabulario del apartado 4 difiere del resto del trabajo."
+            )],
+        ),
+    )
+
+    assert any(r.regla == "autoria_es_indicio" for r in v.reparos)
+    assert not any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos)
 
 
 def test_un_indicio_redactado_como_afirmacion_se_marca(criterios_de_analisis: Path) -> None:
-    """«Este texto ha sido generado por IA» no es un indicio: es un veredicto."""
+    """«Este texto ha sido generado por IA» no es un indicio: es un veredicto.
+
+    El realce lo señala aparte, pero el aviso del §13 ya estaba puesto antes
+    de mirar la redacción: por eso las dos reglas conviven en la lista.
+    """
     v = verificar(
         criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
         _analisis(
@@ -229,7 +275,8 @@ def test_un_indicio_redactado_como_afirmacion_se_marca(criterios_de_analisis: Pa
         ),
     )
 
-    assert any("afirmación" in r.detalle.lower() for r in v.reparos)
+    assert any(r.regla == "autoria_es_indicio" for r in v.reparos)
+    assert any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos)
     # No se destruye: el docente lo sigue viendo, con el aviso al lado.
     assert v.indicios_de_autoria[0].descripcion == "Este texto ha sido generado por una IA."
 
@@ -245,11 +292,12 @@ def test_una_afirmacion_de_autoria_sin_tildes_tambien_se_marca(criterios_de_anal
         ),
     )
 
-    assert any(r.regla == "autoria_como_indicio" for r in v.reparos)
+    assert any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos)
 
 
-def test_un_indicio_prudente_no_se_marca_como_veredicto(criterios_de_analisis: Path) -> None:
-    """Sugerir no es afirmar: no todo indicio dispara el reparo."""
+def test_un_indicio_prudente_no_dispara_el_realce(criterios_de_analisis: Path) -> None:
+    """Sugerir no es afirmar: no todo indicio dispara el realce. El aviso del
+    §13 sí lo lleva -esa es la garantía-, pero el realce, no."""
     v = verificar(
         criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
         _analisis(
@@ -258,7 +306,37 @@ def test_un_indicio_prudente_no_se_marca_como_veredicto(criterios_de_analisis: P
         ),
     )
 
-    assert not any(r.regla == "autoria_como_indicio" for r in v.reparos)
+    assert not any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos)
+    assert any(r.regla == "autoria_es_indicio" for r in v.reparos)
+
+
+# Las diez formulaciones que la revisión coló contra la lista cerrada
+# original (solo se documentaron seis explícitamente). Ninguna es necesaria
+# para que la garantía se sostenga -el test de arriba con redacción neutra ya
+# la fija-, pero la lista ampliada las reconoce igualmente como realce.
+_FORMULACIONES_CATEGORICAS_DE_LA_REVISION = [
+    "Este texto ha sido escrito por una inteligencia artificial.",
+    "El presente trabajo fue redactado por una inteligencia artificial.",
+    "Se trata de un texto producido íntegramente por ChatGPT.",
+    "El texto ha sido creado por Gemini.",
+    "El alumno no redactó esto; lo redactó una IA.",
+    "Este texto proviene de un modelo de lenguaje, no de una persona.",
+]
+
+
+def test_el_realce_ampliado_reconoce_las_formulaciones_de_la_revision(
+    criterios_de_analisis: Path,
+) -> None:
+    """No es la garantía -el aviso del §13 ya cubre estas frases igual que
+    cualquier otra-, pero conviene que el realce ampliado las detecte."""
+    for descripcion in _FORMULACIONES_CATEGORICAS_DE_LA_REVISION:
+        v = verificar(
+            criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+            _analisis([_val()], indicios_de_autoria=[_indicio(descripcion=descripcion)]),
+        )
+        assert any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos), (
+            f"El realce no reconoció: {descripcion!r}"
+        )
 
 
 # --- Un motor que devuelve basura entera ---

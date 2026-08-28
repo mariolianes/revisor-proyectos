@@ -26,14 +26,42 @@ PRIORIDADES_EN_LA_DEVOLUCION = 4
 # del calibrador prohíben. «no_exigir» en criteria/v2026-2027/feedback.yaml lo
 # llama por su nombre: «afirmaciones categóricas de autoría basadas solo en el
 # estilo». Se buscan sobre el texto normalizado, así que van sin tildes.
-_AFIRMACIONES_DE_AUTORIA = (
-    "ha sido generado por",
-    "esta generado por",
-    "fue generado por",
-    "escrito por una ia",
-    "escrito por chatgpt",
+#
+# ESTO NO ES LA GARANTÍA. Es un realce: si el indicio suena a veredicto, lo
+# señala aparte. Pero el castellano tiene demasiadas maneras de decir «esto lo
+# escribió una IA» -verbos distintos, nombres de modelo distintos, la vuelta
+# de negar al alumno y atribuir a la máquina- como para que una lista cerrada
+# las agote nunca: quedaba demostrado con que "escrito por una inteligencia
+# artificial" -la formulación literal de la prohibición del §13- no encajaba
+# en la lista original de siete frases. Ampliarla ayuda, pero no cierra nada:
+# la garantía real es que TODO indicio, lo diga como lo diga, lleva el aviso
+# de verificar() antes de este bloque. Que esta lista no reconozca una
+# formulación nueva no abre ningún hueco; solo pierde el realce.
+_VERBOS_DE_ATRIBUCION_A_IA = (
+    "generado", "escrito", "redactado", "creado", "producido", "elaborado",
+    "confeccionado",
+)
+
+_NOMBRES_DE_IA = (
+    "una ia", "una inteligencia artificial", "chatgpt", "gemini", "copilot",
+    "claude", "un modelo de lenguaje", "un modelo de ia", "un llm",
+)
+
+_AFIRMACIONES_DE_AUTORIA = tuple(
+    f"{verbo} por {nombre}"
+    for verbo in _VERBOS_DE_ATRIBUCION_A_IA
+    for nombre in _NOMBRES_DE_IA
+) + (
     "es obra de una ia",
+    "es obra de una inteligencia artificial",
     "es obra de chatgpt",
+    "es obra de gemini",
+    "producido integramente por",
+    "no lo redacto el alumno",
+    "no redacto esto",
+    "no lo escribio el alumno",
+    "proviene de un modelo de lenguaje",
+    "no de una persona",
 )
 
 # Una cita más corta que esto no señala nada: «el» o «viable» aparecen en
@@ -211,6 +239,13 @@ def verificar(
     fortaleza o un indicio sin evidencia localizable es tan poco fiable como
     una valoración sin ella, y dejar alguno sin comprobar reabriría el hueco
     que la primera defensa cierra.
+
+    El aviso del §13 sobre un indicio de autoría es incondicional: se pone
+    en todos, redactados como estén. No es una lista de frases prohibidas
+    -esa lista solo da un realce, no la garantía- porque una lista nunca
+    reconoce todas las formas de decir «esto lo escribió una IA», y la
+    garantía no puede depender de que el motor elija una de las palabras
+    que la lista sí conoce.
     """
     activas = _dimensiones_activas(raiz, version, fase)
     reparos: list[Reparo] = []
@@ -291,13 +326,31 @@ def verificar(
                 detalle="La evidencia de un indicio de autoría no se ha "
                         "localizado en el documento.",
             ))
+
+        # La garantía del §13, no un realce: TODO indicio lleva este aviso,
+        # esté redactado como esté. No depende de qué palabras eligió el
+        # motor -ni de que la lista de abajo las reconozca-, así que no hay
+        # formulación que la evada.
+        reparos.append(Reparo(
+            regla="autoria_es_indicio",
+            detalle="Esto es un indicio de autoría, no un veredicto: la "
+                    "decisión es del profesor (§13).",
+        ))
+
+        # Realce, no garantía: si además el indicio suena a veredicto -«lo
+        # escribió una IA» en vez de una observación-, se señala aparte. Que
+        # esta comprobación no reconozca una formulación no certifica nada:
+        # la garantía ya quedó puesta arriba. Se conserva el texto del motor
+        # tal cual -reescribirlo sería el sistema decidiendo algo que no le
+        # toca-, y de paso lo categórico que suene le dice al docente algo
+        # útil sobre la fiabilidad del análisis.
         plano = normalizar_para_buscar(indicio.descripcion)
         if any(forma in plano for forma in _AFIRMACIONES_DE_AUTORIA):
             reparos.append(Reparo(
-                regla="autoria_como_indicio",
-                detalle="Un indicio de autoría viene redactado como afirmación "
-                        "categórica. El sistema registra indicios; quien decide "
-                        "eres tú.",
+                regla="autoria_formulada_categoricamente",
+                detalle="Además, el indicio está redactado en términos "
+                        "categóricos, como un veredicto y no como una "
+                        "observación.",
             ))
         indicios_de_autoria.append(IndicioDeAutoriaVerificado(
             descripcion=indicio.descripcion,
