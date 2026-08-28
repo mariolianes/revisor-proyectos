@@ -261,7 +261,20 @@ def test_cambiar_estado_manda_un_patch() -> None:
     assert cambiada.estado == "ANALIZADO"
 
 
-def test_bloquear_sin_motivo_se_rechaza_antes_de_la_red() -> None:
+def test_bloquear_sin_motivo_gana_sobre_un_identificador_invalido_sin_llegar_a_la_red() -> None:
+    """El mensaje del motivo gana aunque el identificador tampoco valga.
+
+    El nombre anterior de este test -`..._antes_de_la_red`- solo hablaba
+    del motivo, y el test protege algo más: `"id-entrega"` no tiene forma
+    de UUID, así que este test también es el cruce "estado inválido +
+    identificador inválido" que la sección de paridad del informe daba por
+    no probado. Verificado invirtiendo el orden de las dos validaciones en
+    `cambiar_estado` -`_es_uuid` antes que `validar_estado`- y comprobando
+    que entonces el test falla (`Failed: DID NOT RAISE <class
+    'ValueError'>`, porque el identificador inválido devuelve `None` en
+    silencio antes de llegar al estado).
+    """
+
     def responder(peticion: httpx.Request) -> httpx.Response:
         raise AssertionError("no debería llegar a la red")
 
@@ -334,6 +347,28 @@ def test_por_id_con_identificador_invalido_no_hace_ninguna_peticion() -> None:
     assert llamadas == []
 
 
+def test_por_id_con_uuid_valido_pero_inexistente_da_none_en_los_dos_almacenes() -> None:
+    """El gemelo feliz de la guarda de UUID: no basta con parecerlo.
+
+    La guarda de `_es_uuid` solo demuestra que un identificador con forma
+    de UUID *llega* a la red; no demuestra que, una vez allí, una consulta
+    sin resultados se traduzca en `None` y no en un error. Un UUID válido
+    que no está en la tabla da una lista vacía en la respuesta de
+    PostgREST, y `por_id` la traduce a `None` -el mismo `None` que da
+    `AlmacenEnMemoria` cuando el identificador no está en su diccionario-.
+    """
+    uuid_valido = "22222222-2222-2222-2222-222222222222"
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    resultado_memoria = AlmacenEnMemoria().por_id(uuid_valido)
+    resultado_supabase = _almacen(responder).por_id(uuid_valido)
+
+    assert resultado_memoria is None
+    assert resultado_supabase == resultado_memoria
+
+
 def test_cambiar_estado_con_identificador_invalido_no_hace_ninguna_peticion() -> None:
     """La guarda del identificador vale también para `cambiar_estado`.
 
@@ -352,6 +387,29 @@ def test_cambiar_estado_con_identificador_invalido_no_hace_ninguna_peticion() ->
 
     assert resultado is None
     assert llamadas == []
+
+
+def test_cambiar_estado_con_uuid_valido_pero_inexistente_da_none_en_los_dos_almacenes() -> None:
+    """El mismo patrón que en `por_id`, aplicado a `cambiar_estado`.
+
+    Tras el `PATCH`, `filas` vacío -PostgREST no encontró ninguna fila con
+    ese `id`- se traduce en `None`, igual que `AlmacenEnMemoria` cuando el
+    identificador no está en su diccionario.
+    """
+    uuid_valido = "33333333-3333-3333-3333-333333333333"
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    resultado_memoria = AlmacenEnMemoria().cambiar_estado(
+        uuid_valido, "ANALIZADO", None
+    )
+    resultado_supabase = _almacen(responder).cambiar_estado(
+        uuid_valido, "ANALIZADO", None
+    )
+
+    assert resultado_memoria is None
+    assert resultado_supabase == resultado_memoria
 
 
 def test_una_fase_huerfana_en_una_fila_guardada_da_el_mismo_resultado_en_los_dos_almacenes() -> None:
