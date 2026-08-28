@@ -131,12 +131,28 @@ class Almacen(Protocol):
 # la ruta quedan fuera a propósito: es dónde está el fichero, no de quién
 # es, y moverlo de subcarpeta no debe dar error.
 #
+# El ciclo también queda fuera, y por la misma clase de razón: el ciclo no
+# es de la entrega, es del alumno -en la base de datos lo tiene la tabla
+# `alumno` y la tabla `entrega` no lo tiene-, así que no forma parte de la
+# identidad de una entrega. Estuvo dentro, y el efecto era este: el docente
+# confirmaba declarando un ciclo distinto al que el alumno tiene, el
+# sistema aceptaba la entrega y le ponía el ciclo del alumno -que es lo
+# correcto-, y al volver a confirmar el MISMO archivo con los MISMOS datos
+# se le acusaba de haber cambiado el dato. No lo había cambiado él: lo
+# había cambiado el sistema. Y era justo el caso legítimo que este
+# mecanismo existe para dejar pasar, el de un trabajo que se mueve de
+# carpeta y se vuelve a confirmar.
+#
+# La discrepancia de ciclo no se pierde: la cuenta el aviso que compone
+# `api/entregas.confirmar`, que informa sin bloquear, que es el sitio
+# correcto para algo que el docente tiene que mirar y decidir.
+#
 # Vive aquí, con el resto de validaciones compartidas, y no en cada
 # almacén. Estuvo duplicado palabra por palabra en los dos, con un
 # comentario que prometía que se comportaban igual, y esa promesa no la
-# sostenía nada: quitar «ciclo» de la tupla en uno solo de los dos dejaba
-# los tests en verde.
-CAMPOS_DE_IDENTIDAD = ("codigo_alumno", "ciclo", "fase", "version")
+# sostenía nada: quitar un campo de la tupla en uno solo de los dos dejaba
+# los tests en verde. Ahora hay un test de paridad permanente.
+CAMPOS_DE_IDENTIDAD = ("codigo_alumno", "fase", "version")
 
 
 def choca_con_lo_declarado(

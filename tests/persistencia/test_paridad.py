@@ -151,17 +151,16 @@ def test_la_misma_huella_con_datos_distintos_falla_igual_en_los_dos(
 
 @pytest.mark.parametrize("campo,valor", [
     ("codigo_alumno", "AF999"),
-    ("ciclo", "DAW"),
     ("fase", "E2"),
     ("version", 2),
 ])
 def test_cada_campo_de_identidad_choca_igual_en_los_dos(
     dos_almacenes, campo: str, valor
 ) -> None:
-    """Los cuatro campos, uno a uno.
+    """Los tres campos, uno a uno.
 
     Es el test que faltaba: con la comprobación duplicada en los dos
-    almacenes, quitar «ciclo» de la tupla de uno solo no rompía nada.
+    almacenes, quitar un campo de la tupla de uno solo no rompía nada.
     """
     def guion(almacen):
         almacen.registrar(_entrega("E1"))
@@ -174,6 +173,29 @@ def test_cada_campo_de_identidad_choca_igual_en_los_dos(
 
     assert memoria == supabase
     assert memoria.startswith("ValueError: El archivo")
+
+
+def test_el_ciclo_no_forma_parte_de_la_identidad_en_ninguno(dos_almacenes) -> None:
+    """El ciclo es del alumno, no de la entrega, y no puede acusar a nadie.
+
+    Estuvo entre los campos de identidad y el efecto era este: el docente
+    confirmaba declarando un ciclo distinto al del alumno, el sistema
+    aceptaba la entrega y le ponía el ciclo del alumno, y al volver a
+    confirmar el mismo archivo con los mismos datos se le decía que había
+    cambiado el dato. No lo había cambiado él. La discrepancia la cuenta el
+    aviso de `api/entregas.confirmar`, que informa sin bloquear.
+    """
+    def guion(almacen):
+        almacen.registrar(_entrega("E1", ciclo="DAM"))
+        # Misma huella, mismos datos, otro ciclo: no es un error de
+        # atribución, es la misma entrega.
+        return almacen.registrar(_entrega("E1", ciclo="DAW"))
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    # Ni excepción ni ficha nueva: la que ya había, con el ciclo del alumno.
+    assert memoria[1] == "DAM"
 
 
 def test_una_version_invalida_se_rechaza_igual_en_los_dos(dos_almacenes) -> None:

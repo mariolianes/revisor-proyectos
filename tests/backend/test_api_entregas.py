@@ -490,6 +490,45 @@ def test_declarar_otro_ciclo_para_el_mismo_alumno_se_avisa(
     assert {e["ciclo"] for e in listadas} == {"DAM"}
 
 
+def test_reconfirmar_con_los_mismos_datos_no_acusa_al_profesor(
+    cliente_dos_archivos,
+) -> None:
+    """El profesor no cambia nada entre los dos intentos. Antes daba 400.
+
+    Con «ciclo» dentro de los campos de identidad pasaba esto: el primer
+    intento se aceptaba y el sistema guardaba el ciclo del alumno -que es lo
+    correcto-, y el segundo, con EXACTAMENTE los mismos datos, se rechazaba
+    diciendo «ahora se declara como AF023/DAW». El que había cambiado el
+    dato era el sistema.
+
+    Y es justo el caso legítimo que el aviso de «este archivo ya estaba
+    registrado» existe para cubrir: mover un trabajo de carpeta y volver a
+    confirmarlo.
+    """
+    datos = {
+        "nombre_archivo": "AF023_DAM_E2_20260220_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAW", "fase": "E2", "version": 1,
+    }
+    cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+    })
+
+    primera = cliente_dos_archivos.post("/api/entregas", json=datos)
+    segunda = cliente_dos_archivos.post("/api/entregas", json=datos)
+
+    assert primera.status_code == 200
+    assert segunda.status_code == 200, segunda.text
+    # La misma ficha, no una segunda.
+    assert segunda.json()["entrega"]["id"] == primera.json()["entrega"]["id"]
+    assert len(cliente_dos_archivos.get("/api/entregas").json()) == 2
+    # Y el aviso del ciclo sale las dos veces: informa, no bloquea.
+    assert "DAW" in primera.json()["aviso"]
+    assert "DAW" in segunda.json()["aviso"]
+    # La segunda dice además que ya estaba registrado, que es lo que pasa.
+    assert "ya estaba registrado" in segunda.json()["aviso"]
+
+
 def test_con_el_ciclo_correcto_no_hay_aviso_de_ciclo(cliente_dos_archivos) -> None:
     """Un aviso que salta cuando no toca deja de leerse."""
     cliente_dos_archivos.post("/api/entregas", json={
