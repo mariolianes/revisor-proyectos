@@ -236,3 +236,31 @@ def test_confirmar_un_archivo_movido_de_subcarpeta_avisa_de_que_ya_estaba(
     cuerpo = segunda.json()
     assert cuerpo["entrega"]["id"] == primera["entrega"]["id"]
     assert "ya estaba registrad" in cuerpo["aviso"].lower()
+
+
+def test_confirmar_con_otro_alumno_da_400_y_nombra_la_ficha_que_choca(cliente) -> None:
+    """El mismo archivo -misma huella-, declarado ahora con otro alumno.
+
+    No es el caso legítimo de moverlo de carpeta: es un error de
+    atribución, y `AlmacenEnMemoria.registrar` lo rechaza con un
+    `ValueError` que nombra bajo qué ficha está ya registrado ese
+    contenido. El endpoint tiene que convertirlo en un 400 con ese mismo
+    mensaje, no en un 500: es el aviso que evita colgarle a un alumno el
+    trabajo de otro, y el profesor lo lee aquí.
+    """
+    primera = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    }).json()
+
+    respuesta = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "BX999", "ciclo": "DAM", "fase": "E2", "version": 1,
+    })
+
+    assert respuesta.status_code == 400
+    detalle = respuesta.json()["detail"]
+    assert "ya está registrado" in detalle
+    assert primera["entrega"]["id"] in detalle
+    assert "AF023" in detalle
+    assert "BX999" in detalle

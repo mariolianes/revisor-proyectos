@@ -146,18 +146,39 @@ def test_localizar_encuentra_el_archivo_por_su_ruta_relativa(entregas: Path, pdf
     assert encontrado == destino
 
 
-def test_localizar_recurre_al_respaldo_si_el_archivo_se_ha_movido(entregas: Path, pdf_con_indice: Path) -> None:
-    """El docente mueve el archivo de subcarpeta después de registrarlo: la
-    ruta relativa guardada ya no apunta a él, así que se busca por su
-    nombre en todo el árbol."""
-    subcarpeta = entregas / "AF023"
-    subcarpeta.mkdir()
-    destino = subcarpeta / "AF023_DAM_E2_20260115_v1.pdf"
-    destino.write_bytes(pdf_con_indice.read_bytes())
+def test_localizar_recurre_al_respaldo_si_el_archivo_se_ha_movido_de_subcarpeta(
+    entregas: Path, pdf_con_indice: Path,
+) -> None:
+    """El docente mueve el archivo de una subcarpeta a otra después de
+    registrarlo: la ruta relativa guardada («AF023/trabajo.pdf») ya no
+    apunta a él -ahora vive en «OTROS/trabajo.pdf»-, así que se busca por
+    su nombre de archivo en todo el árbol.
 
-    encontrado = localizar(entregas, "AF023_DAM_E2_20260115_v1.pdf")
+    Esta es la prueba deliberada de que el respaldo busca por
+    `Path(nombre).name` y no por `nombre` entero: con `carpeta / nombre`
+    la ruta directa ya no existe (la subcarpeta cambió), y si el respaldo
+    también usara la ruta relativa completa -`carpeta.rglob(nombre)`-
+    tampoco la encontraría, porque «AF023/trabajo.pdf» no existe en
+    ninguna parte del árbol tras el movimiento. Solo buscando por el
+    nombre suelto se le encuentra en su nueva subcarpeta.
+    """
+    origen = entregas / "AF023"
+    origen.mkdir()
+    destino_final = entregas / "OTROS" / "trabajo.pdf"
+    destino_final.parent.mkdir()
+    (origen / "trabajo.pdf").write_bytes(pdf_con_indice.read_bytes())
+    (origen / "trabajo.pdf").rename(destino_final)
 
-    assert encontrado == destino
+    encontrado = localizar(entregas, "AF023/trabajo.pdf")
+
+    assert encontrado == destino_final
+
+    # Verificación de que la prueba de arriba de verdad ejercita el
+    # respaldo por nombre: con la ruta relativa completa, rglob no
+    # encuentra nada, porque «AF023/trabajo.pdf» ya no existe en ningún
+    # sitio del árbol tras el movimiento.
+    assert not any(entregas.rglob("AF023/trabajo.pdf"))
+    assert list(entregas.rglob("trabajo.pdf")) == [destino_final]
 
 
 def test_localizar_devuelve_none_si_no_esta_en_ningun_sitio(entregas: Path) -> None:

@@ -117,6 +117,14 @@ def localizar(carpeta: Path, nombre: str) -> Path | None:
     directa = carpeta / nombre
     if directa.is_file():
         return directa
+    # El respaldo busca por `Path(nombre).name` -solo el nombre de archivo-
+    # y no por `nombre` entero. Lo que puede haber cambiado es la
+    # subcarpeta, no el nombre: buscar con `rglob(nombre)` seguiría
+    # exigiendo la misma ruta relativa completa, así que un archivo movido
+    # de una subcarpeta a otra no aparecería, y es exactamente el
+    # movimiento que este respaldo existe para cubrir. Si esta línea vuelve
+    # a `rglob(nombre)`, un trabajo confirmado dentro de una subcarpeta
+    # reaparece como pendiente para siempre en cuanto el docente lo mueve.
     return next(
         (ruta for ruta in carpeta.rglob(Path(nombre).name) if ruta.is_file()),
         None,
