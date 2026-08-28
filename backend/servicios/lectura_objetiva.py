@@ -9,13 +9,18 @@ carpeta. No se guarda ni el PDF ni su texto —lo fija D-001—, así que la
 única forma de comparar es que el archivo anterior siga donde estaba. Si no
 está, no se compara y se dice: el §18.2 no admite seguir como si nada
 cuando falta el material anterior.
+
+Tampoco se compara si a alguno de los dos documentos le falta texto
+extraíble. Comparar exige palabras a los dos lados; sin ellas la
+comparación devuelve sus valores por omisión, y una cifra por omisión
+enseñada como medida es peor que decir que no se ha comparado.
 """
 
 from pathlib import Path
 
 from pydantic import BaseModel
 
-from backend.evolucion.comparacion import Evolucion, comparar
+from backend.evolucion.comparacion import Evolucion, comparar, normalizar
 from backend.extraccion import medir
 from backend.extraccion.lectura import PdfIlegible
 from backend.extraccion.medidas import Medidas
@@ -97,6 +102,45 @@ def leer(
         texto_anterior = medir(ruta_anterior).texto_plano
     except PdfIlegible as fallo:
         ficha.aviso = f"No se ha comparado con la entrega anterior: {fallo}"
+        return ficha
+
+    # Comparar exige texto a los dos lados. Sin él, `comparar` devuelve una
+    # Evolucion con proporcion_conservada 0.0 y proporcion_nueva 0.0 -sus
+    # valores por omisión, no una medida-, y la pantalla lo lee como «se
+    # conserva el 0 % de lo anterior»: dos cifras inventadas presentadas
+    # como medidas. Con la entrega nueva sin texto es peor todavía, porque
+    # salta el aviso más severo del módulo -«la entrega no parece incluir el
+    # trabajo anterior»- por un hecho puramente técnico.
+    #
+    # El criterio es `normalizar`, no `medidas.escaneado`, porque
+    # `normalizar` es exactamente lo que la comparación usa para construir
+    # sus firmas: si no devuelve ni una palabra, no hay nada que comparar,
+    # lo diga o no la bandera de escaneado. `escaneado` es «no hay ni un
+    # carácter de texto», que es más estricto: un PDF cuyo único texto
+    # fueran guiones o números de página no sería escaneado y aun así no
+    # daría ni una firma. Que el archivo sea un escaneado ya lo reporta por
+    # su cuenta el criterio «archivo» de formato; aquí solo importa si hay
+    # palabras con las que comparar.
+    sin_texto_anterior = not normalizar(texto_anterior)
+    sin_texto_nuevo = not normalizar(medidas.texto_plano)
+    if sin_texto_anterior or sin_texto_nuevo:
+        if sin_texto_anterior and sin_texto_nuevo:
+            cual = (
+                "ni esta entrega ni la anterior "
+                f"(«{anterior.nombre_archivo}») tienen texto extraíble"
+            )
+        elif sin_texto_nuevo:
+            cual = "esta entrega no tiene texto extraíble"
+        else:
+            cual = (
+                f"la entrega anterior («{anterior.nombre_archivo}») no tiene "
+                "texto extraíble"
+            )
+        ficha.aviso = (
+            f"No se ha comparado el progreso con la entrega anterior: {cual}. "
+            "Sin texto a los dos lados no hay nada que comparar, así que no "
+            "se dice cuánto se conserva ni cuánto es nuevo."
+        )
         return ficha
 
     ficha.evolucion = comparar(texto_anterior, medidas.texto_plano)

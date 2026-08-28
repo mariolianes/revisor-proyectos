@@ -41,6 +41,16 @@ def _registrar(almacen, carpeta: Path, origen: Path, fase: str, version: int = 1
     ))
 
 
+def _sin_tildes(texto: str) -> str:
+    """Para afirmar sobre el texto de un aviso sin pelearse con los acentos."""
+    import unicodedata
+
+    return "".join(
+        c for c in unicodedata.normalize("NFD", texto.lower())
+        if unicodedata.category(c) != "Mn"
+    )
+
+
 def test_la_ficha_trae_las_medidas(criterios_de_formato: Path, entregas: Path, pdf_con_indice: Path) -> None:
     almacen = AlmacenEnMemoria()
     entrega = _registrar(almacen, entregas, pdf_con_indice, "E2")
@@ -93,6 +103,58 @@ def test_si_el_archivo_anterior_ya_no_esta_se_dice(criterios_de_formato: Path, e
 
     assert ficha.evolucion is None
     assert "ya no está en la carpeta" in ficha.aviso
+
+
+def test_si_la_anterior_no_tiene_texto_no_se_inventa_una_comparacion(
+    criterios_de_formato: Path, entregas: Path, pdf_con_indice: Path,
+    pdf_escaneado: Path,
+) -> None:
+    """Un escaneado no da ni una palabra: no hay nada que comparar.
+
+    Antes se comparaba igual, porque el PDF anterior se abria sin error, y
+    la ficha salia con proporcion_conservada 0.0 y proporcion_nueva 0.0
+    -los valores por omision de Evolucion, no una medida-, que la pantalla
+    lee como "se conserva el 0 % de lo anterior".
+    """
+    almacen = AlmacenEnMemoria()
+    _registrar(almacen, entregas, pdf_escaneado, "E1")
+    entrega = _registrar(almacen, entregas, pdf_con_indice, "E2")
+
+    ficha = leer(criterios_de_formato, entregas, "v2026-2027", almacen, entrega)
+
+    assert ficha.evolucion is None
+    assert ficha.comparada_con is None
+    assert "no parece incluir el trabajo anterior" not in ficha.aviso
+    assert "no se ha comparado el progreso" in ficha.aviso.lower()
+    # Dice cual de los dos documentos es el que no tiene texto.
+    assert "AF023_DAM_E1_20260115_v1.pdf" in ficha.aviso
+    assert "texto extraible" in _sin_tildes(ficha.aviso)
+
+
+def test_si_la_nueva_no_tiene_texto_no_se_acusa_al_alumno(
+    criterios_de_formato: Path, entregas: Path, pdf_con_indice: Path,
+    pdf_escaneado: Path,
+) -> None:
+    """El caso peor: sin este arreglo saltaba el aviso mas severo del 5.1.
+
+    Que la entrega nueva sea un escaneado es un hecho tecnico, no una
+    entrega incompleta, y ya lo reporta por su cuenta el criterio "archivo"
+    de formato. Acusar ademas de no incluir el trabajo anterior seria un
+    aviso falso, y los avisos falsos llegan al alumno.
+    """
+    almacen = AlmacenEnMemoria()
+    _registrar(almacen, entregas, pdf_con_indice, "E1")
+    entrega = _registrar(almacen, entregas, pdf_escaneado, "E2")
+
+    ficha = leer(criterios_de_formato, entregas, "v2026-2027", almacen, entrega)
+
+    assert ficha.evolucion is None
+    assert ficha.comparada_con is None
+    assert "no parece incluir el trabajo anterior" not in ficha.aviso
+    assert "esta entrega no tiene texto" in _sin_tildes(ficha.aviso)
+    # Lo que si se dice del escaneado lo dice el criterio de formato.
+    archivo = next(c for c in ficha.comprobaciones if c.criterio == "archivo")
+    assert archivo.veredicto == "NO_CUMPLE"
 
 
 def test_un_archivo_que_desaparecio_bloquea_la_entrega(criterios_de_formato: Path, entregas: Path, pdf_con_indice: Path) -> None:
