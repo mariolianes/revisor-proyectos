@@ -29,21 +29,34 @@ coste-, y obligó a rehacerlo:
    profesor espera delante de la pantalla.
 
 La solución: reducir cada texto a su lista de palabras normalizadas y
-comparar los conjuntos de n-gramas de PALABRAS_POR_FIRMA palabras
-consecutivas. Un n-grama no sabe nada de párrafos, así que partirlos,
-fusionarlos, reordenarlos o perder las líneas en blanco deja de importar.
-Y comparar dos conjuntos por tabla hash es lineal, no cuadrático como
-comparar cada elemento de una lista contra todos los de la otra.
+comparar los n-gramas de PALABRAS_POR_FIRMA palabras consecutivas. Un
+n-grama no sabe nada de párrafos, así que partirlos, fusionarlos,
+reordenarlos o perder las líneas en blanco deja de importar. Y comparar
+por tabla hash es lineal, no cuadrático como comparar cada elemento de una
+lista contra todos los de la otra.
 
-Limitación conocida: un texto muy repetitivo -una tabla de valores casi
-iguales, una plantilla con huecos- comparte n-gramas entre partes
-distintas del documento, así que la proporción conservada puede salir algo
-más alta de lo que un lector humano diría. El rediseño resuelve el
-emparejamiento frágil de párrafos, pero no cierra del todo ese caso.
+Las firmas se cuentan como multiconjunto (``collections.Counter``), no
+como conjunto. La diferencia importa: como conjunto, veinte copias
+idénticas de una plantilla producen exactamente las mismas firmas que
+cuarenta, así que cortar la mitad de una plantilla repetida no cambiaba ni
+una firma y el aviso no saltaba -el trabajo perdía la mitad de sus filas
+y el sistema callaba-. Contando las repeticiones, esa pérdida sí se nota:
+la proporción conservada cae aproximadamente a la mitad, como con
+cualquier otro contenido eliminado.
+
+Limitación conocida: si dos partes distintas del trabajo comparten una
+frase larga literal -una cita, una plantilla de tabla, un pie de página
+repetido palabra por palabra en un apartado que no es copia del otro-, esa
+frase cuenta como conservada estén donde estén sus copias, aunque no sea
+la misma frase que el docente validó en ese punto exacto del documento. El
+multiconjunto resuelve el caso de la plantilla repetida que se recorta;
+no resuelve -ni lo pretende- que el sistema entienda de dónde viene cada
+frase.
 """
 
 import re
 import unicodedata
+from collections import Counter
 
 from pydantic import BaseModel
 
@@ -85,21 +98,27 @@ def normalizar(texto: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", sin_tildes.lower())
 
 
-def _firmas(palabras: list[str]) -> set[tuple[str, ...]]:
-    """Conjunto de n-gramas de PALABRAS_POR_FIRMA palabras consecutivas.
+def _firmas(palabras: list[str]) -> Counter:
+    """Multiconjunto de n-gramas de PALABRAS_POR_FIRMA palabras consecutivas.
 
     Un texto más corto que la firma se recoge entero en una única firma,
     para que un párrafo suelto de pocas palabras no quede fuera de la
     comparación.
+
+    Es un multiconjunto, no un conjunto: cuenta cuántas veces aparece cada
+    firma, no solo si aparece. Como conjunto, veinte copias idénticas de
+    una misma plantilla producen las mismas firmas que cuarenta, así que
+    borrar la mitad de las copias no cambiaría ni una firma y esa pérdida
+    quedaría invisible.
     """
     if not palabras:
-        return set()
+        return Counter()
     if len(palabras) < PALABRAS_POR_FIRMA:
-        return {tuple(palabras)}
-    return {
+        return Counter([tuple(palabras)])
+    return Counter(
         tuple(palabras[indice : indice + PALABRAS_POR_FIRMA])
         for indice in range(len(palabras) - PALABRAS_POR_FIRMA + 1)
-    }
+    )
 
 
 def _contar_parrafos(texto: str) -> int:
@@ -130,13 +149,18 @@ def comparar(texto_anterior: str, texto_nuevo: str) -> Evolucion:
     firmas_anteriores = _firmas(palabras_anteriores)
     firmas_nuevas = _firmas(palabras_nuevas)
 
-    conservadas = firmas_anteriores & firmas_nuevas
-    proporcion_conservada = len(conservadas) / len(firmas_anteriores)
-    proporcion_nueva = (
-        len(firmas_nuevas - firmas_anteriores) / len(firmas_nuevas)
-        if firmas_nuevas
-        else 0.0
-    )
+    # Sumas de repeticiones, no número de firmas distintas: es lo que hace
+    # que contar el multiconjunto tenga efecto sobre las proporciones.
+    total_anteriores = sum(firmas_anteriores.values())
+    total_nuevas = sum(firmas_nuevas.values())
+
+    # Counter.__and__ se queda con el mínimo de repeticiones de cada firma
+    # en ambos lados: si una firma aparece 40 veces antes y 20 después,
+    # cuenta como 20 conservadas, no como una.
+    comunes = sum((firmas_anteriores & firmas_nuevas).values())
+
+    proporcion_conservada = comunes / total_anteriores
+    proporcion_nueva = (total_nuevas - comunes) / total_nuevas if total_nuevas else 0.0
 
     avisos = []
     if proporcion_conservada < CONSERVADO_MINIMO:

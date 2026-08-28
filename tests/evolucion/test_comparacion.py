@@ -8,6 +8,7 @@ párrafos no coincidan por azar en una firma de ocho palabras.
 
 import random
 import time
+from collections import Counter
 
 from backend.evolucion.comparacion import (
     CONSERVADO_MINIMO,
@@ -15,6 +16,14 @@ from backend.evolucion.comparacion import (
     _firmas,
     comparar,
     normalizar,
+)
+
+# Plantilla verbatim: la frase que se copia sin cambiar ni una palabra para
+# probar el caso que solo detecta el multiconjunto.
+PLANTILLA = (
+    "El grupo de trabajo completo la fase de pruebas siguiendo el "
+    "protocolo establecido por el equipo docente y no se detectaron "
+    "incidencias relevantes."
 )
 
 # ---------------------------------------------------------------------
@@ -100,24 +109,35 @@ def test_normalizar_de_texto_vacio_es_lista_vacia() -> None:
 # ---------------------------------------------------------------------
 
 
-def test_firmas_de_texto_vacio_es_conjunto_vacio() -> None:
-    assert _firmas([]) == set()
+def test_firmas_de_texto_vacio_es_multiconjunto_vacio() -> None:
+    assert _firmas([]) == Counter()
 
 
 def test_firmas_de_menos_de_ocho_palabras_da_una_sola_firma() -> None:
-    assert _firmas(["hola", "que", "tal"]) == {("hola", "que", "tal")}
+    assert _firmas(["hola", "que", "tal"]) == Counter({("hola", "que", "tal"): 1})
 
 
 def test_firmas_de_exactamente_ocho_palabras_da_una_sola_firma() -> None:
     palabras = [f"p{i}" for i in range(8)]
 
-    assert _firmas(palabras) == {tuple(palabras)}
+    assert _firmas(palabras) == Counter({tuple(palabras): 1})
 
 
 def test_firmas_de_nueve_palabras_da_dos_firmas_solapadas() -> None:
     palabras = [f"p{i}" for i in range(9)]
 
-    assert _firmas(palabras) == {tuple(palabras[0:8]), tuple(palabras[1:9])}
+    assert _firmas(palabras) == Counter(
+        {tuple(palabras[0:8]): 1, tuple(palabras[1:9]): 1}
+    )
+
+
+def test_firmas_cuenta_repeticiones_no_solo_presencia() -> None:
+    """La razón de ser del multiconjunto: contar, no solo marcar presencia."""
+    palabras = ["a"] * 16
+
+    firmas = _firmas(palabras)
+
+    assert firmas[("a",) * 8] == 9  # 16 - 8 + 1 posiciones, todas la misma firma
 
 
 # ---------------------------------------------------------------------
@@ -238,6 +258,23 @@ def test_un_retoque_de_una_palabra_no_dispara_avisos() -> None:
     assert evolucion.avisos == []
 
 
+def test_plantilla_repetida_recortada_a_la_mitad_avisa_de_contenido_no_reconocido() -> None:
+    """El caso que un conjunto no ve: cuarenta copias verbatim de la misma
+    plantilla, recortadas a veinte. Como conjunto, veinte copias idénticas
+    producen las mismas firmas que cuarenta, y la pérdida de la mitad de
+    las filas quedaría invisible. Este test falla si `_firmas` vuelve a
+    ser un `set` en vez de un `Counter`.
+    """
+    anterior = "\n\n".join([PLANTILLA] * 40)
+    recortado = "\n\n".join([PLANTILLA] * 20)
+
+    evolucion = comparar(anterior, recortado)
+
+    assert CONSERVADO_MINIMO <= evolucion.proporcion_conservada < RECONOCIDO_MINIMO
+    assert 0.45 <= evolucion.proporcion_conservada <= 0.55
+    assert any("no se reconoce" in aviso for aviso in evolucion.avisos)
+
+
 # ---------------------------------------------------------------------
 # Casos límite
 # ---------------------------------------------------------------------
@@ -276,6 +313,19 @@ def test_comparar_seiscientos_parrafos_es_rapido() -> None:
     """No debe volver al coste cuadrático del diseño por párrafos."""
     grande_anterior = _documento(600, semilla=10)
     grande_nuevo = _documento(600, semilla=11)
+
+    inicio = time.perf_counter()
+    comparar(grande_anterior, grande_nuevo)
+    duracion = time.perf_counter() - inicio
+
+    assert duracion < 2.0
+
+
+def test_comparar_mil_doscientos_parrafos_es_rapido() -> None:
+    """El multiconjunto (`Counter`) sigue siendo lineal, igual que el
+    conjunto que sustituye."""
+    grande_anterior = _documento(1200, semilla=20)
+    grande_nuevo = _documento(1200, semilla=21)
 
     inicio = time.perf_counter()
     comparar(grande_anterior, grande_nuevo)
