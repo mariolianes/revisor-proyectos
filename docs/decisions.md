@@ -55,6 +55,16 @@ alterar el circuito por descuido.
 
 La clave de la API reside únicamente en el backend local, nunca en el frontend.
 
+**Clave recibida el 2026-08-28.** La facilitó el profesor y vive en el fichero
+`.env` de la raíz, que `.gitignore` excluye. Se comprobó que no aparece en
+ningún fichero versionado ni en el historial de commits. Con esto queda
+cumplida la condición que la decisión tenía pendiente.
+
+Sigue en pie lo que exige el §19: **ninguna entrega real de un alumno se envía
+al proveedor** hasta que se confirmen las condiciones de tratamiento. Hasta
+entonces se prueba con documentos propios, y el anonimizado se aplica en el
+backend antes de cualquier envío.
+
 ## D-003 · PyMuPDF para la extracción
 
 **Fecha:** 2026-08-26 · **Estado:** Validada · **Responsable:** Marcos

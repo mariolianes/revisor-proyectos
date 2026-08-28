@@ -4932,8 +4932,8 @@ export interface Comprobacion {
 export interface Evolucion {
   proporcion_conservada: number
   proporcion_nueva: number
-  parrafos_eliminados: number
-  parrafos_nuevos: number
+  parrafos_antes: number
+  parrafos_despues: number
   avisos: string[]
 }
 
@@ -5704,8 +5704,8 @@ const COMPLETA: FichaDeLectura = {
   }],
   evolucion: {
     proporcion_conservada: 0.9, proporcion_nueva: 0.3,
-    parrafos_eliminados: 2, parrafos_nuevos: 11,
-    avisos: ["Han desaparecido 2 párrafos."],
+    parrafos_antes: 40, parrafos_despues: 51,
+    avisos: ["No se reconoce el 18 % del contenido anterior."],
   },
   comparada_con: "AF023_DAM_E1_20251201_v1.pdf",
   aviso: "",
@@ -5740,7 +5740,7 @@ describe("Ficha", () => {
     render(<Ficha id="id-1" alVolver={vi.fn()} />)
 
     expect(await screen.findByText(/AF023_DAM_E1_20251201_v1.pdf/)).toBeInTheDocument()
-    expect(screen.getByText(/Han desaparecido 2 párrafos/)).toBeInTheDocument()
+    expect(screen.getByText(/no se reconoce/)).toBeInTheDocument()
   })
 
   it("no ofrece nota ni aprobar", async () => {
@@ -5929,8 +5929,9 @@ export function Ficha({ id, alVolver }: Props) {
           </p>
           <p className="max-w-lectura text-[13px]">
             Se conserva el {(evolucion.proporcion_conservada * 100).toFixed(0)} % de
-            lo anterior. Hay {evolucion.parrafos_nuevos} párrafos nuevos y han
-            desaparecido {evolucion.parrafos_eliminados}.
+            lo anterior, y un {(evolucion.proporcion_nueva * 100).toFixed(0)} % del
+            texto de esta entrega no estaba en la anterior. El trabajo pasa de{" "}
+            {evolucion.parrafos_antes} a {evolucion.parrafos_despues} párrafos.
           </p>
           {evolucion.avisos.map((aviso) => (
             <p key={aviso} className="mt-3 max-w-lectura text-[13px] senal">
