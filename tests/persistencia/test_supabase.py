@@ -29,12 +29,34 @@ ENTREGA = {
 }
 
 
-def _entrega() -> EntregaNueva:
-    return EntregaNueva(
+def _entrega(**cambios) -> EntregaNueva:
+    datos = dict(
         codigo_alumno="AF023", ciclo="DAM", fase="E2", version=1,
         nombre_archivo="AF023_DAM_E2_20260115_v1.pdf", huella="a" * 64,
         version_criterios="v2026-2027",
     )
+    datos.update(cambios)
+    return EntregaNueva(**datos)
+
+
+def _fila(
+    fase: str, version: int = 1, *, codigo_alumno: str = "AF023",
+    ciclo: str = "DAM", huella: str | None = None,
+) -> dict:
+    """Una fila de `entrega` tal como la devolvería PostgREST con SELECCION.
+
+    Para los tests de `anterior_de`: hace falta el `proyecto.alumno`
+    anidado -si no, `_componer` lee un alumno vacío-, y un `id` distinto por
+    fila para poder distinguirlas.
+    """
+    return {
+        **ENTREGA,
+        "id": f"id-{fase}-{version}-{codigo_alumno}",
+        "fase": fase,
+        "version": version,
+        "huella_archivo": huella or "9" * 64,
+        "proyecto": {"alumno": {"codigo": codigo_alumno, "ciclo": ciclo}},
+    }
 
 
 def _almacen(responder) -> AlmacenSupabase:
@@ -366,4 +388,108 @@ def test_una_fase_huerfana_en_una_fila_guardada_da_el_mismo_resultado_en_los_dos
     resultado_supabase = _almacen(responder).anterior_de("AF023", "E2")
 
     assert resultado_memoria is None
+    assert resultado_supabase == resultado_memoria
+
+
+def test_anterior_de_elige_la_inmediatamente_previa_entre_varias_candidatas_fuera_de_orden() -> None:
+    """Blinda `max(previas, key=...)` en supabase.py, igual que el test
+    equivalente de memoria.py (`test_la_anterior_es_la_inmediatamente_previa_entre_varias_candidatas`).
+
+    PostgREST no promete ningún orden en las filas de esta consulta -no se
+    pide `order` aquí, la selección es cosa de esta función, no de la base
+    de datos-. Se simula una respuesta con las candidatas fuera de orden:
+    TEMA, luego E2, luego E1. Si la selección fuera «la primera de la
+    lista» en vez de la más avanzada, este test fallaría: TEMA es la
+    primera fila y no es la inmediatamente anterior a E3, E2 sí lo es. La
+    última aserción lo deja explícito.
+    """
+    filas = [_fila("TEMA", huella="1" * 64), _fila("E2", huella="2" * 64),
+              _fila("E1", huella="3" * 64)]
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=filas)
+
+    almacen_memoria = AlmacenEnMemoria()
+    almacen_memoria.registrar(_entrega(fase="TEMA", huella="1" * 64))
+    almacen_memoria.registrar(_entrega(fase="E2", huella="2" * 64))
+    almacen_memoria.registrar(_entrega(fase="E1", huella="3" * 64))
+
+    anterior_supabase = _almacen(responder).anterior_de("AF023", "E3")
+    anterior_memoria = almacen_memoria.anterior_de("AF023", "E3")
+
+    assert anterior_supabase is not None
+    assert anterior_supabase.fase == "E2"
+    assert anterior_supabase.fase == anterior_memoria.fase
+    assert anterior_supabase.version == anterior_memoria.version
+    # Si la implementación tomara la primera fila de la respuesta en vez de
+    # la máxima, esta aserción fallaría: la primera fila es TEMA.
+    assert filas[0]["fase"] != anterior_supabase.fase
+
+
+def test_anterior_de_puede_ser_una_version_previa_de_la_misma_fase() -> None:
+    """Equivalente de
+    `test_memoria.py::test_la_anterior_puede_ser_una_version_previa_de_la_misma_fase`.
+    """
+    fila = _fila("E2", version=1)
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[fila])
+
+    almacen_memoria = AlmacenEnMemoria()
+    almacen_memoria.registrar(_entrega(fase="E2", version=1))
+
+    anterior_supabase = _almacen(responder).anterior_de("AF023", "E2", version=2)
+    anterior_memoria = almacen_memoria.anterior_de("AF023", "E2", version=2)
+
+    assert anterior_supabase is not None
+    assert anterior_supabase.version == 1
+    assert anterior_supabase.version == anterior_memoria.version
+    assert anterior_supabase.fase == anterior_memoria.fase
+
+
+def test_anterior_de_descarta_filas_de_otro_alumno_aunque_el_servidor_las_devuelva() -> None:
+    """Última defensa contra atribuir a un alumno el trabajo de otro.
+
+    La consulta ya filtra `proyecto.alumno.codigo=eq.{codigo_alumno}` en el
+    servidor, pero esta prueba no confía en eso: simula justo el fallo
+    -el filtro del servidor no filtrando, o alguien tocando la consulta y
+    dejándola sin ese filtro- devolviendo una fila de un alumno distinto
+    del pedido, y comprueba que el filtrado en Python
+    (`entrega.codigo_alumno == codigo_alumno`, ya presente en el código)
+    la descarta igual. Equivalente de
+    `test_memoria.py::test_la_anterior_es_de_ese_alumno_y_no_de_otro`.
+    """
+    fila_de_otro = _fila("E1", codigo_alumno="AF024")
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[fila_de_otro])
+
+    almacen_memoria = AlmacenEnMemoria()
+    almacen_memoria.registrar(_entrega(codigo_alumno="AF024", fase="E1"))
+
+    resultado_supabase = _almacen(responder).anterior_de("AF023", "E2")
+    resultado_memoria = almacen_memoria.anterior_de("AF023", "E2")
+
+    assert resultado_supabase is None
+    assert resultado_supabase == resultado_memoria
+
+
+def test_anterior_de_sin_entrega_previa_da_none_en_los_dos_almacenes() -> None:
+    """Equivalente de
+    `test_memoria.py::test_sin_entrega_previa_no_hay_anterior`: una entrega
+    en la propia fase TEMA no cuenta como anterior a sí misma -ninguna fase
+    la precede-.
+    """
+    fila = _fila("TEMA")
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[fila])
+
+    almacen_memoria = AlmacenEnMemoria()
+    almacen_memoria.registrar(_entrega(fase="TEMA"))
+
+    resultado_supabase = _almacen(responder).anterior_de("AF023", "TEMA")
+    resultado_memoria = almacen_memoria.anterior_de("AF023", "TEMA")
+
+    assert resultado_supabase is None
     assert resultado_supabase == resultado_memoria
