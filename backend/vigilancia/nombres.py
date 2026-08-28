@@ -19,6 +19,9 @@ FASES: tuple[str, ...] = ("TEMA", "E1", "E2", "E3", "FINAL", "DEFENSA")
 
 EJEMPLO = "AF023_DAM_E2_20260115_v1.pdf"
 
+# El ciclo va en siglas (DAM, DAW, ASIR...), de ahí el tope de ocho letras:
+# admitir un ciclo escrito por su nombre completo abriría la puerta a que
+# cualquier palabra pasara por ciclo.
 PATRON = re.compile(
     r"^(?P<codigo>[A-Za-z]{1,4}\d{1,5})"
     r"_(?P<ciclo>[A-Za-z]{2,8})"
