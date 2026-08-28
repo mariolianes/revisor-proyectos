@@ -4902,7 +4902,8 @@ export interface PropuestaArchivo {
 export interface ArchivoVisto {
   nombre: string
   ruta: string
-  modificado_en: string
+  modificado_en: string | null
+  problema: string
   propuesta: PropuestaArchivo
 }
 
