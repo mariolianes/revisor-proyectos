@@ -1,0 +1,55 @@
+# Niveles de prioridad de un hallazgo. Derivado de
+# docs/maestro/04-calibracion.md. NO EDITAR sin cambiar antes la prosa.
+#
+# El §7 del Documento Maestro pide "separar carencias criticas, correcciones
+# importantes y mejoras secundarias": tres niveles. El calibrador anade el
+# cuarto, el que no compensa el coste pedagogico, y con el da fuente al valor
+# BAJA del tipo 'prioridad' de la base de datos, que hasta ahora no la tenia.
+#
+# 'en_base_de_datos' es la correspondencia con el enum de la migracion. El
+# criterio habla como el docente -P1 a P4- y la tabla conserva su vocabulario;
+# la equivalencia vive aqui y en ningun otro sitio.
+#
+# 'llega_al_alumno' es lo que decide si un hallazgo puede aparecer en el
+# borrador de devolucion. Un P4 no llega nunca, y eso no es una omision: es
+# la regla de proporcion del §2 del calibrador.
+
+- codigo: P1
+  nombre: Critico
+  en_base_de_datos: CRITICA
+  efecto: Bloquea o compromete la fase
+  llega_al_alumno: siempre
+  tratamiento: >-
+    Aparece en el informe interno y en el feedback, formulado como prioridad
+    inmediata.
+  fuente: calibracion#7-prioridades
+
+- codigo: P2
+  nombre: Importante
+  en_base_de_datos: ALTA
+  efecto: Mejora materialmente el proyecto
+  llega_al_alumno: si_entra_en_las_prioridades
+  tratamiento: >-
+    Aparece en el feedback si forma parte de las tres o cuatro prioridades. Si
+    hay hallazgos P1, puede quedar subordinado.
+  fuente: calibracion#7-prioridades
+
+- codigo: P3
+  nombre: Secundario
+  en_base_de_datos: MEDIA
+  efecto: Refina, pero no cambia el nivel global
+  llega_al_alumno: como_mucho_una_frase
+  tratamiento: >-
+    Se registra internamente o se incorpora en una frase breve. No se persigue
+    de forma reiterada.
+  fuente: calibracion#7-prioridades
+
+- codigo: P4
+  nombre: No prioritario
+  en_base_de_datos: BAJA
+  efecto: No compensa el coste pedagogico
+  llega_al_alumno: nunca
+  tratamiento: >-
+    No debe cargarse al alumno. Puede conservarse como nota tecnica opcional
+    para el profesor.
+  fuente: calibracion#7-prioridades

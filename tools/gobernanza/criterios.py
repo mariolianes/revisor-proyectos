@@ -7,8 +7,10 @@ import yaml
 
 from tools.gobernanza.resultado import Infraccion
 
-PATRON_ANCLA = re.compile(r"^<!-- ancla: ((?:maestro|indice|guia)#[a-z0-9-]+) -->$", re.M)
-PATRON_FUENTE = re.compile(r"^(?:maestro|indice|guia)#[a-z0-9-]+$")
+PATRON_ANCLA = re.compile(
+    r"^<!-- ancla: ((?:maestro|indice|guia|calibracion)#[a-z0-9-]+) -->$", re.M
+)
+PATRON_FUENTE = re.compile(r"^(?:maestro|indice|guia|calibracion)#[a-z0-9-]+$")
 
 
 def cargar_anclas(raiz: Path) -> set[str]:
@@ -149,7 +151,7 @@ def verificar_r1(raiz: Path) -> list[Infraccion]:
                     detalle=(
                         f"'{nombre}' tiene una fuente con formato inválido: "
                         f"'{fuente}'. Se espera 'documento#ancla', donde documento "
-                        f"es maestro, índice o guía."
+                        f"es maestro, índice, guía o calibración."
                     ),
                 ))
                 continue

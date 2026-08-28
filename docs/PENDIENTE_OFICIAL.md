@@ -17,6 +17,16 @@ lo que hacen es constar.
 
 ## Pendientes
 
+- **banco_calibracion** — *Recibido el 2026-08-28.* El docente entregó el
+  documento de calibración inicial, incorporado como
+  `docs/maestro/04-calibracion.md`. Aporta los niveles de prioridad P1-P4, la
+  regla de economía pedagógica, la lectura calibrada del semáforo, el banco de
+  casos P01-P09 y once pruebas de aceptación. **No aporta ponderaciones,
+  rúbrica ni calendario**, que siguen pendientes más abajo. La propia
+  calibración señala que la muestra no cubre la primera ni la segunda entrega,
+  ni las modalidades de investigación y revisión documental: se ampliará con
+  segundas entregas reales del curso.
+
 - **ponderaciones** — reparto definitivo entre las cuatro entregas y la presentación. El Maestro §10 propone 20 % cada componente como modelo provisional, expresamente configurable hasta validarlo con la programación oficial. Se espera de la programación didáctica.
 - **calendario** — fechas de validación del tema, de las cuatro entregas, de recuperación y de defensa. Se espera de la programación didáctica y del centro.
 - **rubrica** — criterios oficiales, niveles, mínimos y causas de no superación. Se espera de la programación didáctica.

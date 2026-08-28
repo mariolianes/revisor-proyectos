@@ -27,6 +27,10 @@ _DOCUMENTOS = {
     "maestro": "01-documento-maestro.md",
     "indice": "02-indice-comentado.md",
     "guia": "03-guia-desarrollo.md",
+    # Nivel 5 de la jerarquía del §14.1: calibra y concreta lo que dicen los
+    # tres anteriores, y nunca puede contradecirlos. Lo dice él mismo en su
+    # recuadro de apertura.
+    "calibracion": "04-calibracion.md",
 }
 
 

@@ -1,0 +1,68 @@
+# Como se compone la devolucion al alumno y que no puede salir en ella.
+# Derivado de docs/maestro/04-calibracion.md y del §17 del Documento Maestro.
+# NO EDITAR sin cambiar antes la prosa.
+#
+# Este fichero no describe COMO se redacta -eso es criterio del docente y del
+# motor de analisis- sino los limites que la redaccion no puede cruzar. Son
+# comprobables sobre el texto ya generado.
+
+economia_pedagogica:
+  prioridades_maximas: 4
+  caracter: orientativo
+  regla: >-
+    Si existen diez errores, no se trasladan los diez. Se identifica cuales
+    desbloquean el desarrollo, cuales afectan al cierre y cuales quedan como
+    observaciones secundarias internas.
+  fuente: calibracion#2-rigor-proporcional
+
+extension_devolucion:
+  parrafos_habituales: 2
+  ampliar_solo_si: La situacion lo exige
+  debe_contener:
+    - Avance o valoracion general
+    - Fortaleza principal
+    - Carencia clave
+    - Acciones priorizadas
+  fuente: calibracion#4-feedback-docente
+
+# Lo que nunca puede aparecer en el texto dirigido al alumno. La separacion se
+# aplica en el backend, no por convencion al redactar.
+nunca_en_la_devolucion:
+  conceptos:
+    - nota_interna
+    - sospecha_categorica_de_ia
+    - deliberacion_tecnica
+    - hallazgos_p4
+    - observaciones_personales_del_docente
+  # Los cuatro primeros salen del §10 del calibrador; el ultimo, de la nota
+  # interna que el §10 del Maestro reserva al docente.
+  fuente: calibracion#10-salidas-y-control
+  fuente_adicional: maestro#10-evaluacion-continua
+
+# Rasgos del estilo docente que la calibracion confirma. Se recogen porque el
+# motor los necesita como instruccion, no porque sean medibles.
+estilo:
+  conservar:
+    - Comenzar con una valoracion global comprensible
+    - Reconocer una o dos fortalezas reales cuando existan
+    - Identificar el problema principal sin rodeos
+    - Indicar acciones concretas y priorizadas para la fase siguiente
+    - Distinguir entre retoques finales y necesidad de rehacer o ampliar
+    - Cerrar con animo, advertencia o llamada a la accion segun el nivel
+  evitar:
+    - Tratar la tercera entrega como si fuera la final
+    - Mencionar siempre un supuesto uso de IA
+    - Dar una unica valoracion global sin evidencias por dimension
+    - Repetir la misma carencia en varios parrafos
+    - No adaptarse a la modalidad, el ciclo o la fase
+  fuente: calibracion#4-feedback-docente
+
+# Lo que el sistema no debe exigir. Esta aqui porque es la frontera que
+# convierte una correccion util en una auditoria, y el §2 la fija expresamente.
+no_exigir:
+  limites:
+    - Viabilidad empresarial absoluta
+    - Verificacion exhaustiva de cada cifra, precio o normativa externa
+    - Perfeccion formal o bibliografica de posgrado
+    - Afirmaciones categoricas de autoria basadas solo en el estilo
+  fuente: calibracion#2-rigor-proporcional

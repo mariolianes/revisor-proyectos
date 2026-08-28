@@ -1,23 +1,54 @@
-# Semaforo pedagogico. Derivado del §12.1 del Documento Maestro.
+# Semaforo pedagogico. Derivado del §12.1 del Documento Maestro y calibrado
+# con el §9 de docs/maestro/04-calibracion.md.
 # El semaforo resume el estado; no sustituye la rubrica, la nota ni la
 # explicacion. Un mismo color puede responder a causas diferentes.
+#
+# El calibrador llama AMARILLO a lo que el Maestro llama AMBAR. Es el mismo
+# estado con otro nombre, y manda el Maestro por ser fuente superior (§14.1).
+# Decision del docente, 2026-08-28: se mantiene AMBAR.
+#
+# 'calibrado' recoge la lectura afinada con la muestra historica. No sustituye
+# al significado: lo precisa.
 
 - codigo: VERDE
   significado: Cumple la fase y puede avanzar
   accion: Mantener fortalezas y aplicar ajustes menores
+  calibrado: >-
+    Correcto para la fase. Puede contener imprecisiones menores que no impiden
+    avanzar ni defender el planteamiento.
   fuente: maestro#12-errores-y-semaforo
+  fuente_calibracion: calibracion#9-semaforo
 
 - codigo: AMBAR
   significado: Avanza, pero existen correcciones prioritarias
   accion: Aplicar cambios antes de cerrar la siguiente fase
+  calibrado: >-
+    Requiere mejora o seguimiento. El proyecto tiene base, pero necesita
+    aplicar prioridades concretas antes de considerarse cerrado.
+  llamado_por_el_docente: AMARILLO
   fuente: maestro#12-errores-y-semaforo
+  fuente_calibracion: calibracion#9-semaforo
 
 - codigo: ROJO
   significado: Carencia estructural o academica que exige reconduccion
   accion: Revision docente y plan de correccion
+  calibrado: >-
+    Carencia critica o bloqueo academico. Falta desarrollo, incumple una
+    condicion esencial o contiene una incoherencia que afecta al nucleo.
   fuente: maestro#12-errores-y-semaforo
+  fuente_calibracion: calibracion#9-semaforo
 
 - codigo: GRIS
   significado: No evaluable por falta, fuera de plazo, archivo ilegible o criterio bloqueado
   accion: Resolver incidencia; no emitir juicio academico automatico
+  calibrado: >-
+    No evaluable o incidencia: archivo ausente, fuera de plazo, ilegible,
+    fragmentado cuando impide revisar, o criterio bloqueado por falta de
+    informacion.
   fuente: maestro#12-errores-y-semaforo
+  fuente_calibracion: calibracion#9-semaforo
+
+# El color resume el estado y no lo sustituye. Un trabajo puede estar verde en
+# formato y ambar en rigor cuantitativo: la lectura por dimensiones se conserva
+# y una apariencia impecable no debe arrastrar toda la valoracion.
+# Fuente: calibracion#9-semaforo
