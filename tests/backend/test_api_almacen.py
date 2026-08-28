@@ -20,7 +20,11 @@ from fastapi.testclient import TestClient
 
 from backend.app import crear_app
 from backend.configuracion import Configuracion
-from backend.persistencia.supabase import AlmacenSupabase, ErrorDeAlmacen
+from backend.persistencia.supabase import (
+    AlmacenSupabase,
+    ChoqueDeAlmacen,
+    ErrorDeAlmacen,
+)
 
 # `criterios_de_formato`, `postgrest` y los PDF vienen de tests/conftest.py.
 
@@ -187,14 +191,15 @@ def test_cambiar_el_estado_llega_hasta_la_tabla(
 # --- 3. El choque de la restricción `unique` -------------------------------
 
 
-def test_una_reentrega_de_la_misma_fase_y_version_se_explica(
+def test_una_reentrega_de_la_misma_fase_y_version_da_409_y_se_explica(
     cliente_con_supabase: TestClient,
 ) -> None:
     """`unique (proyecto_id, fase, version)`: el caso más probable de todos.
 
     El alumno vuelve a entregar la misma fase con el mismo número de
     versión y otro archivo. PostgREST responde 409 con su mensaje en inglés;
-    lo que tiene que llegar al profesor es qué ha pasado y qué hacer.
+    lo que tiene que llegar al profesor es qué ha pasado y qué hacer, y con
+    un código que no le pida al navegador que reintente.
     """
     primera = cliente_con_supabase.post("/api/entregas", json=CONFIRMACION)
     assert primera.status_code == 200
@@ -203,17 +208,62 @@ def test_una_reentrega_de_la_misma_fase_y_version_se_explica(
         **CONFIRMACION, "nombre_archivo": "AF023_DAM_E2_20260120_v1.pdf",
     })
 
-    assert segunda.status_code == 503
+    assert segunda.status_code == 409
     motivo = segunda.json()["detail"]
+    assert motivo.startswith("Ya hay una entrega registrada")
     assert "misma fase" in motivo
     assert "versión" in motivo
-    # Sin jerga: nada de «duplicate key value violates unique constraint»
-    # como única explicación.
-    assert motivo.startswith("Supabase ha rechazado guardar")
+    # Y dice las dos cosas que el profesor puede hacer.
+    assert "número de versión siguiente" in motivo
+    assert "ábrela desde la lista" in motivo
 
 
-def test_el_409_llega_como_error_de_almacen_y_no_como_fallo_del_programa() -> None:
-    """La traducción ocurre en el almacén, no en el endpoint."""
+def test_el_choque_y_la_red_caida_no_se_confunden(
+    criterios_de_formato: Path, carpeta_de_entregas: Path, postgrest
+) -> None:
+    """Los dos son fallos del almacén, y son dos cosas distintas.
+
+    Reintentar arregla el segundo y nunca el primero, así que no pueden
+    compartir código de respuesta. Si alguien borrase el manejador de
+    `ChoqueDeAlmacen`, el choque volvería a salir como 503 sin que nada
+    fallara: esto es lo que lo impide.
+    """
+    def sin_red(peticion: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("sin red")
+
+    caido = _aplicacion(
+        criterios_de_formato, carpeta_de_entregas,
+        AlmacenSupabase("https://ejemplo.supabase.co", "clave",
+                        cliente=httpx.Client(transport=httpx.MockTransport(sin_red))),
+    )
+    en_conflicto = _aplicacion(
+        criterios_de_formato, carpeta_de_entregas,
+        AlmacenSupabase("https://ejemplo.supabase.co", "clave",
+                        cliente=postgrest.cliente()),
+    )
+    en_conflicto.post("/api/entregas", json=CONFIRMACION)
+
+    respuesta_caido = caido.get("/api/entregas")
+    respuesta_choque = en_conflicto.post("/api/entregas", json={
+        **CONFIRMACION, "nombre_archivo": "AF023_DAM_E2_20260120_v1.pdf",
+    })
+
+    assert respuesta_caido.status_code == 503
+    assert "conectar" in respuesta_caido.json()["detail"].lower()
+
+    assert respuesta_choque.status_code == 409
+    assert "Ya hay una entrega registrada" in respuesta_choque.json()["detail"]
+
+    assert respuesta_caido.status_code != respuesta_choque.status_code
+
+
+def test_el_choque_es_un_error_de_almacen_pero_de_su_propia_clase() -> None:
+    """La traducción ocurre en el almacén, no en el endpoint.
+
+    `ChoqueDeAlmacen` hereda de `ErrorDeAlmacen` -viene de la misma costura
+    y quien no distinga puede seguir capturando el padre-, pero es su propia
+    clase, que es lo que permite responderle con otro código.
+    """
     def responder(peticion: httpx.Request) -> httpx.Response:
         return httpx.Response(409, json={
             "code": "23505",
@@ -225,7 +275,25 @@ def test_el_409_llega_como_error_de_almacen_y_no_como_fallo_del_programa() -> No
         cliente=httpx.Client(transport=httpx.MockTransport(responder)),
     )
 
-    with pytest.raises(ErrorDeAlmacen) as fallo:
+    with pytest.raises(ChoqueDeAlmacen) as fallo:
         almacen.listar()
 
-    assert "ya está registrado" in str(fallo.value)
+    assert isinstance(fallo.value, ErrorDeAlmacen)
+    assert "Ya hay una entrega registrada" in str(fallo.value)
+
+
+def test_un_choque_en_otra_tabla_no_habla_de_entregas() -> None:
+    """No se afirma lo que no se sabe: el 409 de `alumno` no es una reentrega."""
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(409, json={"code": "23505", "message": "duplicate"})
+
+    almacen = AlmacenSupabase(
+        "https://ejemplo.supabase.co", "clave",
+        cliente=httpx.Client(transport=httpx.MockTransport(responder)),
+    )
+
+    with pytest.raises(ChoqueDeAlmacen) as fallo:
+        almacen._uno("alumno", codigo="eq.AF023")
+
+    assert "«alumno»" in str(fallo.value)
+    assert "entrega registrada" not in str(fallo.value)

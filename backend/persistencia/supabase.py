@@ -51,6 +51,36 @@ class ErrorDeAlmacen(Exception):
     """No se ha podido hablar con la base de datos."""
 
 
+class ChoqueDeAlmacen(ErrorDeAlmacen):
+    """Lo que se quería guardar choca con algo que ya estaba guardado.
+
+    Es un `ErrorDeAlmacen` porque viene de la misma costura y lleva el mismo
+    tipo de mensaje, pero no es la misma clase de problema y no debe
+    contestarse igual. Los demás fallos del almacén -la red caída, la clave
+    caducada, RLS rechazando- son indisponibilidades: reintentar más tarde
+    puede arreglarlas, y por eso la aplicación responde 503. Un choque con
+    una restricción `unique` no se arregla reintentando; reintentarlo dará
+    exactamente el mismo choque. Es un conflicto de datos, responde 409, y
+    lo que hay que hacer lo dice el mensaje.
+
+    La distinción no es teórica: 503 le dice al navegador -y a cualquier
+    proxy o reintento automático que se ponga por delante mañana- que vuelva
+    a intentarlo.
+    """
+
+
+# Lo que el profesor tiene que leer cuando la entrega choca con la
+# restricción `unique (proyecto_id, fase, version)` de la migración. Es el
+# caso más probable de todos: el alumno vuelve a entregar la misma fase con
+# el mismo número de versión y otro archivo.
+CHOQUE_EN_ENTREGA = (
+    "Ya hay una entrega registrada de ese alumno para esa misma fase y esa "
+    "misma versión. Si el alumno ha vuelto a entregar, confírmala con el "
+    "número de versión siguiente. Si crees que es la misma entrega de "
+    "antes, ábrela desde la lista y compruébalo antes de tocar nada."
+)
+
+
 class AlmacenSupabase:
     """Las nueve tablas, vistas por las tres que esta parte usa."""
 
@@ -94,12 +124,13 @@ class AlmacenSupabase:
             # reentrega la misma fase con el mismo número de versión y otro
             # archivo. Sin esto, el caso más probable de todos llegaba como
             # un volcado de PostgREST en inglés.
-            raise ErrorDeAlmacen(
-                f"Supabase ha rechazado guardar en «{tabla}» porque choca con "
-                "algo que ya está registrado. En una entrega ocurre cuando ya "
-                "hay una de ese alumno para la misma fase y la misma versión: "
-                "si es una reentrega, confírmala con el número de versión "
-                f"siguiente. Respuesta de Supabase: {respuesta.text[:300]}"
+            detalle = (
+                CHOQUE_EN_ENTREGA if tabla == "entrega" else
+                f"Ya hay una fila en «{tabla}» con esos mismos datos, y la "
+                "base de datos no admite dos."
+            )
+            raise ChoqueDeAlmacen(
+                f"{detalle} Respuesta de Supabase: {respuesta.text[:300]}"
             )
         if respuesta.status_code >= 400:
             raise ErrorDeAlmacen(

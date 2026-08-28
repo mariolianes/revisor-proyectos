@@ -20,7 +20,7 @@ def crear_app(raiz: Path, configuracion=None, almacen=None) -> FastAPI:
     from backend.api import documentos, edicion, entregas, estado
     from backend.configuracion import cargar
     from backend.persistencia import crear_almacen
-    from backend.persistencia.supabase import ErrorDeAlmacen
+    from backend.persistencia.supabase import ChoqueDeAlmacen, ErrorDeAlmacen
 
     app = FastAPI(title="Revisor de proyectos", docs_url=None, redoc_url=None)
     app.state.raiz = raiz
@@ -43,8 +43,32 @@ def crear_app(raiz: Path, configuracion=None, almacen=None) -> FastAPI:
         El campo se llama `detail` porque es el que ya usa `HTTPException` y
         el que el frontend lee para pintar el aviso; un nombre distinto
         obligaría al frontend a aprender una segunda forma de error.
+
+        503 es «vuelve a intentarlo»: la red caída, la clave caducada o RLS
+        rechazando pueden dejar de pasar solos. Un choque con una
+        restricción `unique` no, y por eso tiene su propio manejador aquí
+        abajo.
         """
         return JSONResponse(status_code=503, content={"detail": str(fallo)})
+
+    @app.exception_handler(ChoqueDeAlmacen)
+    def almacen_en_conflicto(peticion, fallo: ChoqueDeAlmacen) -> JSONResponse:
+        """Un choque de datos es 409, no 503.
+
+        Reintentar un choque con una restricción `unique` da exactamente el
+        mismo choque: no es una indisponibilidad del servicio, y decir 503
+        le pide al navegador -y a cualquier proxy o reintento automático que
+        se ponga por delante mañana- justo lo único que no sirve de nada. El
+        profesor tiene que cambiar algo, y el mensaje le dice qué.
+
+        Starlette elige el manejador recorriendo la jerarquía de la
+        excepción, así que este gana sobre el de `ErrorDeAlmacen` por ser el
+        de la clase más concreta. Si algún día se borra este manejador, los
+        choques volverían a salir como 503 sin que nada fallara: lo que lo
+        impide son los dos tests que comprueban que los dos códigos no se
+        confunden.
+        """
+        return JSONResponse(status_code=409, content={"detail": str(fallo)})
 
     app.include_router(documentos.router)
     app.include_router(edicion.router)
