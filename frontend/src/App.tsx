@@ -6,6 +6,7 @@ import { Entregas } from "./paginas/Entregas"
 import { Estado } from "./paginas/Estado"
 import { Ficha } from "./paginas/Ficha"
 import { Pendientes } from "./paginas/Pendientes"
+import type { FichaDeLectura } from "./lib/tipos"
 
 type Vista = "entregas" | "documentos" | "estado" | "pendientes"
 
@@ -17,7 +18,14 @@ export default function App() {
   // Entregas se vuelve a montar y su propio `useEffect` recarga la bandeja
   // -así el archivo que se acaba de confirmar deja de aparecer como
   // pendiente sin que la ficha tenga que saber nada de esa lista.
-  const [fichaAbierta, setFichaAbierta] = useState<string | null>(null)
+  //
+  // Lleva el identificador y, cuando se llega desde confirmar, la ficha que
+  // devolvió esa llamada: es la única que trae los avisos de confirmar, y
+  // volver a pedirla por su identificador los borraba. Sigue siendo un solo
+  // trozo de estado, así que ponerla a null cierra la ficha igual que antes.
+  const [fichaAbierta, setFichaAbierta] = useState<
+    { id: string; leida: FichaDeLectura | null } | null
+  >(null)
 
   const pestanas: { clave: Vista; texto: string }[] = [
     { clave: "entregas", texto: "Entregas" },
@@ -55,11 +63,17 @@ export default function App() {
 
       <main>
         {fichaAbierta ? (
-          <Ficha id={fichaAbierta} alVolver={() => setFichaAbierta(null)} />
+          <Ficha
+            id={fichaAbierta.id}
+            inicial={fichaAbierta.leida}
+            alVolver={() => setFichaAbierta(null)}
+          />
         ) : anclaEditando ? (
           <Editor ancla={anclaEditando} alVolver={() => setAnclaEditando(null)} />
         ) : vista === "entregas" ? (
-          <Entregas alAbrirFicha={setFichaAbierta} />
+          <Entregas
+            alAbrirFicha={(id, leida) => setFichaAbierta({ id, leida: leida ?? null })}
+          />
         ) : vista === "documentos" ? (
           <Documentos alElegirSeccion={setAnclaEditando} />
         ) : vista === "estado" ? (

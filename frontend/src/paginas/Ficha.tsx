@@ -6,6 +6,19 @@ import type { FichaDeLectura } from "../lib/tipos"
 
 interface Props {
   id: string
+  /**
+   * La ficha que devolvió `POST /api/entregas`, cuando se llega aquí desde
+   * confirmar un archivo. Si viene, se usa y NO se vuelve a pedir.
+   *
+   * No es un atajo para ahorrarse una petición. `POST /api/entregas`
+   * compone avisos que solo existen en el momento de confirmar -que el
+   * archivo ya estaba registrado, que el ciclo declarado no es el del
+   * alumno- y que `GET /api/entregas/{id}` no puede conocer, porque nadie
+   * ha declarado nada al abrir una ficha. Volver a pedirla los borraba:
+   * el backend los componía, el frontend los tiraba, y los tres tests de
+   * backend que los protegían pasaban todos.
+   */
+  inicial?: FichaDeLectura | null
   alVolver: () => void
 }
 
@@ -29,11 +42,16 @@ interface Props {
  * de su trabajo, y pintarlo igual que un incumplimiento le daría un peso
  * que no tiene.
  */
-export function Ficha({ id, alVolver }: Props) {
-  const [ficha, setFicha] = useState<FichaDeLectura | null>(null)
+export function Ficha({ id, inicial, alVolver }: Props) {
+  const [ficha, setFicha] = useState<FichaDeLectura | null>(inicial ?? null)
   const [error, setError] = useState("")
 
   useEffect(() => {
+    // Con la ficha ya leída no se pide nada: la del POST está recién medida
+    // -pasa por el mismo `leer()`- y además trae los avisos de confirmar,
+    // que un GET no devuelve. Refrescarla sería cambiar una ficha completa
+    // por otra con menos.
+    if (inicial) return
     let vigente = true
     api.ficha(id)
       .then((leida) => { if (vigente) setFicha(leida) })
@@ -41,7 +59,7 @@ export function Ficha({ id, alVolver }: Props) {
         if (vigente) setError(fallo instanceof Error ? fallo.message : String(fallo))
       })
     return () => { vigente = false }
-  }, [id])
+  }, [id, inicial])
 
   if (error) {
     return (

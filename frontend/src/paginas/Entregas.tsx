@@ -3,11 +3,19 @@ import { useCallback, useEffect, useState } from "react"
 import { ArchivoPendiente } from "../componentes/ArchivoPendiente"
 import { api } from "../lib/api"
 import type {
-  ArchivoVisto, Confirmacion, EntregaRegistrada, Entorno,
+  ArchivoVisto, Confirmacion, EntregaRegistrada, Entorno, FichaDeLectura,
 } from "../lib/tipos"
 
 interface Props {
-  alAbrirFicha: (id: string) => void
+  /**
+   * `leida` es la ficha que devuelve confirmar, y se pasa entera a
+   * propósito: lleva los avisos que solo existen al confirmar -que el
+   * archivo ya estaba registrado, que el ciclo declarado no es el del
+   * alumno- y que no están en `GET /api/entregas/{id}`. Al abrir una
+   * entrega de la lista de registradas no hay ficha que pasar, y entonces
+   * la pantalla la pide.
+   */
+  alAbrirFicha: (id: string, leida?: FichaDeLectura) => void
 }
 
 /**
@@ -50,7 +58,7 @@ export function Entregas({ alAbrirFicha }: Props) {
   async function confirmar(datos: Confirmacion) {
     try {
       const ficha = await api.confirmar(datos)
-      alAbrirFicha(ficha.entrega.id)
+      alAbrirFicha(ficha.entrega.id, ficha)
     } catch (fallo) {
       setError(fallo instanceof Error ? fallo.message : String(fallo))
     }

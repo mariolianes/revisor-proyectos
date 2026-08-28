@@ -81,16 +81,23 @@ describe("Entregas", () => {
 
   it("al confirmar abre la ficha de la entrega", async () => {
     const alAbrirFicha = vi.fn()
-    vi.mocked(api.confirmar).mockResolvedValue({
+    const FICHA_CONFIRMADA = {
       entrega: { ...REGISTRADA, id: "id-nueva" },
       medidas: null, comprobaciones: [], evolucion: null,
-      comparada_con: null, aviso: "",
-    })
+      comparada_con: null,
+      aviso: "Este archivo ya estaba registrado como entrega.",
+    }
+    vi.mocked(api.confirmar).mockResolvedValue(FICHA_CONFIRMADA)
     render(<Entregas alAbrirFicha={alAbrirFicha} />)
 
     await userEvent.click(await screen.findByRole("button", { name: /confirmar/i }))
 
-    await waitFor(() => expect(alAbrirFicha).toHaveBeenCalledWith("id-nueva"))
+    // Con la ficha entera, no solo con el identificador: es la unica que
+    // trae los avisos que compone confirmar, y pedirla otra vez por su
+    // identificador los borra (ver App.test.tsx).
+    await waitFor(() =>
+      expect(alAbrirFicha).toHaveBeenCalledWith("id-nueva", FICHA_CONFIRMADA),
+    )
   })
 
   it("enseña el error del servidor sin romperse", async () => {
