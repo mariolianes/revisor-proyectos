@@ -47,11 +47,22 @@ _NOMBRES_DE_IA = (
     "claude", "un modelo de lenguaje", "un modelo de ia", "un llm",
 )
 
+# Sueltas, sin que detrás tenga que venir un nombre de la lista de arriba:
+# "ha sido generado por un algoritmo" o "está generado por un sistema no
+# identificado" no nombran ninguna IA conocida y son la misma afirmación.
+# Estaban en la primera versión de esta defensa como frases sueltas; se
+# recuperan aquí para no retroceder respecto a lo que ya se cazaba.
+_CONSTRUCCIONES_DE_AUTORIA_SIN_NOMBRE = (
+    "ha sido generado por",
+    "esta generado por",
+    "fue generado por",
+)
+
 _AFIRMACIONES_DE_AUTORIA = tuple(
     f"{verbo} por {nombre}"
     for verbo in _VERBOS_DE_ATRIBUCION_A_IA
     for nombre in _NOMBRES_DE_IA
-) + (
+) + _CONSTRUCCIONES_DE_AUTORIA_SIN_NOMBRE + (
     "es obra de una ia",
     "es obra de una inteligencia artificial",
     "es obra de chatgpt",

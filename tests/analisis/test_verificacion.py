@@ -261,6 +261,30 @@ def test_un_indicio_redactado_de_la_forma_mas_neutra_posible_tambien_lleva_el_av
     assert not any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos)
 
 
+def test_un_indicio_con_cita_inventada_sigue_llevando_el_aviso_del_13(
+    criterios_de_analisis: Path,
+) -> None:
+    """El cruce peligroso: un indicio de autoría cuya cita el motor se ha
+    inventado es el menos fiable de todos los que produce el sistema, y por
+    eso mismo es el que más necesita el aviso de que la decisión es del
+    profesor. Si el aviso se pusiera solo cuando la cita se localiza -por
+    ejemplo, si alguien lo metiera dentro de un `if localizada:`-, justo este
+    indicio, el que el motor se ha sacado de la manga, llegaría al profesor
+    sin la advertencia, que es el escenario de mayor riesgo de toda la
+    defensa. Este test comprueba las dos condiciones a la vez y a propósito:
+    ni una por separado basta para fijar la garantía."""
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis(
+            [_val()],
+            indicios_de_autoria=[_indicio(cita="Una cita que no existe en el trabajo")],
+        ),
+    )
+
+    assert v.indicios_de_autoria[0].evidencia_localizada is False
+    assert any(r.regla == "autoria_es_indicio" for r in v.reparos)
+
+
 def test_un_indicio_redactado_como_afirmacion_se_marca(criterios_de_analisis: Path) -> None:
     """«Este texto ha sido generado por IA» no es un indicio: es un veredicto.
 
@@ -330,6 +354,28 @@ def test_el_realce_ampliado_reconoce_las_formulaciones_de_la_revision(
     """No es la garantía -el aviso del §13 ya cubre estas frases igual que
     cualquier otra-, pero conviene que el realce ampliado las detecte."""
     for descripcion in _FORMULACIONES_CATEGORICAS_DE_LA_REVISION:
+        v = verificar(
+            criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+            _analisis([_val()], indicios_de_autoria=[_indicio(descripcion=descripcion)]),
+        )
+        assert any(r.regla == "autoria_formulada_categoricamente" for r in v.reparos), (
+            f"El realce no reconoció: {descripcion!r}"
+        )
+
+
+# La versión cerrada de siete frases de la primera ronda sí reconocía "ha
+# sido generado por" y "está generado por" como construcciones sueltas, sin
+# nombre detrás. Al reescribir la lista con combinaciones verbo+nombre esas
+# dos se perdieron: "ha sido generado por un algoritmo" o "está generado por
+# un sistema no identificado" no nombran ninguna IA de la lista y dejaron de
+# dispararla. Este test fija que no se vuelva a perder.
+def test_el_realce_no_retrocede_en_las_construcciones_sin_nombre_de_ia(
+    criterios_de_analisis: Path,
+) -> None:
+    for descripcion in (
+        "Este texto ha sido generado por un algoritmo.",
+        "El documento está generado por un sistema no identificado.",
+    ):
         v = verificar(
             criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
             _analisis([_val()], indicios_de_autoria=[_indicio(descripcion=descripcion)]),
