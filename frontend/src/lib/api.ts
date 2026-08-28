@@ -1,5 +1,6 @@
 import type {
-  CambioDeValor, Documento, EstadoGobernanza, Pendiente,
+  ArchivoVisto, CambioDeValor, Confirmacion, Documento, EntregaRegistrada,
+  Entorno, EstadoGobernanza, FichaDeLectura, Pendiente,
   Propuesta, Resultado, Seccion, CriterioDerivado,
 } from "./tipos"
 
@@ -66,4 +67,25 @@ export const api = {
 
   estado: () => pedir<EstadoGobernanza>("/estado"),
   pendientes: () => pedir<Pendiente[]>("/pendientes"),
+
+  entorno: () => pedir<Entorno>("/entorno"),
+
+  archivosPendientes: () => pedir<ArchivoVisto[]>("/entregas/pendientes"),
+
+  entregas: () => pedir<EntregaRegistrada[]>("/entregas"),
+
+  confirmar: (datos: Confirmacion) =>
+    pedir<FichaDeLectura>("/entregas", {
+      method: "POST",
+      body: JSON.stringify(datos),
+    }),
+
+  ficha: (id: string) =>
+    pedir<FichaDeLectura>(`/entregas/${encodeURIComponent(id)}`),
+
+  cambiarEstado: (id: string, estado: string, motivo: string | null) =>
+    pedir<EntregaRegistrada>(`/entregas/${encodeURIComponent(id)}/estado`, {
+      method: "POST",
+      body: JSON.stringify({ estado, motivo }),
+    }),
 }

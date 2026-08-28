@@ -27,6 +27,24 @@ def _hay_alguien_escuchando(host: str, puerto: int) -> bool:
         return False
 
 
+def _avisar(raiz: Path) -> None:
+    """Dice por consola lo que falta, antes de que el docente lo descubra."""
+    from backend.configuracion import cargar
+
+    configuracion = cargar(raiz)
+    if configuracion.carpeta_entregas is None:
+        print(
+            "AVISO: no hay carpeta de entregas configurada. Indícala en "
+            "REVISOR_CARPETA_ENTREGAS, dentro del fichero .env, y ha de estar "
+            "fuera de este repositorio."
+        )
+    if not (configuracion.url_supabase and configuracion.clave_supabase):
+        print(
+            "AVISO: sin credenciales de Supabase. Lo que registres se pierde "
+            "al cerrar el programa."
+        )
+
+
 def _abrir_navegador_cuando_escuche() -> None:
     """Abre el navegador en cuanto el puerto empieza a aceptar conexiones.
 
@@ -58,6 +76,8 @@ if __name__ == "__main__":
         print(f"Cierra lo que esté usando el puerto {PUERTO} -puede ser otro "
               "editor ya abierto- y vuelve a intentarlo.")
         sys.exit(1)
+
+    _avisar(raiz)
 
     threading.Thread(target=_abrir_navegador_cuando_escuche, daemon=True).start()
 

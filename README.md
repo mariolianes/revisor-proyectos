@@ -41,12 +41,14 @@ procedimiento:
     editor.cmd
 
 Hace falta tener instalado Python y que sea accesible desde la línea de
-comandos (`python` en el PATH). Node.js (`npm`) solo hace falta la primera
-vez, para compilar el frontend. Si falta alguno cuando toca, `editor.cmd` lo
-avisa y dice qué instalar.
+comandos (`python` en el PATH), y también Node.js (`npm`), que es lo que
+compila la interfaz. Si falta alguno, `editor.cmd` lo avisa y dice qué
+instalar.
 
-Abre `http://127.0.0.1:8000` en el navegador. La primera vez compila el
-frontend, lo que tarda un poco. Si ese puerto ya lo está usando otro
+Abre `http://127.0.0.1:8000` en el navegador. La interfaz se recompila en
+cada arranque, lo que tarda unos segundos: lo compilado no viaja con el
+repositorio, así que compilar solo la primera vez dejaba la interfaz vieja
+funcionando contra un programa nuevo. Si ese puerto ya lo está usando otro
 programa, el editor no arranca y lo dice: hay que liberarlo antes.
 
 El editor no permite guardar un cambio sin motivo y sin fuente, y ejecuta las

@@ -40,11 +40,11 @@ El sistema entrega el texto aprobado listo para copiar. El docente lo pega en el
 
 Con esto D-004 pasa de pendiente a decidida.
 
-### D-002 · Sigue abierta, con fecha
+### D-002 · Cerrada el 2026-08-28: la clave ya está
 
-El motor de análisis se construye contra el adaptador simulado. El puerto `ProveedorAnalisis` queda listo y cambiar de proveedor será cambiar una línea.
+El profesor facilitó la clave de OpenAI, que vive en el `.env` local y fuera del repositorio. El motor se sigue construyendo contra el adaptador simulado y el puerto `ProveedorAnalisis` mantiene intercambiable el proveedor, que es lo que la decisión exigía desde el principio.
 
-**Debe cerrarse antes del piloto con entregas reales.** Hasta entonces, ninguna entrega real pasa por ningún proveedor externo, lo que además satisface la condición del §19 sobre no usar entregas reales hasta confirmar las condiciones de tratamiento.
+Lo que **no** cambia: ninguna entrega real pasa por ningún proveedor externo hasta confirmar las condiciones de tratamiento del §19. Tener la llave no autoriza a usarla con el trabajo de un alumno.
 
 ## 4. Arquitectura
 
@@ -155,7 +155,7 @@ Ambas internas. El borrador dirigido al alumno **nunca se envía ni se publica a
 
 Esto no es una limitación técnica que se pueda rodear: es la regla funcionando. Un sistema que inventara la nota sería peor que uno que no la da.
 
-**El análisis irá contra el simulador** hasta que se cierre D-002.
+**El análisis se construye contra el simulador**, aunque la clave ya esté: el adaptador real entra cuando lo haga la segunda parte del flujo.
 
 **Y sigue fuera, conforme al §21.2:** corrección por lotes, envío de correos, integración con el Aula Virtual, panel estadístico, comparación entre alumnos, detección concluyente de plagio o IA, y evaluación automática de la defensa.
 

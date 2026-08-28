@@ -637,20 +637,10 @@ def test_un_pdf_sin_paginas_da_error_legible(tmp_path: Path) -> None:
     a mano. Un PDF así llega cuando una exportación se queda a medias."""
     vacio = tmp_path / "vacio.pdf"
     vacio.write_bytes(
-        b"%PDF-1.4
-"
-        b"1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-"
-        b"2 0 obj
-<< /Type /Pages /Kids [] /Count 0 >>
-endobj
-"
-        b"trailer
-<< /Root 1 0 R /Size 3 >>
-%%EOF
-"
+        b"%PDF-1.4\n"
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n"
+        b"trailer\n<< /Root 1 0 R /Size 3 >>\n%%EOF\n"
     )
 
     with pytest.raises(PdfIlegible) as fallo:
@@ -785,7 +775,7 @@ Expected: PASS, 9 tests.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: apertura del PDF, paginas y deteccion de escaneado
 
 Los PDF de prueba se construyen con PyMuPDF en un fixture y viven en
@@ -805,7 +795,7 @@ Todo lo que el §6.2 del Maestro exige del cuerpo del texto. Aquí aparece la pr
 - Modify: `backend/extraccion/medidas.py` (añadir `MedidasDeTexto`)
 - Create: `backend/extraccion/tipografia.py`
 - Create: `tests/extraccion/test_tipografia.py`
-- Modify: `tests/conftest.py` (añadir dos fixtures)
+- Modify: `tests/conftest.py` (añadir tres fixtures)
 
 **Interfaces:**
 - Consumes: `abrir` de `backend.extraccion.lectura`; el helper `escribir_pdf` de `tests/conftest.py`.
@@ -838,6 +828,25 @@ def pdf_cuerpo_mezclado(tmp_path: Path) -> Path:
     documento.save(ruta)
     documento.close()
     return ruta
+
+
+@pytest.fixture
+def pdf_alineado_izquierda(tmp_path: Path) -> Path:
+    """Cinco líneas de longitudes muy distintas en una misma página.
+
+    Es lo que se ve en un texto alineado a la izquierda: cada línea acaba
+    donde acaba su última palabra.
+    """
+    return escribir_pdf(
+        tmp_path / "izquierda.pdf",
+        [[
+            "Una linea francamente larga que ocupa casi todo el ancho util.",
+            "Otra bastante mas corta.",
+            "Mediana, ni corta ni larga del todo.",
+            "Brevisima.",
+            "Y una ultima de longitud intermedia para cerrar.",
+        ]],
+    )
 
 
 @pytest.fixture
@@ -965,13 +974,35 @@ def test_texto_justificado_da_proporcion_alta(pdf_justificado: Path) -> None:
     assert medidas.proporcion_lineas_al_margen_derecho == pytest.approx(0.8, abs=0.01)
 
 
-def test_texto_de_lineas_desiguales_da_proporcion_baja(pdf_simple: Path) -> None:
-    """Tres líneas de longitudes distintas: solo una llega al borde."""
-    with abrir(pdf_simple) as documento:
+def test_texto_de_lineas_desiguales_da_proporcion_baja(
+    pdf_alineado_izquierda: Path,
+) -> None:
+    """Cinco longitudes distintas: solo la más larga llega al borde."""
+    with abrir(pdf_alineado_izquierda) as documento:
         medidas = medir_texto(documento)
 
-    assert medidas.proporcion_lineas_al_margen_derecho is not None
-    assert medidas.proporcion_lineas_al_margen_derecho < 0.6
+    assert medidas.proporcion_lineas_al_margen_derecho == pytest.approx(0.2, abs=0.01)
+
+
+def test_una_pagina_de_una_sola_linea_no_cuenta_para_la_alineacion(
+    escribir_pdf, tmp_path: Path
+) -> None:
+    """Con una sola línea, el borde derecho no distingue nada.
+
+    Esa línea es a la vez el máximo y el único candidato, así que daría el
+    100 %. Una portada o una página de cierre bastarían para que un texto
+    alineado a la izquierda pareciera justificado.
+    """
+    ruta = escribir_pdf(tmp_path / "mixto.pdf", [
+        ["Una linea francamente larga que ocupa casi todo el ancho.",
+         "Corta.", "Otra mediana de por medio.", "Fin."],
+        ["Sola en su pagina."],
+    ])
+
+    with abrir(ruta) as documento:
+        medidas = medir_texto(documento)
+
+    assert medidas.proporcion_lineas_al_margen_derecho == pytest.approx(0.25, abs=0.01)
 
 
 def test_un_pdf_sin_texto_no_inventa_medidas(pdf_escaneado: Path) -> None:
@@ -1062,6 +1093,9 @@ SALTO_MAXIMO_EN_CUERPOS = 3.0
 # más que esto. Un punto es la anchura de un pelo de letra.
 TOLERANCIA_BORDE_PT = 1.0
 
+# Páginas con menos líneas que esto no entran en el cálculo de la alineación.
+LINEAS_MINIMAS_PARA_ALINEACION = 2
+
 
 def normalizar_familia(nombre: str) -> str:
     """«ABCDEF+Arial-BoldMT» → «Arial». La familia, sin estilo ni subconjunto."""
@@ -1126,11 +1160,16 @@ def medir_texto(documento: pymupdf.Document) -> MedidasDeTexto:
             (pagina.rect.height - max(inferiores)) / PUNTOS_POR_CM,
         ))
 
-        borde = max(derechas)
-        lineas_totales += len(lineas)
-        lineas_al_borde += sum(
-            1 for derecha in derechas if borde - derecha <= TOLERANCIA_BORDE_PT
-        )
+        # Una página de una sola línea no dice nada de la alineación: esa
+        # línea es a la vez el máximo y el único candidato, así que contaría
+        # como alineada siempre. Una portada bastaría para que un texto
+        # alineado a la izquierda pareciera justificado.
+        if len(lineas) >= LINEAS_MINIMAS_PARA_ALINEACION:
+            borde = max(derechas)
+            lineas_totales += len(lineas)
+            lineas_al_borde += sum(
+                1 for derecha in derechas if borde - derecha <= TOLERANCIA_BORDE_PT
+            )
 
     if not por_estilo:
         return MedidasDeTexto(
@@ -1166,12 +1205,12 @@ def medir_texto(documento: pymupdf.Document) -> MedidasDeTexto:
 - [ ] **Step 7: Ejecutar los tests y verificar que pasan**
 
 Run: `python -m pytest tests/extraccion/test_tipografia.py -v`
-Expected: PASS, 17 tests (8 de `normalizar_familia` más 9 de medición).
+Expected: PASS, 18 tests (8 de `normalizar_familia` más 10 de medición).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: tipografia, interlineado, margenes y alineacion
 
 El interlineado se mide como ratio entre el salto de linea base y el
@@ -1539,7 +1578,7 @@ Expected: PASS, 10 tests.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: indice, paginas de contenido y anexos
 
 El 6.2 cuenta las paginas excluidas portada, indice y anexos, asi que hay
@@ -1749,7 +1788,7 @@ Expected: todo en verde.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: imagenes con resolucion efectiva y superficie
 
 El dpi efectivo es lo que delata una captura de pantalla estirada: en el
@@ -1930,7 +1969,7 @@ Expected: PASS, 8 tests.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add backend/extraccion tests/extraccion
+git add backend/extraccion tests/
 git commit -m "feat: medicion completa de un archivo en una llamada
 
 La huella se calcula por trozos: un PDF puede pesar decenas de megas y no
@@ -4863,7 +4902,8 @@ export interface PropuestaArchivo {
 export interface ArchivoVisto {
   nombre: string
   ruta: string
-  modificado_en: string
+  modificado_en: string | null
+  problema: string
   propuesta: PropuestaArchivo
 }
 
@@ -4893,8 +4933,8 @@ export interface Comprobacion {
 export interface Evolucion {
   proporcion_conservada: number
   proporcion_nueva: number
-  parrafos_eliminados: number
-  parrafos_nuevos: number
+  parrafos_antes: number
+  parrafos_despues: number
   avisos: string[]
 }
 
@@ -5665,8 +5705,8 @@ const COMPLETA: FichaDeLectura = {
   }],
   evolucion: {
     proporcion_conservada: 0.9, proporcion_nueva: 0.3,
-    parrafos_eliminados: 2, parrafos_nuevos: 11,
-    avisos: ["Han desaparecido 2 párrafos."],
+    parrafos_antes: 40, parrafos_despues: 51,
+    avisos: ["No se reconoce el 18 % del contenido anterior."],
   },
   comparada_con: "AF023_DAM_E1_20251201_v1.pdf",
   aviso: "",
@@ -5701,7 +5741,7 @@ describe("Ficha", () => {
     render(<Ficha id="id-1" alVolver={vi.fn()} />)
 
     expect(await screen.findByText(/AF023_DAM_E1_20251201_v1.pdf/)).toBeInTheDocument()
-    expect(screen.getByText(/Han desaparecido 2 párrafos/)).toBeInTheDocument()
+    expect(screen.getByText(/no se reconoce/)).toBeInTheDocument()
   })
 
   it("no ofrece nota ni aprobar", async () => {
@@ -5890,8 +5930,9 @@ export function Ficha({ id, alVolver }: Props) {
           </p>
           <p className="max-w-lectura text-[13px]">
             Se conserva el {(evolucion.proporcion_conservada * 100).toFixed(0)} % de
-            lo anterior. Hay {evolucion.parrafos_nuevos} párrafos nuevos y han
-            desaparecido {evolucion.parrafos_eliminados}.
+            lo anterior, y un {(evolucion.proporcion_nueva * 100).toFixed(0)} % del
+            texto de esta entrega no estaba en la anterior. El trabajo pasa de{" "}
+            {evolucion.parrafos_antes} a {evolucion.parrafos_despues} párrafos.
           </p>
           {evolucion.avisos.map((aviso) => (
             <p key={aviso} className="mt-3 max-w-lectura text-[13px] senal">
