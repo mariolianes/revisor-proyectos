@@ -366,6 +366,60 @@ def test_sin_ninguna_carpeta_indicada_el_aviso_es_el_generico(tmp_path: Path) ->
     assert any("No hay carpeta de entregas configurada" in a for a in avisos)
 
 
+def test_la_version_de_criterios_elige_el_fichero_con_el_que_se_corrige(
+    criterios_de_formato: Path, tmp_path: Path, pdf_con_indice: Path
+) -> None:
+    """REVISOR_VERSION_CRITERIOS no es decorativa.
+
+    Elige el fichero de criterios con el que se contrasta el trabajo de un
+    alumno. Se monta una segunda version que pide 999 paginas de contenido
+    -donde la primera pide 4- y se comprueba que el veredicto cambia con
+    ella, que es la unica forma de ver que la version configurada llega
+    hasta donde se corrige.
+    """
+    raiz = criterios_de_formato
+    otra = raiz / "criteria" / "v2027-2028"
+    otra.mkdir(parents=True)
+    (otra / "formato.yaml").write_text(
+        "extension:\n"
+        "  minimo_paginas_contenido: 999\n"
+        "  fuente: maestro#6-estandar-academico\n",
+        encoding="utf-8",
+    )
+
+    entregas = tmp_path / "entregas-version"
+    entregas.mkdir()
+    (entregas / "AF023_DAM_E2_20260115_v1.pdf").write_bytes(
+        pdf_con_indice.read_bytes()
+    )
+
+    def veredicto(version: str) -> str:
+        app = crear_app(
+            raiz,
+            configuracion=Configuracion(
+                carpeta_entregas=entregas, version_criterios=version
+            ),
+            almacen=AlmacenEnMemoria(),
+        )
+        ficha = TestClient(app).post("/api/entregas", json={
+            "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+            "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2",
+            "version": 1,
+        }).json()
+        extension = next(
+            c for c in ficha["comprobaciones"] if c["criterio"] == "extension"
+        )
+        return extension["veredicto"]
+
+    assert veredicto("v2026-2027") == "CUMPLE"
+    assert veredicto("v2027-2028") == "NO_CUMPLE"
+
+
+def test_el_entorno_dice_con_que_version_se_esta_corrigiendo(cliente) -> None:
+    """El docente tiene que poder ver cual esta en uso."""
+    assert cliente.get("/api/entorno").json()["version_criterios"] == "v2026-2027"
+
+
 def test_el_editor_de_criterios_sigue_funcionando(cliente) -> None:
     """La app es una sola: añadir entregas no rompe lo que ya había."""
     assert cliente.get("/api/salud").status_code == 200

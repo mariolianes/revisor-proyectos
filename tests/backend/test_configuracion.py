@@ -154,3 +154,53 @@ def test_una_carpeta_que_sirve_no_deja_problema(tmp_path: Path) -> None:
     configuracion = cargar(raiz, entorno={"REVISOR_CARPETA_ENTREGAS": str(carpeta)})
 
     assert configuracion.problema_carpeta is None
+
+
+def test_cargar_lee_la_clave_de_servicio_del_entorno(tmp_path: Path) -> None:
+    """SUPABASE_SERVICE_KEY es lo que decide si se guarda de verdad.
+
+    Sin ella `crear_almacen` se queda en memoria, y lo que el docente
+    registre se pierde al cerrar. Que se lea no lo fijaba ningún test:
+    ignorándola, los 387 de la rama seguían pasando.
+    """
+    configuracion = cargar(tmp_path, entorno={"SUPABASE_SERVICE_KEY": "la-clave"})
+
+    assert configuracion.clave_supabase == "la-clave"
+
+
+def test_cargar_lee_la_clave_de_servicio_del_fichero_env(tmp_path: Path) -> None:
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    (raiz / ".env").write_text(
+        "SUPABASE_SERVICE_KEY=la-clave-del-fichero\n", encoding="utf-8"
+    )
+
+    assert cargar(raiz, entorno={}).clave_supabase == "la-clave-del-fichero"
+
+
+def test_cargar_lee_la_version_de_criterios_del_entorno(tmp_path: Path) -> None:
+    """No es decorativa: elige el fichero con el que se corrige un trabajo."""
+    configuracion = cargar(
+        tmp_path, entorno={"REVISOR_VERSION_CRITERIOS": "v2027-2028"}
+    )
+
+    assert configuracion.version_criterios == "v2027-2028"
+
+
+def test_cargar_lee_la_version_de_criterios_del_fichero_env(tmp_path: Path) -> None:
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    (raiz / ".env").write_text(
+        "REVISOR_VERSION_CRITERIOS=v2027-2028\n", encoding="utf-8"
+    )
+
+    assert cargar(raiz, entorno={}).version_criterios == "v2027-2028"
+
+
+def test_una_version_de_criterios_vacia_no_deja_al_sistema_sin_version(
+    tmp_path: Path,
+) -> None:
+    """Una línea `REVISOR_VERSION_CRITERIOS=` no debe dejarla en blanco."""
+    configuracion = cargar(tmp_path, entorno={"REVISOR_VERSION_CRITERIOS": ""})
+
+    assert configuracion.version_criterios == "v2026-2027"
