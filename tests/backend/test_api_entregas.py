@@ -420,6 +420,114 @@ def test_el_entorno_dice_con_que_version_se_esta_corrigiendo(cliente) -> None:
     assert cliente.get("/api/entorno").json()["version_criterios"] == "v2026-2027"
 
 
+@pytest.fixture
+def cliente_dos_archivos(
+    criterios_de_formato: Path, tmp_path: Path, pdf_con_indice: Path,
+    pdf_simple: Path,
+):
+    """Dos archivos distintos, para poder confirmar dos entregas seguidas.
+
+    El `cliente` de arriba deja dos copias del mismo PDF, asi que tienen la
+    misma huella y la segunda choca con el error de atribucion: para probar
+    dos entregas del mismo alumno hacen falta dos archivos de verdad
+    distintos.
+    """
+    entregas = tmp_path / "dos-archivos"
+    entregas.mkdir()
+    (entregas / "AF023_DAM_E1_20260115_v1.pdf").write_bytes(
+        pdf_con_indice.read_bytes()
+    )
+    (entregas / "AF023_DAM_E2_20260220_v1.pdf").write_bytes(
+        pdf_simple.read_bytes()
+    )
+    app = crear_app(
+        criterios_de_formato,
+        configuracion=Configuracion(
+            carpeta_entregas=entregas, version_criterios="v2026-2027"
+        ),
+        almacen=AlmacenEnMemoria(),
+    )
+    return TestClient(app)
+
+
+def test_declarar_otro_ciclo_para_el_mismo_alumno_se_avisa(
+    cliente_dos_archivos,
+) -> None:
+    """El ciclo es del alumno y manda el primero. Callarlo seria mentir.
+
+    Registrar al mismo alumno con dos ciclos es casi siempre un error del
+    profesor -una errata, o un codigo de alumno reutilizado-. El sistema usa
+    el ciclo guardado, y tiene que decir que lo ha hecho: si es una errata,
+    que la vea; y si el alumno ha cambiado de ciclo de verdad, que sepa que
+    tiene que corregirlo el.
+    """
+    cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+    })
+
+    respuesta = cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260220_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAW", "fase": "E2", "version": 1,
+    })
+
+    # Es un aviso, no un error: la entrega queda registrada.
+    assert respuesta.status_code == 200
+    ficha = respuesta.json()
+    assert ficha["entrega"]["ciclo"] == "DAM"
+
+    aviso = ficha["aviso"]
+    # Dice el declarado, el guardado, y que se ha usado el guardado.
+    assert "DAW" in aviso
+    assert "DAM" in aviso
+    assert "AF023" in aviso
+    assert "errata" in aviso
+    assert "ficha de alumno" in aviso
+
+    # Y no se ha quedado fuera: sigue en la lista, con el ciclo del alumno.
+    listadas = cliente_dos_archivos.get("/api/entregas").json()
+    assert len(listadas) == 2
+    assert {e["ciclo"] for e in listadas} == {"DAM"}
+
+
+def test_con_el_ciclo_correcto_no_hay_aviso_de_ciclo(cliente_dos_archivos) -> None:
+    """Un aviso que salta cuando no toca deja de leerse."""
+    cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+    })
+
+    ficha = cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260220_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    }).json()
+
+    assert "ciclo" not in ficha["aviso"]
+
+
+def test_el_ciclo_escrito_con_espacios_o_en_minusculas_no_avisa(
+    cliente_dos_archivos,
+) -> None:
+    """Lo que se compara es lo normalizado, no el texto crudo del formulario.
+
+    `EntregaNueva` quita los espacios -tambien los de en medio- y pasa a
+    mayusculas. Comparar el texto tal cual llega haria saltar el aviso por
+    un espacio de mas al copiar y pegar, que es un aviso falso.
+    """
+    cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+    })
+
+    ficha = cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260220_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": " d am ", "fase": "E2", "version": 1,
+    }).json()
+
+    assert ficha["entrega"]["ciclo"] == "DAM"
+    assert "ciclo" not in ficha["aviso"]
+
+
 def test_el_editor_de_criterios_sigue_funcionando(cliente) -> None:
     """La app es una sola: añadir entregas no rompe lo que ya había."""
     assert cliente.get("/api/salud").status_code == 200

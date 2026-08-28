@@ -162,7 +162,12 @@ def confirmar(cuerpo: Confirmacion, peticion: Request) -> FichaDeLectura:
     # poder avisar de que no ha pasado nada nuevo.
     ya_registrada = almacen.por_huella(huella)
     try:
-        entrega = almacen.registrar(EntregaNueva(
+        # La declaración se guarda aparte para poder compararla luego con lo
+        # que el almacén ha guardado de verdad: `EntregaNueva` normaliza los
+        # tres campos de identidad, así que comparar contra ella es comparar
+        # lo mismo con lo mismo, y no un texto crudo del formulario contra
+        # un valor ya normalizado.
+        declarada = EntregaNueva(
             codigo_alumno=cuerpo.codigo_alumno.strip().upper(),
             ciclo=cuerpo.ciclo.strip().upper(),
             fase=cuerpo.fase.strip().upper(),
@@ -170,7 +175,8 @@ def confirmar(cuerpo: Confirmacion, peticion: Request) -> FichaDeLectura:
             nombre_archivo=relativa,
             huella=huella,
             version_criterios=configuracion.version_criterios,
-        ))
+        )
+        entrega = almacen.registrar(declarada)
     except ValueError as fallo:
         # La huella ya estaba registrada, pero con otro alumno, ciclo, fase
         # o versión declarados: es un error de atribución (persistencia.py),
@@ -183,17 +189,41 @@ def confirmar(cuerpo: Confirmacion, peticion: Request) -> FichaDeLectura:
         configuracion.version_criterios, almacen, entrega,
     )
 
+    avisos: list[str] = []
+
     if ya_registrada is not None and ya_registrada.id == entrega.id:
-        aviso_repetido = (
+        avisos.append(
             f"Este archivo ya estaba registrado como entrega desde el "
             f"{ya_registrada.recibida_en:%d/%m/%Y %H:%M} (ficha "
             f"{entrega.id}). No se ha creado una ficha nueva; si lo has "
             "movido de carpeta, es lo esperado."
         )
-        ficha.aviso = (
-            f"{aviso_repetido} {ficha.aviso}".strip() if ficha.aviso
-            else aviso_repetido
+
+    if declarada.ciclo != entrega.ciclo:
+        # El ciclo es del alumno, no de la entrega: en la base de datos lo
+        # tiene la tabla `alumno` y la tabla `entrega` no. Así que el ciclo
+        # con el que el alumno está dado de alta manda sobre el que se
+        # declara ahora, y los dos almacenes hacen lo mismo.
+        #
+        # Eso normaliza en silencio lo que casi siempre es un error del
+        # profesor -una errata en el ciclo, o un código de alumno
+        # reutilizado-, y callarlo sería lo contrario de lo que hace el
+        # resto del sistema. Es un aviso, no un error: la entrega es
+        # legítima y el trabajo de un alumno no puede quedarse fuera por un
+        # dato administrativo. Quien decide qué hacer es el profesor.
+        avisos.append(
+            f"Has declarado el ciclo {declarada.ciclo}, pero "
+            f"{entrega.codigo_alumno} está registrado con el ciclo "
+            f"{entrega.ciclo}, y es el que se ha usado: el ciclo es del "
+            "alumno, no de cada entrega. Si es una errata, ya sabes cuál de "
+            "los dos está mal; si el alumno ha cambiado de ciclo de verdad, "
+            "hay que corregirlo en su ficha de alumno, y eso no se hace "
+            "desde aquí. La entrega ha quedado registrada igual."
         )
+
+    if ficha.aviso:
+        avisos.append(ficha.aviso)
+    ficha.aviso = " ".join(avisos)
 
     return ficha
 
