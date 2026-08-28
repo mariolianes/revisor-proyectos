@@ -1,43 +1,128 @@
-"""La entrega nueva contra la anterior."""
+"""La entrega nueva contra la anterior, comparando por n-gramas de palabras.
 
-from backend.evolucion.comparacion import comparar, normalizar
-
-ANTERIOR = """
-1. Introduccion
-
-Este trabajo estudia la gestion de reservas en talleres.
-
-2. Objetivos
-
-El objetivo general es reducir el tiempo de atencion.
-
-3. Metodologia
-
-Se emplea un enfoque incremental por iteraciones.
+El corpus sintético de más abajo se construye con un generador seudo-
+aleatorio de semilla fija, así que las mismas ejecuciones dan siempre los
+mismos números. El vocabulario es intencionadamente amplio para que dos
+párrafos no coincidan por azar en una firma de ocho palabras.
 """
 
+import random
+import time
 
-def test_normalizar_reduce_espacios_y_mayusculas() -> None:
-    """El párrafo de prueba supera el mínimo de caracteres a propósito:
-    por debajo de CARACTERES_MINIMOS se descarta por corto, y eso es lo
-    que comprueba test_normalizar_ignora_los_parrafos_muy_cortos.
-    """
-    parrafos = normalizar(
-        "  UN   Parrafo  con  bastante  contenido  para  pasar  el  minimo.  "
-        "\n\n\n Otro   Párrafo  tambien  con  bastante  contenido  util. "
-    )
+from backend.evolucion.comparacion import (
+    CONSERVADO_MINIMO,
+    RECONOCIDO_MINIMO,
+    _firmas,
+    comparar,
+    normalizar,
+)
 
-    assert parrafos == [
-        "un parrafo con bastante contenido para pasar el minimo.",
-        "otro parrafo tambien con bastante contenido util.",
-    ]
+# ---------------------------------------------------------------------
+# Construcción del corpus sintético
+# ---------------------------------------------------------------------
+
+_VOCABULARIO = [
+    "taller", "reserva", "cliente", "vehiculo", "cita", "diagnostico",
+    "mantenimiento", "averia", "presupuesto", "factura", "mecanico",
+    "recambio", "motor", "neumatico", "freno", "aceite", "revision",
+    "garantia", "inspeccion", "itv", "bateria", "correa", "filtro",
+    "suspension", "chapa", "pintura", "electricidad", "climatizacion",
+    "cambio", "embrague", "direccion", "escape", "radiador", "alternador",
+    "arranque", "carroceria", "matricula", "seguro", "peritaje",
+    "siniestro", "grua", "recogida", "entrega", "plazo", "incidencia",
+    "satisfaccion", "encuesta", "fidelizacion", "campana", "descuento",
+    "promocion", "temporada", "stock", "proveedor", "pedido", "almacen",
+    "turno", "agenda", "calendario", "notificacion", "recordatorio",
+    "confirmacion", "cancelacion", "reprogramacion", "historial",
+    "expediente", "kilometraje", "modelo", "marca", "version", "combustible",
+    "hibrido", "electrico", "diesel", "gasolina", "transmision", "manual",
+    "automatico", "tapiceria", "sensor", "camara", "asistencia", "carretera",
+    "urgencia", "diagnosis", "software", "actualizacion", "recall",
+    "campanya", "homologacion", "normativa", "emisiones", "ruido",
+    "vibracion", "ajuste", "calibracion", "balanceo", "alineacion",
+]
+
+_VOCABULARIO_AJENO = [
+    "receta", "horno", "levadura", "harina", "cosecha", "vendimia",
+    "bodega", "ganaderia", "pastoreo", "huerto", "invernadero", "riego",
+    "abono", "semilla", "floracion", "poda", "injerto", "vivero",
+    "senderismo", "cumbre", "refugio", "mochila", "brujula", "acampada",
+    "hoguera", "cordada", "escalada", "rapel", "arnes", "piolet",
+    "orquesta", "partitura", "batuta", "solista", "coro", "ensayo",
+    "escenario", "telon", "vestuario", "utileria", "guion", "rodaje",
+    "montaje", "edicion", "subtitulo", "doblaje", "estreno", "taquilla",
+    "biblioteca", "archivo", "manuscrito", "encuadernacion", "imprenta",
+    "tipografia", "acuarela", "oleo", "lienzo", "paleta", "boceto",
+    "escultura", "ceramica", "torno", "esmalte", "cesteria", "telar",
+    "bordado", "ganchillo", "tejido", "hilatura", "sastreria", "patron",
+]
 
 
-def test_normalizar_ignora_los_parrafos_muy_cortos() -> None:
-    """Numeraciones sueltas y encabezados de una palabra no son contenido."""
-    parrafos = normalizar("3\n\nEste parrafo si tiene contenido suficiente.\n\nx")
+def _parrafo(rng: random.Random, vocabulario: list[str], palabras: int = 150) -> str:
+    return " ".join(rng.choice(vocabulario) for _ in range(palabras)) + "."
 
-    assert parrafos == ["este parrafo si tiene contenido suficiente."]
+
+def _documento(n_parrafos: int, vocabulario: list[str] | None = None, semilla: int = 1) -> str:
+    rng = random.Random(semilla)
+    vocabulario = vocabulario if vocabulario is not None else _VOCABULARIO
+    parrafos = [_parrafo(rng, vocabulario) for _ in range(n_parrafos)]
+    return "\n\n".join(parrafos)
+
+
+N_PARRAFOS = 200
+
+ANTERIOR = _documento(N_PARRAFOS, semilla=1)
+
+
+# ---------------------------------------------------------------------
+# normalizar
+# ---------------------------------------------------------------------
+
+
+def test_normalizar_da_palabras_en_minusculas_sin_tildes_ni_puntuacion() -> None:
+    palabras = normalizar("¡Hola! Ánimo, va bien el Proyecto-2.")
+
+    assert palabras == ["hola", "animo", "va", "bien", "el", "proyecto", "2"]
+
+
+def test_normalizar_ignora_los_saltos_de_linea_y_los_espacios_de_sobra() -> None:
+    palabras = normalizar("Uno   Dos\n\n\nTres  \n Cuatro")
+
+    assert palabras == ["uno", "dos", "tres", "cuatro"]
+
+
+def test_normalizar_de_texto_vacio_es_lista_vacia() -> None:
+    assert normalizar("") == []
+
+
+# ---------------------------------------------------------------------
+# _firmas
+# ---------------------------------------------------------------------
+
+
+def test_firmas_de_texto_vacio_es_conjunto_vacio() -> None:
+    assert _firmas([]) == set()
+
+
+def test_firmas_de_menos_de_ocho_palabras_da_una_sola_firma() -> None:
+    assert _firmas(["hola", "que", "tal"]) == {("hola", "que", "tal")}
+
+
+def test_firmas_de_exactamente_ocho_palabras_da_una_sola_firma() -> None:
+    palabras = [f"p{i}" for i in range(8)]
+
+    assert _firmas(palabras) == {tuple(palabras)}
+
+
+def test_firmas_de_nueve_palabras_da_dos_firmas_solapadas() -> None:
+    palabras = [f"p{i}" for i in range(9)]
+
+    assert _firmas(palabras) == {tuple(palabras[0:8]), tuple(palabras[1:9])}
+
+
+# ---------------------------------------------------------------------
+# comparar: los ocho casos de la revisión
+# ---------------------------------------------------------------------
 
 
 def test_entrega_identica_avisa_de_falta_de_progreso() -> None:
@@ -45,52 +130,81 @@ def test_entrega_identica_avisa_de_falta_de_progreso() -> None:
 
     assert evolucion.proporcion_conservada == 1.0
     assert evolucion.proporcion_nueva == 0.0
-    assert any("sin cambios" in aviso for aviso in evolucion.avisos)
+    assert evolucion.avisos == [
+        "La entrega llega sin cambios respecto a la anterior: no se "
+        "aprecia progreso."
+    ]
 
 
-def test_entrega_ampliada_no_avisa_de_nada() -> None:
-    nuevo = ANTERIOR + """
-4. Desarrollo
+def test_parrafos_reordenados_no_disparan_avisos() -> None:
+    """Cambiar el orden de los apartados no es perder contenido."""
+    parrafos = ANTERIOR.split("\n\n")
+    rng = random.Random(2)
+    rng.shuffle(parrafos)
+    reordenado = "\n\n".join(parrafos)
 
-Se implementa el modulo de reservas con sus pruebas.
+    evolucion = comparar(ANTERIOR, reordenado)
 
-5. Resultados
-
-El tiempo de atencion baja de doce a siete minutos.
-"""
-
-    evolucion = comparar(ANTERIOR, nuevo)
-
-    assert evolucion.parrafos_nuevos == 2
-    assert evolucion.parrafos_eliminados == 0
+    assert evolucion.proporcion_conservada >= RECONOCIDO_MINIMO
     assert evolucion.avisos == []
 
 
-def test_contenido_eliminado_se_avisa() -> None:
-    """El §5.1 lo prohíbe: no se quita lo ya validado."""
-    recortado = """
-1. Introduccion
+def test_cada_parrafo_partido_en_dos_no_dispara_avisos() -> None:
+    """Partir un párrafo en dos, la edición que rompía la versión anterior.
 
-Este trabajo estudia la gestion de reservas en talleres.
-"""
+    Se acompaña de un retoque de una palabra para que el documento no sea
+    una copia literal: si lo fuera, el aviso correcto sería justo el de
+    «sin cambios» (probado aparte), no el de contenido perdido.
+    """
+    parrafos = ANTERIOR.split("\n\n")
+    partidos = []
+    for parrafo in parrafos:
+        palabras = parrafo.split(" ")
+        mitad = len(palabras) // 2
+        partidos.append(" ".join(palabras[:mitad]))
+        partidos.append(" ".join(palabras[mitad:]))
+    primeras_palabras = partidos[0].split(" ")
+    primeras_palabras[0] = "excepcionalmente"
+    partidos[0] = " ".join(primeras_palabras)
+    partido = "\n\n".join(partidos)
 
-    evolucion = comparar(ANTERIOR, recortado)
+    evolucion = comparar(ANTERIOR, partido)
 
-    assert evolucion.parrafos_eliminados > 0
-    assert any("desaparecido" in aviso for aviso in evolucion.avisos)
+    assert evolucion.proporcion_conservada >= RECONOCIDO_MINIMO
+    assert evolucion.avisos == []
+
+
+def test_texto_sin_lineas_en_blanco_entre_parrafos_se_compara_igual_de_bien() -> None:
+    """El caso real de nuestra propia extraccion: PyMuPDF no siempre deja
+    parrafos separados por una linea en blanco, y el texto llega como un
+    unico bloque. Aun asi, una entrega que progresa de verdad se reconoce:
+    lo anterior sigue contando como conservado y lo añadido cuenta como
+    nuevo."""
+    anterior_sin_saltos = "\n".join(ANTERIOR.split("\n\n"))
+    extra = _documento(round(N_PARRAFOS * 0.2), semilla=5)
+    nuevo_sin_saltos = anterior_sin_saltos + "\n" + extra
+
+    evolucion = comparar(anterior_sin_saltos, nuevo_sin_saltos)
+
+    assert evolucion.proporcion_conservada >= RECONOCIDO_MINIMO
+    assert evolucion.proporcion_nueva > 0.0
+    assert evolucion.avisos == []
+
+
+def test_entrega_ampliada_no_avisa_de_nada() -> None:
+    extra = _documento(round(N_PARRAFOS * 0.3), semilla=3)
+    ampliada = ANTERIOR + "\n\n" + extra
+
+    evolucion = comparar(ANTERIOR, ampliada)
+
+    assert evolucion.proporcion_conservada >= RECONOCIDO_MINIMO
+    assert evolucion.proporcion_nueva > 0.0
+    assert evolucion.avisos == []
 
 
 def test_entrega_que_solo_trae_lo_nuevo_se_avisa() -> None:
     """Solo los capítulos nuevos, sin el trabajo anterior: §5.1."""
-    solo_nuevo = """
-4. Desarrollo
-
-Se implementa el modulo de reservas con sus pruebas.
-
-5. Resultados
-
-El tiempo de atencion baja de doce a siete minutos.
-"""
+    solo_nuevo = _documento(N_PARRAFOS, vocabulario=_VOCABULARIO_AJENO, semilla=4)
 
     evolucion = comparar(ANTERIOR, solo_nuevo)
 
@@ -98,31 +212,73 @@ El tiempo de atencion baja de doce a siete minutos.
     assert any("documento completo" in aviso for aviso in evolucion.avisos)
 
 
+def test_entrega_recortada_a_la_mitad_avisa_de_contenido_no_reconocido() -> None:
+    """El §5.1 lo prohíbe: no se quita lo ya validado."""
+    parrafos = ANTERIOR.split("\n\n")
+    mitad = len(parrafos) // 2
+    recortada = "\n\n".join(parrafos[:mitad])
+
+    evolucion = comparar(ANTERIOR, recortada)
+
+    assert CONSERVADO_MINIMO <= evolucion.proporcion_conservada < RECONOCIDO_MINIMO
+    assert any("no se reconoce" in aviso for aviso in evolucion.avisos)
+
+
+def test_un_retoque_de_una_palabra_no_dispara_avisos() -> None:
+    """Cambiar una palabra no convierte el documento en otro distinto."""
+    parrafos = ANTERIOR.split("\n\n")
+    palabras = parrafos[0].split(" ")
+    palabras[0] = "excepcionalmente"
+    parrafos[0] = " ".join(palabras)
+    retocado = "\n\n".join(parrafos)
+
+    evolucion = comparar(ANTERIOR, retocado)
+
+    assert evolucion.proporcion_conservada >= RECONOCIDO_MINIMO
+    assert evolucion.avisos == []
+
+
+# ---------------------------------------------------------------------
+# Casos límite
+# ---------------------------------------------------------------------
+
+
 def test_sin_entrega_anterior_no_se_compara() -> None:
     evolucion = comparar("", ANTERIOR)
 
     assert evolucion.avisos == []
     assert evolucion.proporcion_conservada == 0.0
-    assert evolucion.parrafos_eliminados == 0
+    assert evolucion.parrafos_antes == 0
+    assert evolucion.parrafos_despues == N_PARRAFOS
 
 
-def test_un_retoque_menor_cuenta_como_conservado() -> None:
-    """Cambiar una palabra no convierte el párrafo en otro distinto."""
-    retocado = ANTERIOR.replace("reducir el tiempo", "acortar el tiempo")
+def test_entrega_nueva_vacia_avisa_de_falta_de_contenido() -> None:
+    evolucion = comparar(ANTERIOR, "")
 
-    evolucion = comparar(ANTERIOR, retocado)
-
-    assert evolucion.proporcion_conservada == 1.0
-    assert evolucion.parrafos_eliminados == 0
+    assert evolucion.proporcion_conservada == 0.0
+    assert evolucion.proporcion_nueva == 0.0
+    assert any("documento completo" in aviso for aviso in evolucion.avisos)
 
 
-def test_un_retoque_menor_no_se_confunde_con_falta_de_progreso() -> None:
-    """El aviso de «sin cambios» exige texto idéntico, no parecido.
+def test_parrafos_antes_y_despues_son_informativos() -> None:
+    evolucion = comparar(ANTERIOR, ANTERIOR)
 
-    Con el umbral de parecido, un párrafo retocado cuenta como conservado y
-    no cuenta como nuevo, así que juzgar el progreso por esas proporciones
-    marcaría como estancada una entrega que sí se ha corregido.
-    """
-    retocado = ANTERIOR.replace("reducir el tiempo", "acortar el tiempo")
+    assert evolucion.parrafos_antes == N_PARRAFOS
+    assert evolucion.parrafos_despues == N_PARRAFOS
 
-    assert comparar(ANTERIOR, retocado).avisos == []
+
+# ---------------------------------------------------------------------
+# Rendimiento
+# ---------------------------------------------------------------------
+
+
+def test_comparar_seiscientos_parrafos_es_rapido() -> None:
+    """No debe volver al coste cuadrático del diseño por párrafos."""
+    grande_anterior = _documento(600, semilla=10)
+    grande_nuevo = _documento(600, semilla=11)
+
+    inicio = time.perf_counter()
+    comparar(grande_anterior, grande_nuevo)
+    duracion = time.perf_counter() - inicio
+
+    assert duracion < 2.0
