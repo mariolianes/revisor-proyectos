@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from backend.analisis.contrato import AnalisisDelMotor
 from backend.analisis.proveedor import (
+    LONGITUD_MINIMA_DE_TEXTO,
     ErrorDelProveedor,
     ProveedorSimulado,
     RespuestaNoValida,
@@ -140,3 +141,32 @@ def test_desde_texto_programa_un_proveedor_simulado_con_citas_reales() -> None:
     assert cita_localizada(
         analisis.valoraciones[0].evidencia.cita, TEXTO_DE_EJEMPLO
     )
+
+
+def test_un_texto_por_debajo_del_minimo_falla_a_la_cara() -> None:
+    """Sin este error, el análisis se construiría igual, con apariencia
+    correcta, y sus citas las rechazaría cita_localizada más adelante: quien
+    lo use en una tarea siguiente perseguiría el fallo en el sitio
+    equivocado."""
+    texto_corto = "x" * (LONGITUD_MINIMA_DE_TEXTO - 1)
+
+    with pytest.raises(ValueError, match=str(LONGITUD_MINIMA_DE_TEXTO)):
+        analisis_de_ejemplo(texto_corto)
+
+
+def test_un_texto_justo_en_el_limite_funciona_y_sus_citas_se_localizan() -> None:
+    """Fija la frontera: un off-by-one en el cálculo de
+    LONGITUD_MINIMA_DE_TEXTO no se notaría solo con el test del texto
+    corto."""
+    texto_en_el_limite = "x" * LONGITUD_MINIMA_DE_TEXTO
+
+    analisis = analisis_de_ejemplo(texto_en_el_limite)
+
+    citas = (
+        [v.evidencia.cita for v in analisis.valoraciones]
+        + [f.evidencia.cita for f in analisis.fortalezas]
+        + [pat.evidencia.cita for pat in analisis.patrones]
+        + [i.evidencia.cita for i in analisis.indicios_de_autoria]
+    )
+    for cita in citas:
+        assert cita_localizada(cita, texto_en_el_limite)

@@ -19,6 +19,7 @@ implementación futura -el adaptador de OpenAI- a repetir la misma lógica de
 llamada y de reintento dos veces.
 """
 
+import math
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -31,6 +32,7 @@ from backend.analisis.contrato import (
     Patron,
     Valoracion,
 )
+from backend.analisis.verificacion import CITA_MINIMA
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -121,6 +123,21 @@ def _fragmento_literal(texto: str, proporcion: float, longitud: int = 80) -> str
     return texto[inicio : inicio + longitud]
 
 
+# La proporción más alta que usa `analisis_de_ejemplo` (ver la última llamada
+# a `_fragmento_literal` dentro de la función): es la que menos texto deja
+# detrás del punto de corte, así que es la que fija cuánto tiene que medir
+# `texto` como mínimo.
+_PROPORCION_MAS_EXIGENTE = 0.85
+
+# La longitud mínima de `texto` que garantiza que ese fragmento más exigente
+# supere `CITA_MINIMA`. Se calcula, no se fija a mano: si `CITA_MINIMA` sube
+# en `verificacion.py`, este número tiene que subir con él y no quedarse
+# mintiendo. La cota es conservadora a propósito -se mide sobre la longitud
+# en bruto del fragmento, no sobre su versión normalizada-, porque normalizar
+# solo puede acortarlo (colapsa espacios, quita tildes) o dejarlo igual.
+LONGITUD_MINIMA_DE_TEXTO = math.ceil(CITA_MINIMA / (1 - _PROPORCION_MAS_EXIGENTE))
+
+
 def analisis_de_ejemplo(texto: str) -> AnalisisDelMotor:
     """Un `AnalisisDelMotor` completo cuyas citas existen literalmente en
     `texto`.
@@ -134,8 +151,21 @@ def analisis_de_ejemplo(texto: str) -> AnalisisDelMotor:
 
     `texto` debe tener una longitud razonable -la de un documento real, no la
     de una frase suelta-, porque los fragmentos se toman en distintos puntos
-    de su extensión para simular evidencia repartida por el trabajo.
+    de su extensión para simular evidencia repartida por el trabajo. Si es
+    más corto que `LONGITUD_MINIMA_DE_TEXTO`, se falla aquí, a la cara: sin
+    esta comprobación, quien escriba un texto de prueba corto en una tarea
+    posterior obtendría un análisis con apariencia correcta cuyas citas
+    `cita_localizada` rechazaría más adelante, y perseguiría el fallo en la
+    defensa en vez de en el texto de prueba que lo origina.
     """
+    if len(texto) < LONGITUD_MINIMA_DE_TEXTO:
+        raise ValueError(
+            f"analisis_de_ejemplo necesita un texto de al menos "
+            f"{LONGITUD_MINIMA_DE_TEXTO} caracteres para que sus citas "
+            f"superen el mínimo de {CITA_MINIMA} caracteres que exige "
+            f"cita_localizada una vez normalizadas; se han recibido "
+            f"{len(texto)}."
+        )
     return AnalisisDelMotor(
         valoraciones=[
             Valoracion(
