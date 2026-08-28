@@ -223,6 +223,12 @@ def test_la_consulta_fuerza_el_cruce_interno() -> None:
 
 
 def test_un_error_del_servidor_se_traduce() -> None:
+    """Y dice que mirar, no solo que algo ha fallado.
+
+    Las tablas tienen RLS activo y ninguna politica, asi que esto solo
+    funciona con la clave de servicio: un 401 significa que la clave no vale
+    o ha caducado, y el docente tiene que saber donde esta esa clave.
+    """
     def responder(peticion: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"message": "Invalid API key"})
 
@@ -231,6 +237,20 @@ def test_un_error_del_servidor_se_traduce() -> None:
 
     assert "Supabase" in str(fallo.value)
     assert "401" in str(fallo.value)
+    assert "SUPABASE_SERVICE_KEY" in str(fallo.value)
+    assert ".env" in str(fallo.value)
+
+
+def test_un_error_del_servidor_que_no_es_de_credenciales_no_habla_de_la_clave() -> None:
+    """No se afirma lo que no se sabe: un 500 no es una clave caducada."""
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"message": "boom"})
+
+    with pytest.raises(ErrorDeAlmacen) as fallo:
+        _almacen(responder).listar()
+
+    assert "500" in str(fallo.value)
+    assert "SUPABASE_SERVICE_KEY" not in str(fallo.value)
 
 
 def test_sin_red_el_error_lo_dice() -> None:

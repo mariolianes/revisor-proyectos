@@ -297,6 +297,10 @@ def test_un_yaml_valido_que_no_es_un_mapa_no_tumba_la_ficha(
     assert comprobacion.veredicto == NO_VERIFICABLE
     assert "mapa de criterios" in comprobacion.medido
     assert "list" in comprobacion.medido
+    # La nota dice qué forma tiene que tener, con un ejemplo, y sin usar la
+    # palabra «lista» con dos sentidos opuestos en la misma frase.
+    assert "«tipografia:»" in comprobacion.nota
+    assert "indentados" in comprobacion.nota
 
 
 def test_criterio_desconocido_no_desaparece_en_silencio(

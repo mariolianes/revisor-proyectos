@@ -132,6 +132,19 @@ class AlmacenSupabase:
             raise ChoqueDeAlmacen(
                 f"{detalle} Respuesta de Supabase: {respuesta.text[:300]}"
             )
+        if respuesta.status_code in (401, 403):
+            # Decir solo que Supabase ha respondido 401 deja al docente
+            # sabiendo que algo falla y sin saber qué mirar. Las tablas
+            # tienen RLS activo y ninguna política, así que esto solo
+            # funciona con la clave de servicio: si el 401 llega, o la clave
+            # no es la que es, o ha caducado.
+            raise ErrorDeAlmacen(
+                f"Supabase ha rechazado la petición a «{tabla}» "
+                f"({respuesta.status_code}): la clave no vale o ha caducado. "
+                "Revisa SUPABASE_SERVICE_KEY en el fichero .env, que tiene "
+                "que ser la clave de servicio del proyecto. Respuesta de "
+                f"Supabase: {respuesta.text[:300]}"
+            )
         if respuesta.status_code >= 400:
             raise ErrorDeAlmacen(
                 f"Supabase ha respondido {respuesta.status_code} al acceder a "

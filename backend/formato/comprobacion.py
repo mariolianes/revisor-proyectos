@@ -119,10 +119,12 @@ def _cargar(raiz: Path, version: str) -> dict:
         raise _FicheroInservible(
             f"el fichero es un YAML válido, pero no es un mapa de criterios "
             f"(es {type(criterios).__name__})",
-            f"{ruta} tiene que ser una lista de criterios con nombre, cada "
-            "uno con sus valores debajo -«tipografia:», «margenes:»...-, no "
-            "una lista de guiones ni un valor suelto. Compáralo con la "
-            "versión anterior del fichero.",
+            f"En {ruta} cada criterio empieza por su nombre y dos puntos "
+            "-«tipografia:», «margenes:»- y lleva sus valores debajo, "
+            "indentados. Lo que hay ahora no tiene esa forma: revisa si se "
+            "han colado guiones al principio de las líneas, o si el fichero "
+            "ha quedado con un solo valor suelto. Compáralo con la versión "
+            "anterior del fichero.",
         )
     return criterios
 
