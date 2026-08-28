@@ -15,7 +15,7 @@
 # la regla de proporcion del §2 del calibrador.
 
 - codigo: P1
-  nombre: Critico
+  nombre: Crítico
   en_base_de_datos: CRITICA
   efecto: Bloquea o compromete la fase
   llega_al_alumno: siempre
@@ -47,7 +47,7 @@
 - codigo: P4
   nombre: No prioritario
   en_base_de_datos: BAJA
-  efecto: No compensa el coste pedagogico
+  efecto: No compensa el coste pedagógico
   llega_al_alumno: nunca
   tratamiento: >-
     No debe cargarse al alumno. Puede conservarse como nota tecnica opcional

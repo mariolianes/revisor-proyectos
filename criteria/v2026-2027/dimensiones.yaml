@@ -7,14 +7,14 @@
 # y adecuacion al ciclo (§9.1) pero no se puntua (§5).
 
 - codigo: D01
-  nombre: Adecuacion al ciclo e intermodularidad
-  observa: Relacion profesional e integracion de aprendizajes
+  nombre: Adecuación al ciclo e intermodularidad
+  observa: Relación profesional e integración de aprendizajes
   fuente: maestro#8-dimensiones
   activa_en: [TEMA, E1, E2, E3, FINAL]
 
 - codigo: D02
-  nombre: Tema, necesidad y justificacion
-  observa: Concrecion, relevancia y evidencia de partida
+  nombre: Tema, necesidad y justificación
+  observa: Concreción, relevancia y evidencia de partida
   fuente: maestro#8-dimensiones
   activa_en: [TEMA, E1, E2, E3, FINAL]
 
@@ -31,14 +31,14 @@
   activa_en: [E1, E2, E3, FINAL]
 
 - codigo: D05
-  nombre: Fundamentacion y fuentes
-  observa: Seleccion, calidad, citas y uso real
+  nombre: Fundamentación y fuentes
+  observa: Selección, calidad, citas y uso real
   fuente: maestro#8-dimensiones
   activa_en: [E2, E3, FINAL]
 
 - codigo: D06
-  nombre: Metodologia o procedimiento
-  observa: Trazabilidad del trabajo y adecuacion al enfoque
+  nombre: Metodología o procedimiento
+  observa: Trazabilidad del trabajo y adecuación al enfoque
   fuente: maestro#8-dimensiones
   activa_en: [E2, E3, FINAL]
 
@@ -49,31 +49,31 @@
   activa_en: [E2, E3, FINAL]
 
 - codigo: D08
-  nombre: Resultados e interpretacion
-  observa: Evidencias, significado y relacion con objetivos
+  nombre: Resultados e interpretación
+  observa: Evidencias, significado y relación con objetivos
   fuente: maestro#8-dimensiones
   activa_en: [E3, FINAL]
 
 - codigo: D09
   nombre: Conclusiones
-  observa: Respuesta, limites, aportacion y mejora
+  observa: Respuesta, límites, aportación y mejora
   fuente: maestro#8-dimensiones
   activa_en: [E3, FINAL]
 
 - codigo: D10
-  nombre: Evolucion y feedback
+  nombre: Evolución y feedback
   observa: Correcciones incorporadas y progreso entre versiones
   fuente: maestro#8-dimensiones
   activa_en: [E2, E3, FINAL]
 
 - codigo: D11
-  nombre: Redaccion y presentacion
-  observa: Claridad, rigor, formato, tablas e imagenes
+  nombre: Redacción y presentación
+  observa: Claridad, rigor, formato, tablas e imágenes
   fuente: maestro#8-dimensiones
   activa_en: [E1, E2, E3, FINAL]
 
 - codigo: D12
-  nombre: Autoria y defendibilidad
-  observa: Comprension, decisiones propias y ausencia de indicios criticos
+  nombre: Autoría y defendibilidad
+  observa: Comprensión, decisiones propias y ausencia de indicios críticos
   fuente: maestro#8-dimensiones
   activa_en: [E1, E2, E3, FINAL, DEFENSA]

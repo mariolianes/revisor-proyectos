@@ -25,7 +25,7 @@ def test_lleva_el_nombre_de_cada_dimension(criterios_de_analisis: Path) -> None:
     """El código D05 no le dice nada a nadie; el nombre sí."""
     texto = construir(criterios_de_analisis, "v2026-2027", "E2")
 
-    assert "Fundamentacion y fuentes" in texto
+    assert "Fundamentación y fuentes" in texto
 
 
 def test_explica_los_cuatro_niveles_de_prioridad(criterios_de_analisis: Path) -> None:
@@ -33,7 +33,7 @@ def test_explica_los_cuatro_niveles_de_prioridad(criterios_de_analisis: Path) ->
 
     for codigo in ("P1", "P2", "P3", "P4"):
         assert codigo in texto
-    assert "No compensa el coste pedagogico" in texto
+    assert "No compensa el coste pedagógico" in texto
 
 
 def test_exige_evidencia_literal(criterios_de_analisis: Path) -> None:
@@ -72,7 +72,7 @@ def test_cambiar_un_criterio_cambia_la_instruccion(
 
     dimensiones.write_text(
         dimensiones.read_text(encoding="utf-8").replace(
-            "Fundamentacion y fuentes", "Rigor de las fuentes citadas"
+            "Fundamentación y fuentes", "Rigor de las fuentes citadas"
         ),
         encoding="utf-8",
     )
