@@ -132,6 +132,26 @@ def test_las_respuestas_se_devuelven_en_el_orden_en_que_se_programaron() -> None
     assert p.analizar("i", "t", OtroFormulario) is segunda
 
 
+def test_los_fallos_se_lanzan_en_el_orden_en_que_se_programaron() -> None:
+    """Hermano del test anterior, para `_fallos`: mismo FIFO, mismo motivo.
+    Un reintento que programa dos fallos distintos -uno para el primer
+    intento, otro para el segundo, por ejemplo para probar que cada uno se
+    trata de forma distinta- necesita que salgan en ese orden. Con un solo
+    fallo programado, como en el resto de los tests, ese orden nunca se
+    llegaría a comprobar."""
+    primero = RespuestaNoValida("primero")
+    segundo = RespuestaNoValida("segundo")
+    p = ProveedorSimulado(fallos=[primero, segundo])
+
+    with pytest.raises(RespuestaNoValida) as info_primero:
+        p.analizar("i", "t", AnalisisDelMotor)
+    assert info_primero.value is primero
+
+    with pytest.raises(RespuestaNoValida) as info_segundo:
+        p.analizar("i", "t", AnalisisDelMotor)
+    assert info_segundo.value is segundo
+
+
 def test_analisis_de_ejemplo_tiene_citas_localizables_en_el_texto() -> None:
     """El simulado no puede probar el camino feliz con citas inventadas: las
     defensas de verificación las rechazarían. Esta prueba ata el generador
