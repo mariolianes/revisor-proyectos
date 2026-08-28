@@ -13,11 +13,25 @@ from pydantic import BaseModel
 from backend.configuracion import Configuracion
 from backend.extraccion import medir
 from backend.extraccion.lectura import PdfIlegible
-from backend.persistencia.modelos import Almacen, EntregaNueva, EntregaRegistrada
+from backend.persistencia.modelos import (
+    ESTADOS,
+    Almacen,
+    EntregaNueva,
+    EntregaRegistrada,
+)
 from backend.servicios.lectura_objetiva import FichaDeLectura, leer, localizar
 from backend.vigilancia.carpeta import ArchivoVisto, mirar
 
 router = APIRouter(prefix="/api")
+
+# Los únicos estados que esta API sabe fijar. Los siete del §16.1 están en
+# `persistencia.modelos.ESTADOS` y en el enum de la tabla: no se quitan de
+# ahí, porque la segunda parte del flujo los necesitará. Lo que no puede
+# existir es la operación que los fije desde aquí -APROBADO y COMUNICADO
+# son dos de las nueve decisiones que el §13 reserva al profesor-, y una
+# lista corta y explícita es más difícil de ampliar por descuido que un
+# `if estado in (...)` escondido en el cuerpo.
+ESTADOS_DE_ESTA_API: tuple[str, ...] = ("RECIBIDO", "BLOQUEADO", "ANALIZADO")
 
 
 class Confirmacion(BaseModel):
@@ -208,6 +222,25 @@ def obtener_ficha(identificador: str, peticion: Request) -> FichaDeLectura:
 def cambiar_estado(
     identificador: str, cuerpo: CambioDeEstado, peticion: Request
 ) -> EntregaRegistrada:
+    """Solo los tres estados que esta parte del flujo usa.
+
+    Los siete del §16.1 siguen existiendo en el modelo y en la base de
+    datos; lo que se cierra es la puerta de esta API. Aprobar y comunicar
+    son dos de las nueve decisiones que el §13 reserva al profesor, y la
+    forma de respetarlo -lo dice el docstring de este módulo- es que las
+    operaciones no existan.
+    """
+    # Un estado que no existe lo explica mejor el almacén -dice cuáles son
+    # los siete-, así que aquí solo se cierra la puerta a los que existen y
+    # no le tocan a esta API.
+    if cuerpo.estado in ESTADOS and cuerpo.estado not in ESTADOS_DE_ESTA_API:
+        raise HTTPException(status_code=400, detail=(
+            f"«{cuerpo.estado}» no se puede fijar desde aquí. Esta parte del "
+            "flujo solo mueve la entrega entre " +
+            ", ".join(ESTADOS_DE_ESTA_API) + ". Aprobar y comunicar "
+            "corresponden a la segunda parte del flujo y son decisiones del "
+            "profesor (§13), no de esta API."
+        ))
     try:
         cambiada = _almacen(peticion).cambiar_estado(
             identificador, cuerpo.estado, cuerpo.motivo

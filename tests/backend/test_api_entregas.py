@@ -217,6 +217,69 @@ def test_bloquear_sin_motivo_da_400(cliente) -> None:
     assert "motivo" in respuesta.json()["detail"]
 
 
+@pytest.mark.parametrize("estado", ["APROBADO", "COMUNICADO"])
+def test_esta_api_no_aprueba_ni_comunica(cliente, estado: str) -> None:
+    """§13: la forma de que el sistema no decida es que la operación no exista.
+
+    Los siete estados siguen en el modelo y en el enum de la tabla, porque
+    la segunda parte del flujo los necesitará. Lo que se cierra es la
+    puerta de esta API.
+    """
+    ficha = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    }).json()
+
+    respuesta = cliente.post(
+        f"/api/entregas/{ficha['entrega']['id']}/estado",
+        json={"estado": estado, "motivo": None},
+    )
+
+    assert respuesta.status_code == 400
+    motivo = respuesta.json()["detail"]
+    assert estado in motivo
+    assert "segunda parte del flujo" in motivo
+    assert "profesor" in motivo
+
+
+@pytest.mark.parametrize("estado,motivo", [
+    ("RECIBIDO", None),
+    ("BLOQUEADO", "Falta el anexo."),
+    ("ANALIZADO", None),
+])
+def test_los_tres_estados_de_esta_parte_siguen_funcionando(
+    cliente, estado: str, motivo: str | None
+) -> None:
+    ficha = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    }).json()
+
+    respuesta = cliente.post(
+        f"/api/entregas/{ficha['entrega']['id']}/estado",
+        json={"estado": estado, "motivo": motivo},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["estado"] == estado
+
+
+def test_un_estado_que_no_existe_lo_sigue_explicando_el_almacen(cliente) -> None:
+    """La puerta cerrada no debe tapar el mensaje de una errata."""
+    ficha = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    }).json()
+
+    respuesta = cliente.post(
+        f"/api/entregas/{ficha['entrega']['id']}/estado",
+        json={"estado": "ANALIZDO", "motivo": None},
+    )
+
+    assert respuesta.status_code == 400
+    assert "no es un estado del flujo" in respuesta.json()["detail"]
+
+
 def test_el_entorno_avisa_de_que_no_se_guarda(cliente) -> None:
     """El almacén en memoria pierde lo guardado, y el docente ha de saberlo."""
     entorno = cliente.get("/api/entorno").json()
