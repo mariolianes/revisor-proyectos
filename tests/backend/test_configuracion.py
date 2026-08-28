@@ -124,3 +124,33 @@ def test_el_entorno_manda_sobre_el_fichero(tmp_path: Path) -> None:
 
 def test_version_de_criterios_por_omision(tmp_path: Path) -> None:
     assert cargar(tmp_path, entorno={}).version_criterios == "v2026-2027"
+
+
+def test_cargar_conserva_el_motivo_de_la_carpeta_que_no_sirve(tmp_path: Path) -> None:
+    """La carpeta se descarta, pero el motivo no: es lo que lee el docente."""
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+
+    configuracion = cargar(
+        raiz, entorno={"REVISOR_CARPETA_ENTREGAS": str(tmp_path / "no-existe")}
+    )
+
+    assert configuracion.carpeta_entregas is None
+    assert configuracion.problema_carpeta is not None
+    assert "no existe" in configuracion.problema_carpeta
+
+
+def test_sin_carpeta_indicada_no_hay_problema_que_contar(tmp_path: Path) -> None:
+    """No indicar ninguna no es lo mismo que indicar una que no sirve."""
+    assert cargar(tmp_path, entorno={}).problema_carpeta is None
+
+
+def test_una_carpeta_que_sirve_no_deja_problema(tmp_path: Path) -> None:
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    carpeta = tmp_path / "entregas"
+    carpeta.mkdir()
+
+    configuracion = cargar(raiz, entorno={"REVISOR_CARPETA_ENTREGAS": str(carpeta)})
+
+    assert configuracion.problema_carpeta is None

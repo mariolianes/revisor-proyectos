@@ -58,11 +58,73 @@ class Comprobacion(BaseModel):
     nota: str = ""
 
 
+class _FicheroInservible(Exception):
+    """El fichero de criterios no se ha podido usar, con qué decirle al docente.
+
+    Lleva ya redactado lo que verá en la `Comprobacion` de repuesto:
+    `medido` es qué le pasa al fichero, y `nota` qué hacer para arreglarlo.
+    """
+
+    def __init__(self, medido: str, nota: str) -> None:
+        super().__init__(medido)
+        self.medido = medido
+        self.nota = nota
+
+
 def _cargar(raiz: Path, version: str) -> dict:
+    """El fichero de criterios como diccionario, o por qué no se puede usar.
+
+    Las tres formas de que no se pueda usar acaban en `_FicheroInservible`,
+    porque el docente edita este fichero a mano y las tres son cosas que le
+    pueden pasar de verdad:
+
+    - Guardarlo con el Bloc de notas en la codificación de Windows en vez
+      de en UTF-8: la primera tilde deja de leerse y `read_text` revienta.
+    - Escribir un YAML que no se puede interpretar.
+    - Escribir un YAML válido que no es un mapa de criterios -una lista,
+      por ejemplo-, con lo que `criterios.items()` no existe.
+
+    Los tres escapaban como 500 y tumbaban la ficha entera, en un módulo
+    cuyo docstring promete justo lo contrario.
+    """
+    ruta = f"criteria/{version}/formato.yaml"
     fichero = raiz / "criteria" / version / "formato.yaml"
     if not fichero.is_file():
         return {}
-    return yaml.safe_load(fichero.read_text(encoding="utf-8")) or {}
+
+    try:
+        texto = fichero.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise _FicheroInservible(
+            "el fichero no está guardado en UTF-8",
+            f"{ruta} tiene caracteres que no son UTF-8 ({error.reason}, en el "
+            f"byte {error.start}). Vuelve a guardarlo en UTF-8: si lo editas "
+            "con el Bloc de notas, en «Guardar como» hay una lista de "
+            "codificación y hay que elegir UTF-8. Mientras tanto no se puede "
+            "comprobar ningún criterio de formato.",
+        ) from error
+
+    try:
+        criterios = yaml.safe_load(texto)
+    except yaml.YAMLError as error:
+        raise _FicheroInservible(
+            "el fichero no se ha podido interpretar",
+            f"{ruta} no se ha podido leer como YAML: {error}. Corrígelo para "
+            "que el resto de la comprobación pueda ejecutarse.",
+        ) from error
+
+    if criterios is None:
+        return {}
+    if not isinstance(criterios, dict):
+        raise _FicheroInservible(
+            f"el fichero es un YAML válido, pero no es un mapa de criterios "
+            f"(es {type(criterios).__name__})",
+            f"{ruta} tiene que ser una lista de criterios con nombre, cada "
+            "uno con sus valores debajo -«tipografia:», «margenes:»...-, no "
+            "una lista de guiones ni un valor suelto. Compáralo con la "
+            "versión anterior del fichero.",
+        )
+    return criterios
 
 
 def _normalizar(texto: str) -> str:
@@ -342,16 +404,14 @@ def comprobar(raiz: Path, version: str, medidas: Medidas) -> list[Comprobacion]:
     """
     try:
         criterios = _cargar(raiz, version)
-    except yaml.YAMLError as error:
+    except _FicheroInservible as fallo:
         return [Comprobacion(
             criterio="fichero_de_criterios",
             veredicto=NO_VERIFICABLE,
             esperado="un YAML válido en criteria/<version>/formato.yaml",
-            medido="el fichero no se ha podido interpretar",
+            medido=fallo.medido,
             fuente=f"criteria/{version}/formato.yaml",
-            nota=f"criteria/{version}/formato.yaml no se ha podido leer "
-                 f"como YAML: {error}. Corrígelo para que el resto de la "
-                 "comprobación pueda ejecutarse.",
+            nota=fallo.nota,
         )]
 
     resultado = []

@@ -238,6 +238,67 @@ def test_yaml_mal_indentado_no_revienta(
     assert "YAML" in comprobacion.nota
 
 
+def _raiz_con_criterios(tmp_path: Path, nombre: str, contenido: bytes) -> Path:
+    """Una raíz con criteria/v2026-2027/formato.yaml escrito byte a byte.
+
+    Se escribe en bytes y no con `write_text` porque uno de los casos que
+    hay que reproducir es precisamente el de un fichero que no está en
+    UTF-8, y eso no se puede expresar con texto.
+    """
+    raiz = tmp_path / nombre
+    carpeta = raiz / "criteria" / "v2026-2027"
+    carpeta.mkdir(parents=True)
+    (carpeta / "formato.yaml").write_bytes(contenido)
+    return raiz
+
+
+def test_un_fichero_guardado_en_ansi_no_tumba_la_ficha(
+    tmp_path: Path, pdf_con_indice: Path
+) -> None:
+    """El docente edita este fichero a mano, y el Bloc de notas de Windows
+    guarda en la codificación del sistema si no se le dice otra cosa. Una
+    sola tilde en ANSI hacía escapar un UnicodeDecodeError como 500."""
+    raiz = _raiz_con_criterios(
+        tmp_path, "ansi",
+        ("extension:\n  minimo_paginas_contenido: 4\n"
+         "  nota: página de más\n"
+         "  fuente: maestro#6-estandar-academico\n").encode("cp1252"),
+    )
+
+    resultado = comprobar(raiz, "v2026-2027", medir(pdf_con_indice))
+
+    assert len(resultado) == 1
+    comprobacion = resultado[0]
+    assert comprobacion.criterio == "fichero_de_criterios"
+    assert comprobacion.veredicto == NO_VERIFICABLE
+    # Lo que hay que hacer, dicho claro: guardarlo en UTF-8.
+    assert "UTF-8" in comprobacion.medido
+    assert "UTF-8" in comprobacion.nota
+
+
+def test_un_yaml_valido_que_no_es_un_mapa_no_tumba_la_ficha(
+    tmp_path: Path, pdf_con_indice: Path
+) -> None:
+    """Una lista de guiones se interpreta sin error, pero no tiene .items().
+
+    Es el fallo de quien copia el formato de dimensiones.yaml -que sí es una
+    lista- al fichero de formato, que es un mapa.
+    """
+    raiz = _raiz_con_criterios(
+        tmp_path, "lista",
+        b"- extension\n- tipografia\n- margenes\n",
+    )
+
+    resultado = comprobar(raiz, "v2026-2027", medir(pdf_con_indice))
+
+    assert len(resultado) == 1
+    comprobacion = resultado[0]
+    assert comprobacion.criterio == "fichero_de_criterios"
+    assert comprobacion.veredicto == NO_VERIFICABLE
+    assert "mapa de criterios" in comprobacion.medido
+    assert "list" in comprobacion.medido
+
+
 def test_criterio_desconocido_no_desaparece_en_silencio(
     criterios_alterados, pdf_con_indice: Path
 ) -> None:

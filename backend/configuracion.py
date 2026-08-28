@@ -28,9 +28,18 @@ class ProblemaDeCarpeta:
 
 
 class Configuracion(BaseModel):
-    """Lo que el backend necesita saber antes de vigilar nada."""
+    """Lo que el backend necesita saber antes de vigilar nada.
+
+    `problema_carpeta` lleva el motivo por el que la ruta indicada no sirve,
+    cuando se ha indicado una y no sirve. Es lo que distingue «no has puesto
+    ninguna carpeta» de «la que has puesto no existe», y sin él las tres
+    explicaciones que `revisar_carpeta` redacta con detalle se perdían: el
+    docente con una ruta mal escrita leía «No hay carpeta de entregas
+    configurada», y él sí la había indicado.
+    """
 
     carpeta_entregas: Path | None = None
+    problema_carpeta: str | None = None
     url_supabase: str | None = None
     clave_supabase: str | None = None
     version_criterios: str = VERSION_CRITERIOS_POR_OMISION
@@ -56,7 +65,7 @@ def revisar_carpeta(raiz: Path, carpeta: Path) -> ProblemaDeCarpeta | None:
     if not carpeta.is_dir():
         return ProblemaDeCarpeta(
             f"«{carpeta}» no es una carpeta. {CARPETA} debe apuntar a la "
-            "carpeta donde se dejan los trabajos, no a un archivo."
+            "carpeta donde se dejan los trabajos, no a un fichero."
         )
     return None
 
@@ -81,7 +90,9 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
 
     Una carpeta que no sirve se descarta entera y se deja a None. Arrastrar
     media configuración solo consigue que el fallo aparezca más tarde y más
-    lejos de su causa.
+    lejos de su causa. Lo que sí se conserva es el motivo por el que no
+    sirve, para que el aviso que lee el docente sea el concreto y no el
+    genérico.
     """
     import os
 
@@ -89,13 +100,16 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
     valores.update(dict(os.environ) if entorno is None else entorno)
 
     carpeta: Path | None = None
+    problema: ProblemaDeCarpeta | None = None
     if valores.get(CARPETA):
         candidata = Path(valores[CARPETA])
-        if revisar_carpeta(raiz, candidata) is None:
+        problema = revisar_carpeta(raiz, candidata)
+        if problema is None:
             carpeta = candidata.resolve()
 
     return Configuracion(
         carpeta_entregas=carpeta,
+        problema_carpeta=problema.motivo if problema else None,
         url_supabase=valores.get(URL) or None,
         clave_supabase=valores.get(CLAVE) or None,
         version_criterios=valores.get(VERSION) or VERSION_CRITERIOS_POR_OMISION,

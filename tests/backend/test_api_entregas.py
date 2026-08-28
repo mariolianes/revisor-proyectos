@@ -236,6 +236,73 @@ def test_sin_carpeta_los_pendientes_estan_vacios(tmp_path: Path) -> None:
     assert cliente.get("/api/entorno").json()["hay_carpeta"] is False
 
 
+def _entorno_con_carpeta(raiz: Path, ruta: Path) -> dict:
+    """El aviso que ve el docente cuando REVISOR_CARPETA_ENTREGAS es «ruta»."""
+    from backend.configuracion import cargar
+
+    app = crear_app(
+        raiz,
+        configuracion=cargar(raiz, entorno={"REVISOR_CARPETA_ENTREGAS": str(ruta)}),
+        almacen=AlmacenEnMemoria(),
+    )
+    return TestClient(app).get("/api/entorno").json()
+
+
+def test_una_carpeta_que_no_existe_se_dice_tal_cual(tmp_path: Path) -> None:
+    """El docente sí la había indicado: decirle que no hay ninguna es falso."""
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+
+    entorno = _entorno_con_carpeta(raiz, tmp_path / "no-existe")
+
+    assert entorno["hay_carpeta"] is False
+    aviso = " ".join(entorno["avisos"])
+    assert "no existe" in aviso
+    assert "no-existe" in aviso
+    assert "No hay carpeta de entregas configurada" not in aviso
+
+
+def test_una_ruta_que_es_un_fichero_se_dice_tal_cual(tmp_path: Path) -> None:
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    fichero = tmp_path / "cosa.txt"
+    fichero.write_text("x", encoding="utf-8")
+
+    entorno = _entorno_con_carpeta(raiz, fichero)
+
+    aviso = " ".join(entorno["avisos"])
+    assert "no es una carpeta" in aviso
+    # El resto del proyecto dice «fichero», no «archivo».
+    assert "no a un fichero" in aviso
+    assert "No hay carpeta de entregas configurada" not in aviso
+
+
+def test_una_carpeta_dentro_del_repositorio_se_dice_tal_cual(tmp_path: Path) -> None:
+    raiz = tmp_path / "repo"
+    dentro = raiz / "01_ALUMNOS"
+    dentro.mkdir(parents=True)
+
+    entorno = _entorno_con_carpeta(raiz, dentro)
+
+    aviso = " ".join(entorno["avisos"])
+    assert "dentro del repositorio" in aviso
+    assert "No hay carpeta de entregas configurada" not in aviso
+
+
+def test_sin_ninguna_carpeta_indicada_el_aviso_es_el_generico(tmp_path: Path) -> None:
+    """El genérico sigue estando, para cuando de verdad no hay nada puesto."""
+    from backend.configuracion import cargar
+
+    app = crear_app(
+        tmp_path, configuracion=cargar(tmp_path, entorno={}),
+        almacen=AlmacenEnMemoria(),
+    )
+
+    avisos = TestClient(app).get("/api/entorno").json()["avisos"]
+
+    assert any("No hay carpeta de entregas configurada" in a for a in avisos)
+
+
 def test_el_editor_de_criterios_sigue_funcionando(cliente) -> None:
     """La app es una sola: añadir entregas no rompe lo que ya había."""
     assert cliente.get("/api/salud").status_code == 200

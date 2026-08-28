@@ -64,11 +64,16 @@ def obtener_entorno(peticion: Request) -> Entorno:
 
     avisos = []
     if configuracion.carpeta_entregas is None:
-        avisos.append(
+        # El motivo concreto manda sobre el genérico. `revisar_carpeta`
+        # redacta tres -no existe, no es una carpeta, está dentro del
+        # repositorio- y cada uno dice qué corregir; el genérico solo vale
+        # cuando de verdad no se ha indicado ninguna, porque a quien sí la
+        # indicó le estaría diciendo algo que no es cierto.
+        avisos.append(configuracion.problema_carpeta or (
             "No hay carpeta de entregas configurada, así que no se vigila "
             "ninguna. Indícala en REVISOR_CARPETA_ENTREGAS, en el fichero .env, "
             "y tiene que estar fuera de este repositorio."
-        )
+        ))
     if not almacen.es_duradero:
         avisos.append(
             "No hay credenciales de Supabase: lo que registres vive solo "
