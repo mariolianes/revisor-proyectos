@@ -126,6 +126,48 @@ class Almacen(Protocol):
     ) -> EntregaRegistrada | None: ...
 
 
+# Lo declarado se compara en estos campos para decidir si una huella
+# repetida es de verdad el mismo archivo confirmado dos veces. El nombre o
+# la ruta quedan fuera a propósito: es dónde está el fichero, no de quién
+# es, y moverlo de subcarpeta no debe dar error.
+#
+# Vive aquí, con el resto de validaciones compartidas, y no en cada
+# almacén. Estuvo duplicado palabra por palabra en los dos, con un
+# comentario que prometía que se comportaban igual, y esa promesa no la
+# sostenía nada: quitar «ciclo» de la tupla en uno solo de los dos dejaba
+# los tests en verde.
+CAMPOS_DE_IDENTIDAD = ("codigo_alumno", "ciclo", "fase", "version")
+
+
+def choca_con_lo_declarado(
+    existente: EntregaRegistrada, nueva: EntregaNueva
+) -> bool:
+    """Si lo que ahora se declara no coincide con la ficha bajo la que ya está."""
+    return any(
+        getattr(existente, campo) != getattr(nueva, campo)
+        for campo in CAMPOS_DE_IDENTIDAD
+    )
+
+
+def error_de_atribucion(
+    existente: EntregaRegistrada, nueva: EntregaNueva
+) -> ValueError:
+    """El aviso de una huella repetida con otros datos declarados.
+
+    También compartido: los dos almacenes tienen que decir lo mismo, y el
+    docente no debería leer un texto u otro según haya credenciales.
+    """
+    return ValueError(
+        f"El archivo «{nueva.huella}» ya está registrado como "
+        f"{existente.codigo_alumno}/{existente.ciclo}/"
+        f"{existente.fase} v{existente.version} (ficha "
+        f"{existente.id}), pero ahora se declara como "
+        f"{nueva.codigo_alumno}/{nueva.ciclo}/{nueva.fase} "
+        f"v{nueva.version}. Si es el mismo trabajo, corrige el "
+        "dato que no coincide antes de confirmarlo."
+    )
+
+
 def validar_fase(fase: str) -> None:
     """Que la fase exista, dicho en castellano.
 

@@ -261,6 +261,34 @@ def test_cambiar_estado_manda_un_patch() -> None:
     assert cambiada.estado == "ANALIZADO"
 
 
+def test_cambiar_estado_pide_el_alumno_en_la_representacion() -> None:
+    """Sin `select`, PostgREST devuelve la fila de `entrega` a secas.
+
+    Y entonces `_componer` compone una entrega con el codigo de alumno y el
+    ciclo vacios, que es lo que este metodo devolvia -y lo que acababa en la
+    ficha y en la respuesta de la API- mientras AlmacenEnMemoria devolvia la
+    entrega entera. Lo encontro el test de paridad entre los dos almacenes.
+    """
+    vistos: list[str] = []
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        vistos.append(peticion.url.params.get("select", ""))
+        return httpx.Response(200, json=[{
+            **ENTREGA, "estado": "ANALIZADO",
+            "proyecto": {"alumno": {"codigo": "AF023", "ciclo": "DAM"}},
+        }])
+
+    cambiada = _almacen(responder).cambiar_estado(
+        "11111111-1111-1111-1111-111111111111", "ANALIZADO", None
+    )
+
+    assert "proyecto" in vistos[0]
+    assert "alumno" in vistos[0]
+    assert cambiada is not None
+    assert cambiada.codigo_alumno == "AF023"
+    assert cambiada.ciclo == "DAM"
+
+
 def test_bloquear_sin_motivo_gana_sobre_un_identificador_invalido_sin_llegar_a_la_red() -> None:
     """El mensaje del motivo gana aunque el identificador tampoco valga.
 

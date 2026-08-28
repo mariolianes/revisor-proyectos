@@ -13,25 +13,12 @@ from backend.persistencia.modelos import (
     ESTADO_INICIAL,
     EntregaNueva,
     EntregaRegistrada,
+    choca_con_lo_declarado,
+    error_de_atribucion,
     validar,
     validar_estado,
     validar_fase,
 )
-
-# Lo declarado se compara en estos campos para decidir si una huella
-# repetida es de verdad el mismo archivo confirmado dos veces. El nombre o
-# la ruta quedan fuera a propósito: es dónde está el fichero, no de quién
-# es, y moverlo de subcarpeta no debe dar error.
-_CAMPOS_DE_IDENTIDAD = ("codigo_alumno", "ciclo", "fase", "version")
-
-
-def _choca_con_lo_declarado(
-    existente: EntregaRegistrada, nueva: EntregaNueva
-) -> bool:
-    return any(
-        getattr(existente, campo) != getattr(nueva, campo)
-        for campo in _CAMPOS_DE_IDENTIDAD
-    )
 
 
 class AlmacenEnMemoria:
@@ -39,6 +26,12 @@ class AlmacenEnMemoria:
 
     def __init__(self) -> None:
         self._entregas: dict[str, EntregaRegistrada] = {}
+        # El ciclo es del alumno, no de la entrega: en la base de datos lo
+        # lleva la tabla `alumno` y la tabla `entrega` no lo tiene. Aquí
+        # hace falta guardarlo aparte para no comportarse distinto que
+        # AlmacenSupabase, que reutiliza el alumno ya existente con el
+        # ciclo con el que se creó. El primero que se registra manda.
+        self._ciclo_del_alumno: dict[str, str] = {}
 
     @property
     def es_duradero(self) -> bool:
@@ -52,24 +45,25 @@ class AlmacenEnMemoria:
             # Pero si lo que se declara ahora no coincide con la ficha bajo
             # la que ya está, es un error de atribución: no se resuelve en
             # silencio a favor del primero que llegó.
-            if _choca_con_lo_declarado(ya_estaba, entrega):
-                raise ValueError(
-                    f"El archivo «{entrega.huella}» ya está registrado como "
-                    f"{ya_estaba.codigo_alumno}/{ya_estaba.ciclo}/"
-                    f"{ya_estaba.fase} v{ya_estaba.version} (ficha "
-                    f"{ya_estaba.id}), pero ahora se declara como "
-                    f"{entrega.codigo_alumno}/{entrega.ciclo}/{entrega.fase} "
-                    f"v{entrega.version}. Si es el mismo trabajo, corrige el "
-                    "dato que no coincide antes de confirmarlo."
-                )
+            if choca_con_lo_declarado(ya_estaba, entrega):
+                raise error_de_atribucion(ya_estaba, entrega)
             return ya_estaba
 
+        # El ciclo con el que se dio de alta el alumno manda sobre el que se
+        # declara ahora, igual que en Supabase: allí `_alumno` reutiliza la
+        # fila existente y el ciclo vive en ella. Sin esto, el mismo alumno
+        # registrado en dos ciclos salía con un ciclo distinto en cada
+        # entrega en memoria y con el primero en Supabase.
+        datos = entrega.model_dump()
+        datos["ciclo"] = self._ciclo_del_alumno.setdefault(
+            entrega.codigo_alumno, entrega.ciclo
+        )
         registrada = EntregaRegistrada(
             id=str(uuid.uuid4()),
             recibida_en=datetime.now(),
             estado=ESTADO_INICIAL,
             motivo_bloqueo=None,
-            **entrega.model_dump(),
+            **datos,
         )
         self._entregas[registrada.id] = registrada
         return registrada

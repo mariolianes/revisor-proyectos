@@ -18,28 +18,14 @@ import httpx
 from backend.persistencia.modelos import (
     EntregaNueva,
     EntregaRegistrada,
+    choca_con_lo_declarado,
+    error_de_atribucion,
     validar,
     validar_estado,
     validar_fase,
 )
 
 ESPERA = 15.0
-
-# Lo declarado se compara en estos campos para decidir si una huella
-# repetida es de verdad el mismo archivo confirmado dos veces. El nombre o
-# la ruta quedan fuera a propósito: es dónde está el fichero, no de quién
-# es, y moverlo de subcarpeta no debe dar error. Ver memoria.py, que hace
-# la misma comprobación: los dos almacenes tienen que comportarse igual.
-_CAMPOS_DE_IDENTIDAD = ("codigo_alumno", "ciclo", "fase", "version")
-
-
-def _choca_con_lo_declarado(
-    existente: EntregaRegistrada, nueva: EntregaNueva
-) -> bool:
-    return any(
-        getattr(existente, campo) != getattr(nueva, campo)
-        for campo in _CAMPOS_DE_IDENTIDAD
-    )
 
 
 def _es_uuid(identificador: str) -> bool:
@@ -129,14 +115,22 @@ class AlmacenSupabase:
         )
         return filas[0] if filas else None
 
-    def _alumno(self, codigo: str, ciclo: str) -> str:
+    def _alumno(self, codigo: str, ciclo: str) -> tuple[str, str]:
+        """El identificador del alumno y el ciclo con el que está dado de alta.
+
+        Se devuelve el ciclo guardado, no el que se acaba de declarar,
+        porque el ciclo pertenece al alumno: lo tiene la tabla `alumno` y no
+        la tabla `entrega`. Devolver el declarado hacía que la ficha recién
+        confirmada dijera un ciclo y la lista, al recargarla, dijera otro:
+        el mismo almacén contradiciéndose consigo mismo.
+        """
         existente = self._uno("alumno", codigo=f"eq.{codigo}")
         if existente:
-            return existente["id"]
+            return existente["id"], existente.get("ciclo") or ciclo
         creado = self._pedir(
             "POST", "alumno", json={"codigo": codigo, "ciclo": ciclo}
         )
-        return creado[0]["id"]
+        return creado[0]["id"], creado[0].get("ciclo") or ciclo
 
     def _proyecto(self, alumno_id: str, version_criterios: str) -> str:
         existente = self._uno(
@@ -187,6 +181,11 @@ class AlmacenSupabase:
     # query string, no una particularidad de PostgREST.
     SELECCION = "*,proyecto!inner(alumno!inner(codigo,ciclo))"
 
+    # La misma lectura, para la representación que devuelve una escritura.
+    # Sin cruce interno: ahí no se filtra por ningún campo del embebido, que
+    # es lo único para lo que el `!inner` hace falta.
+    SELECCION_AL_ESCRIBIR = "*,proyecto(alumno(codigo,ciclo))"
+
     def _aplanar(self, fila: dict) -> dict:
         anidado = (fila.get("proyecto") or {}).get("alumno") or {}
         return {**fila, "alumno": anidado}
@@ -200,19 +199,11 @@ class AlmacenSupabase:
             # la que ya está, es un error de atribución: no se resuelve en
             # silencio a favor del primero que llegó. Mismo criterio que
             # AlmacenEnMemoria.registrar.
-            if _choca_con_lo_declarado(ya_estaba, entrega):
-                raise ValueError(
-                    f"El archivo «{entrega.huella}» ya está registrado como "
-                    f"{ya_estaba.codigo_alumno}/{ya_estaba.ciclo}/"
-                    f"{ya_estaba.fase} v{ya_estaba.version} (ficha "
-                    f"{ya_estaba.id}), pero ahora se declara como "
-                    f"{entrega.codigo_alumno}/{entrega.ciclo}/{entrega.fase} "
-                    f"v{entrega.version}. Si es el mismo trabajo, corrige el "
-                    "dato que no coincide antes de confirmarlo."
-                )
+            if choca_con_lo_declarado(ya_estaba, entrega):
+                raise error_de_atribucion(ya_estaba, entrega)
             return ya_estaba
 
-        alumno_id = self._alumno(entrega.codigo_alumno, entrega.ciclo)
+        alumno_id, ciclo = self._alumno(entrega.codigo_alumno, entrega.ciclo)
         proyecto_id = self._proyecto(alumno_id, entrega.version_criterios)
         filas = self._pedir("POST", "entrega", json={
             "proyecto_id": proyecto_id,
@@ -223,7 +214,10 @@ class AlmacenSupabase:
             "version_criterios": entrega.version_criterios,
         })
         fila = filas[0]
-        fila["alumno"] = {"codigo": entrega.codigo_alumno, "ciclo": entrega.ciclo}
+        # El ciclo del alumno guardado, no el declarado ahora: es el que
+        # devolverán `listar` y `por_id` al leer la fila con su alumno
+        # anidado, y la ficha recién confirmada tiene que decir lo mismo.
+        fila["alumno"] = {"codigo": entrega.codigo_alumno, "ciclo": ciclo}
         return self._componer(fila)
 
     def listar(self) -> list[EntregaRegistrada]:
@@ -285,9 +279,25 @@ class AlmacenSupabase:
         validar_estado(estado, motivo)
         if not _es_uuid(identificador):
             return None
+        # El `select` no sobra: sin él, PostgREST devuelve la fila de
+        # `entrega` a secas, sin el alumno anidado, y `_componer` compone una
+        # entrega con el código de alumno y el ciclo vacíos. Eso es lo que
+        # devolvía este método -y lo que acababa en la ficha y en la
+        # respuesta de la API- mientras AlmacenEnMemoria devolvía la entrega
+        # entera. Lo encontró el test de paridad.
+        #
+        # Aquí el cruce va sin `!inner`, al revés que en SELECCION: el
+        # `!inner` hace falta cuando se filtra por un campo del recurso
+        # embebido -si no, PostgREST no filtra la tabla raíz-, y aquí el
+        # filtro es por `id`, de la propia tabla. Pedir un cruce interno en
+        # la representación de una escritura sería exigir a PostgREST algo
+        # que no necesita hacer.
         filas = self._pedir(
             "PATCH", "entrega",
-            parametros={"id": f"eq.{identificador}"},
+            parametros={
+                "id": f"eq.{identificador}",
+                "select": self.SELECCION_AL_ESCRIBIR,
+            },
             json={"estado": estado, "motivo_bloqueo": motivo},
         )
         return self._componer(self._aplanar(filas[0])) if filas else None
