@@ -62,10 +62,12 @@ trabajo anterior.
 Los dos casos son la misma forma -un bloque repetido N veces que pasa a
 M- y esa forma no distingue, mirando solo el texto, si el bloque es
 contenido (la plantilla que sí hay que proteger) o formato (el pie de
-página, que no). Topar el número de repeticiones que se cuentan y
-descartar las firmas muy frecuentes por considerarlas formato se probaron
-también; ninguna de las dos resuelve el caso de la plantilla sin reabrir
-el del pie de página.
+página, que no). Se tantearon dos vías intermedias -topar cuántas
+repeticiones se cuentan, y descartar como formato las firmas muy
+frecuentes-, pero solo sobre el papel: ninguna se llegó a medir, y ambas
+tropiezan con lo mismo, que separar el pie del contenido exige distinguir
+dos cosas que el texto no distingue. Quedan como pistas para quien quiera
+retomarlo, no como experimentos hechos.
 
 Así que hay que elegir qué error se prefiere, y el criterio es el mismo
 que en el resto del sistema: entre no ver un descuadre y acusar en falso,
