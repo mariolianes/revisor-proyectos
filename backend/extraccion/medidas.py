@@ -5,7 +5,7 @@ comparación con lo que exigen los criterios ocurre en backend/formato/, que
 no sabe abrir un PDF, igual que este módulo no sabe qué exige el Maestro.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Pagina(BaseModel):
@@ -87,9 +87,16 @@ class Imagen(BaseModel):
 class Medidas(BaseModel):
     """Todo lo medido sobre un archivo, sin valorar nada.
 
-    `texto_plano` vive aquí porque lo necesita la comparación evolutiva,
-    pero NO se guarda en Supabase: la decisión D-001 excluye el texto del
-    trabajo de la base de datos. Se usa y se descarta.
+    `texto_plano` vive aquí porque lo necesita la comparación evolutiva
+    (`backend/evolucion/comparacion.py`, que lo lee como atributo del
+    objeto en memoria, nunca de una forma serializada). No se guarda en
+    Supabase -la decisión D-001 excluye el texto del trabajo de la base de
+    datos- y tampoco se serializa: `Field(exclude=True)` lo saca de
+    cualquier `model_dump()` y por tanto de cualquier respuesta HTTP,
+    presente o futura, sin que quien añada el próximo endpoint tenga que
+    acordarse de excluirlo a mano. Es el trabajo del alumno; no tiene nada
+    que hacer viajando por la red ni quedando en el registro de peticiones
+    de nadie. Se usa y se descarta.
     """
 
     nombre_archivo: str
@@ -101,4 +108,4 @@ class Medidas(BaseModel):
     texto: MedidasDeTexto
     estructura: MedidasDeEstructura
     imagenes: list[Imagen]
-    texto_plano: str
+    texto_plano: str = Field(exclude=True)

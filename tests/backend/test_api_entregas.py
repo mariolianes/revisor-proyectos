@@ -105,6 +105,79 @@ def test_una_ficha_inexistente_da_404(cliente) -> None:
     assert cliente.get("/api/entregas/no-existe").status_code == 404
 
 
+def test_el_texto_del_trabajo_no_viaja_por_la_api(cliente) -> None:
+    """Hermano del `test_no_envia_el_texto_del_trabajo` de
+    `tests/persistencia/test_supabase.py`, pero para la API: D-001 no solo
+    prohíbe que el texto llegue a la base de datos, tampoco tiene nada que
+    hacer viajando por la red ni quedando en el registro de peticiones de
+    nadie. `texto_plano` vive en `Medidas` porque lo necesita la
+    comparación evolutiva (test siguiente), pero ahora lleva
+    `Field(exclude=True)`.
+
+    Se busca el texto del PDF de prueba (`pdf_con_indice`, conftest.py) en
+    el cuerpo crudo de la respuesta, no solo la ausencia de la clave
+    `texto_plano`: lo que hay que garantizar es que el contenido no viaja,
+    no que el campo se llame de otra forma.
+    """
+    fragmento_reconocible = "Texto de la introduccion del trabajo"
+
+    confirmar = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    })
+    assert fragmento_reconocible not in confirmar.text
+    assert "texto_plano" not in confirmar.text
+
+    identificador = confirmar.json()["entrega"]["id"]
+    ficha = cliente.get(f"/api/entregas/{identificador}")
+    assert fragmento_reconocible not in ficha.text
+    assert "texto_plano" not in ficha.text
+
+
+def test_la_comparacion_evolutiva_sigue_funcionando_tras_excluir_el_texto(
+    criterios_de_formato: Path, tmp_path: Path,
+    pdf_simple: Path, pdf_con_indice: Path,
+) -> None:
+    """`texto_plano` sigue viviendo en el objeto `Medidas` en memoria -es un
+    atributo de Python que lee `backend/evolucion/comparacion.py`
+    directamente, no algo que se reconstruya a partir de la respuesta
+    serializada-, así que excluirlo de la API no puede romper la
+    comparación con la entrega anterior. Sin este test, ese arreglo podría
+    dejar la comparación muda sin que nadie se enterase.
+
+    Las dos entregas usan PDFs con contenido distinto (`pdf_simple` y
+    `pdf_con_indice`) a propósito: con el mismo contenido las dos tendrían
+    la misma huella, y `registrar` rechazaría la segunda por chocar con lo
+    ya declarado en la primera -otro caso, no el que aquí se comprueba.
+    """
+    entregas = tmp_path / "entregas"
+    entregas.mkdir()
+    (entregas / "AF023_DAM_E1_20251201_v1.pdf").write_bytes(pdf_simple.read_bytes())
+    (entregas / "AF023_DAM_E2_20260115_v1.pdf").write_bytes(pdf_con_indice.read_bytes())
+
+    app = crear_app(
+        criterios_de_formato,
+        configuracion=Configuracion(
+            carpeta_entregas=entregas, version_criterios="v2026-2027"
+        ),
+        almacen=AlmacenEnMemoria(),
+    )
+    cliente = TestClient(app)
+
+    cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20251201_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+    })
+    segunda = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    }).json()
+
+    assert segunda["comparada_con"] == "AF023_DAM_E1_20251201_v1.pdf"
+    assert segunda["evolucion"] is not None
+    assert isinstance(segunda["evolucion"]["proporcion_conservada"], float)
+
+
 def test_listar_devuelve_lo_registrado(cliente) -> None:
     cliente.post("/api/entregas", json={
         "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
