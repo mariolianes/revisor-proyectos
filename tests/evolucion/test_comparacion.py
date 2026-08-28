@@ -339,7 +339,16 @@ def test_parrafos_antes_y_despues_son_informativos() -> None:
 
 
 def test_comparar_seiscientos_parrafos_es_rapido() -> None:
-    """No debe volver al coste cuadrático del diseño por párrafos."""
+    """No debe volver al coste cuadrático del diseño por párrafos.
+
+    El margen es deliberadamente enorme. Medido sin carga, la comparación
+    tarda unos 0,26 s; el umbral está en 10 porque lo que este test vigila
+    no es la velocidad, es el orden de crecimiento. El diseño anterior, que
+    comparaba cada párrafo contra todos los del otro texto, no terminaba en
+    400 s con la mitad de párrafos que aquí. Entre eso y esto no hay riesgo
+    de confusión, y un umbral ajustado solo conseguiría que el test fallara
+    cuando la máquina está ocupada, que es como se enseña a ignorar el rojo.
+    """
     grande_anterior = _documento(600, semilla=10)
     grande_nuevo = _documento(600, semilla=11)
 
@@ -347,7 +356,7 @@ def test_comparar_seiscientos_parrafos_es_rapido() -> None:
     comparar(grande_anterior, grande_nuevo)
     duracion = time.perf_counter() - inicio
 
-    assert duracion < 2.0
+    assert duracion < 10.0
 
 
 def test_comparar_mil_doscientos_parrafos_es_rapido() -> None:
@@ -359,4 +368,4 @@ def test_comparar_mil_doscientos_parrafos_es_rapido() -> None:
     comparar(grande_anterior, grande_nuevo)
     duracion = time.perf_counter() - inicio
 
-    assert duracion < 2.0
+    assert duracion < 10.0
