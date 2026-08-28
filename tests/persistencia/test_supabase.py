@@ -226,7 +226,11 @@ def test_cambiar_estado_manda_un_patch() -> None:
         vistos.append(peticion.method)
         return httpx.Response(200, json=[{**ENTREGA, "estado": "ANALIZADO"}])
 
-    cambiada = _almacen(responder).cambiar_estado("id-entrega", "ANALIZADO", None)
+    # El identificador tiene que tener forma de UUID: es lo que la guarda de
+    # `_es_uuid` exige antes de dejar pasar la petición a la red.
+    cambiada = _almacen(responder).cambiar_estado(
+        "11111111-1111-1111-1111-111111111111", "ANALIZADO", None
+    )
 
     assert vistos == ["PATCH"]
     assert cambiada is not None
@@ -268,3 +272,59 @@ def test_una_fase_desconocida_en_anterior_de_da_el_mismo_mensaje_en_los_dos_alma
         _almacen(responder).anterior_de("AF023", "FASE_INVENTADA")
 
     assert str(fallo_memoria.value) == str(fallo_supabase.value)
+
+
+def test_un_identificador_sin_forma_de_uuid_da_none_en_los_dos_almacenes() -> None:
+    """`entrega.id` es `uuid` en la base de datos.
+
+    Sin guardar antes, `AlmacenSupabase.por_id` con un identificador que no
+    tiene forma de UUID no da «no existe»: Postgres rechaza la consulta con
+    un 400 -«invalid input syntax for type uuid»- antes de mirar si hay una
+    fila así, y eso se traduce en `ErrorDeAlmacen`. `AlmacenEnMemoria.por_id`
+    simplemente no lo encuentra en su diccionario y da `None`. Es la misma
+    clase de divergencia que la de la fase: un identificador inventado en
+    una URL -`GET /api/entregas/no-existe`- tiene que dar lo mismo, tenga o
+    no el sistema credenciales de Supabase.
+    """
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        raise AssertionError("no debería llegar a la red: el identificador se valida antes")
+
+    resultado_memoria = AlmacenEnMemoria().por_id("no-es-un-uuid")
+    resultado_supabase = _almacen(responder).por_id("no-es-un-uuid")
+
+    assert resultado_memoria is None
+    assert resultado_supabase == resultado_memoria
+
+
+def test_por_id_con_identificador_invalido_no_hace_ninguna_peticion() -> None:
+    llamadas: list[str] = []
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        llamadas.append(f"{peticion.method} {peticion.url.path}")
+        return httpx.Response(200, json=[])
+
+    resultado = _almacen(responder).por_id("no-es-un-uuid")
+
+    assert resultado is None
+    assert llamadas == []
+
+
+def test_cambiar_estado_con_identificador_invalido_no_hace_ninguna_peticion() -> None:
+    """La guarda del identificador vale también para `cambiar_estado`.
+
+    El orden importa: primero se valida el estado -es el error más
+    informativo de los dos si también hay un problema con el
+    identificador-, y solo si el estado es válido se comprueba la forma del
+    identificador, antes de la red.
+    """
+    llamadas: list[str] = []
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        llamadas.append(f"{peticion.method} {peticion.url.path}")
+        return httpx.Response(200, json=[])
+
+    resultado = _almacen(responder).cambiar_estado("no-es-un-uuid", "ANALIZADO", None)
+
+    assert resultado is None
+    assert llamadas == []

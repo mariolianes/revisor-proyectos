@@ -10,6 +10,7 @@ cómo se autentica el docente: es preferible que no entre nadie a que entre
 cualquiera.
 """
 
+import uuid
 from datetime import datetime
 
 import httpx
@@ -39,6 +40,25 @@ def _choca_con_lo_declarado(
         getattr(existente, campo) != getattr(nueva, campo)
         for campo in _CAMPOS_DE_IDENTIDAD
     )
+
+
+def _es_uuid(identificador: str) -> bool:
+    """Si no tiene forma de UUID, ni se pregunta.
+
+    `entrega.id` es de tipo `uuid` en la base de datos: mandarle a Postgres
+    algo que no lo es no da «no existe», da un 400 -«invalid input syntax
+    for type uuid»-, porque Postgres rechaza la consulta antes de mirar si
+    hay una fila así. Sin esta guarda, un identificador inventado en una
+    URL (por ejemplo, `GET /api/entregas/no-existe`) se convertiría en un
+    error del servidor en vez de en el «no existe esa entrega» que da
+    AlmacenEnMemoria al no encontrarlo en su diccionario. Los dos almacenes
+    tienen que responder igual a lo mismo.
+    """
+    try:
+        uuid.UUID(identificador)
+        return True
+    except ValueError:
+        return False
 
 
 class ErrorDeAlmacen(Exception):
@@ -198,6 +218,8 @@ class AlmacenSupabase:
         return [self._componer(self._aplanar(fila)) for fila in filas]
 
     def por_id(self, identificador: str) -> EntregaRegistrada | None:
+        if not _es_uuid(identificador):
+            return None
         filas = self._pedir("GET", "entrega", parametros={
             "id": f"eq.{identificador}", "select": self.SELECCION, "limit": "1",
         })
@@ -243,7 +265,11 @@ class AlmacenSupabase:
     def cambiar_estado(
         self, identificador: str, estado: str, motivo: str | None
     ) -> EntregaRegistrada | None:
+        # Primero el estado: un estado inválido es el error más informativo
+        # de los dos, y debe verse aunque el identificador tampoco valga.
         validar_estado(estado, motivo)
+        if not _es_uuid(identificador):
+            return None
         filas = self._pedir(
             "PATCH", "entrega",
             parametros={"id": f"eq.{identificador}"},
