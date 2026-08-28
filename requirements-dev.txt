@@ -6,3 +6,4 @@ pydantic==2.10.4
 httpx==0.28.1
 ruamel.yaml==0.18.10
 pymupdf==1.28.2
+openai==3.5.0
