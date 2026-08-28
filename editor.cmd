@@ -33,7 +33,16 @@ echo Compilando el frontend...
 pushd frontend
 call npm install
 call npm run build
+REM El codigo de salida se guarda ANTES de popd: no basta con mirar si
+REM existe "frontend\dist\index.html". "npm run build" es "tsc -b && vite
+REM build", asi que un error de TypeScript hace que vite ni llegue a
+REM ejecutarse y el dist ANTERIOR se queda intacto: la comprobacion de que
+REM el fichero existe la pasaba tan campante y se arrancaba en silencio con
+REM la interfaz vieja, que es exactamente el fallo que este script
+REM recompila siempre para evitar.
+set "FALLO_LA_COMPILACION=%errorlevel%"
 popd
+if not "%FALLO_LA_COMPILACION%"=="0" goto :build_fallido
 if not exist "frontend\dist\index.html" (
     echo.
     echo La compilacion del frontend no ha generado "frontend\dist\index.html".
@@ -42,6 +51,23 @@ if not exist "frontend\dist\index.html" (
     exit /b 1
 )
 goto :arrancar
+
+:build_fallido
+REM Misma franqueza que la rama de "falta npm": se dice que lo que se va a
+REM servir puede no corresponderse con el programa, en vez de callarlo.
+if exist "frontend\dist\index.html" (
+    echo.
+    echo AVISO: la compilacion de la interfaz ha FALLADO. Revisa los errores
+    echo de arriba. Se arranca con la interfaz que habia compilada de antes,
+    echo que puede no corresponderse con esta version del programa.
+    echo.
+    goto :arrancar
+)
+echo.
+echo La compilacion de la interfaz ha fallado y no hay ninguna compilada de
+echo antes con la que arrancar. Revisa los errores de arriba.
+pause
+exit /b 1
 
 :sin_npm
 REM Sin npm no se puede recompilar. Si hay algo compilado de antes se arranca
