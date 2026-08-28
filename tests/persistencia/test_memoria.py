@@ -145,3 +145,82 @@ def test_una_fase_desconocida_se_rechaza() -> None:
 def test_el_almacen_en_memoria_dice_que_no_es_duradero() -> None:
     """Lo lee el frontend para avisar al docente. No se finge lo contrario."""
     assert AlmacenEnMemoria().es_duradero is False
+
+
+def test_una_fase_desconocida_en_anterior_de_se_rechaza_en_castellano() -> None:
+    """`anterior_de` no debe reventar con el mensaje en inglés de tuple.index."""
+    almacen = AlmacenEnMemoria()
+
+    with pytest.raises(ValueError, match="no es una fase"):
+        almacen.anterior_de("AF023", "E9")
+
+
+def test_el_codigo_con_espacios_se_normaliza_al_guardar() -> None:
+    almacen = AlmacenEnMemoria()
+
+    guardada = almacen.registrar(_entrega(codigo_alumno="  AF023  "))
+
+    assert guardada.codigo_alumno == "AF023"
+
+
+def test_la_fase_en_minusculas_se_acepta_y_queda_en_mayusculas() -> None:
+    almacen = AlmacenEnMemoria()
+
+    guardada = almacen.registrar(_entrega(fase="e2"))
+
+    assert guardada.fase == "E2"
+
+
+def test_anterior_de_encuentra_al_alumno_aunque_se_registrara_con_espacios() -> None:
+    """Sin normalizar, esto devolvía None: el alumno quedaba bajo otra clave."""
+    almacen = AlmacenEnMemoria()
+    almacen.registrar(_entrega(codigo_alumno="  AF023  ", fase="E2", huella="s" * 64))
+    almacen.registrar(_entrega(codigo_alumno="  AF023  ", fase="E3", huella="t" * 64))
+
+    anterior = almacen.anterior_de("AF023", "E3")
+
+    assert anterior is not None
+    assert anterior.fase == "E2"
+
+
+def test_la_misma_huella_con_los_mismos_datos_declarados_devuelve_la_existente() -> None:
+    """El mismo trabajo confirmado dos veces, aunque haya cambiado de ruta."""
+    almacen = AlmacenEnMemoria()
+    primera = almacen.registrar(_entrega(huella="x" * 64))
+
+    segunda = almacen.registrar(
+        _entrega(huella="x" * 64, nombre_archivo="otra_carpeta/copia.pdf")
+    )
+
+    assert segunda.id == primera.id
+    assert len(almacen.listar()) == 1
+
+
+def test_la_misma_huella_con_datos_declarados_distintos_se_rechaza() -> None:
+    """Error de atribución: no se resuelve en silencio a favor del primero."""
+    almacen = AlmacenEnMemoria()
+    existente = almacen.registrar(_entrega(codigo_alumno="AF023", huella="x" * 64))
+
+    with pytest.raises(ValueError, match="AF023") as excepcion:
+        almacen.registrar(_entrega(codigo_alumno="AF999", huella="x" * 64))
+
+    assert existente.id in str(excepcion.value)
+    assert "AF999" in str(excepcion.value)
+
+
+def test_la_anterior_es_la_inmediatamente_previa_entre_varias_candidatas() -> None:
+    """Con varias entregas previas fuera de orden, se elige la más cercana.
+
+    Blinda `max(candidatas, key=...)`: con `candidatas[0]` este test falla,
+    porque la primera insertada (TEMA) no es la inmediatamente anterior a
+    E3 (que es E2).
+    """
+    almacen = AlmacenEnMemoria()
+    almacen.registrar(_entrega(fase="TEMA", huella="1" * 64))
+    almacen.registrar(_entrega(fase="E2", huella="2" * 64))
+    almacen.registrar(_entrega(fase="E1", huella="3" * 64))
+
+    anterior = almacen.anterior_de("AF023", "E3")
+
+    assert anterior is not None
+    assert anterior.fase == "E2"

@@ -14,7 +14,7 @@ su documento de cambio.
 from datetime import datetime
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # Los siete del §16.1, en el orden en que ocurren.
 ESTADOS: tuple[str, ...] = (
@@ -41,6 +41,21 @@ class EntregaNueva(BaseModel):
     nombre_archivo: str
     huella: str
     version_criterios: str
+
+    @field_validator("codigo_alumno", "ciclo", "fase")
+    @classmethod
+    def _normalizar(cls, valor: str) -> str:
+        """Quita espacios de los extremos y pasa a mayúsculas.
+
+        Normalizar y no rechazar es deliberado: el docente puede escribir la
+        fase en minúsculas en el formulario, o el código con un espacio de
+        más, y eso no debe fallarle. La alternativa —guardar el valor tal
+        cual y confiar en que cada llamador lo normalice antes de comparar—
+        es lo que dejaba a un mismo alumno registrado bajo dos claves
+        distintas ("AF023" y "  AF023  ") y rompía `anterior_de` en
+        silencio.
+        """
+        return valor.strip().upper()
 
 
 class EntregaRegistrada(BaseModel):
@@ -87,17 +102,27 @@ class Almacen(Protocol):
     ) -> EntregaRegistrada | None: ...
 
 
-def validar(entrega: EntregaNueva) -> None:
-    """Lo que la base de datos rechazaría, rechazado antes y con mejor aviso."""
+def validar_fase(fase: str) -> None:
+    """Que la fase exista, dicho en castellano.
+
+    Separado de `validar` para que cualquier operación que necesite indexar
+    `FASES` —`anterior_de`, por ejemplo— pueda comprobarlo antes de indexar
+    en vez de dejar que `tuple.index` reviente con un mensaje en inglés.
+    """
     from backend.vigilancia.nombres import FASES
 
-    if entrega.fase not in FASES:
+    if fase not in FASES:
         raise ValueError(
-            f"«{entrega.fase}» no es una fase. Las fases son: " + ", ".join(FASES) + "."
+            f"«{fase}» no es una fase. Las fases son: " + ", ".join(FASES) + "."
         )
+
+
+def validar(entrega: EntregaNueva) -> None:
+    """Lo que la base de datos rechazaría, rechazado antes y con mejor aviso."""
+    validar_fase(entrega.fase)
     if entrega.version < 1:
         raise ValueError("La versión de una entrega empieza en 1.")
-    if not entrega.codigo_alumno.strip():
+    if not entrega.codigo_alumno:
         raise ValueError("La entrega necesita el código del alumno.")
 
 

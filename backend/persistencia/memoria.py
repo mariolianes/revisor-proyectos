@@ -15,7 +15,23 @@ from backend.persistencia.modelos import (
     EntregaRegistrada,
     validar,
     validar_estado,
+    validar_fase,
 )
+
+# Lo declarado se compara en estos campos para decidir si una huella
+# repetida es de verdad el mismo archivo confirmado dos veces. El nombre o
+# la ruta quedan fuera a propósito: es dónde está el fichero, no de quién
+# es, y moverlo de subcarpeta no debe dar error.
+_CAMPOS_DE_IDENTIDAD = ("codigo_alumno", "ciclo", "fase", "version")
+
+
+def _choca_con_lo_declarado(
+    existente: EntregaRegistrada, nueva: EntregaNueva
+) -> bool:
+    return any(
+        getattr(existente, campo) != getattr(nueva, campo)
+        for campo in _CAMPOS_DE_IDENTIDAD
+    )
 
 
 class AlmacenEnMemoria:
@@ -33,6 +49,19 @@ class AlmacenEnMemoria:
         ya_estaba = self.por_huella(entrega.huella)
         if ya_estaba is not None:
             # Misma huella es el mismo archivo, aunque lo hayan renombrado.
+            # Pero si lo que se declara ahora no coincide con la ficha bajo
+            # la que ya está, es un error de atribución: no se resuelve en
+            # silencio a favor del primero que llegó.
+            if _choca_con_lo_declarado(ya_estaba, entrega):
+                raise ValueError(
+                    f"El archivo «{entrega.huella}» ya está registrado como "
+                    f"{ya_estaba.codigo_alumno}/{ya_estaba.ciclo}/"
+                    f"{ya_estaba.fase} v{ya_estaba.version} (ficha "
+                    f"{ya_estaba.id}), pero ahora se declara como "
+                    f"{entrega.codigo_alumno}/{entrega.ciclo}/{entrega.fase} "
+                    f"v{entrega.version}. Si es el mismo trabajo, corrige el "
+                    "dato que no coincide antes de confirmarlo."
+                )
             return ya_estaba
 
         registrada = EntregaRegistrada(
@@ -70,6 +99,7 @@ class AlmacenEnMemoria:
         Se elige la más reciente de las que la preceden, que es contra la que
         el docente compara.
         """
+        validar_fase(fase)
         from backend.vigilancia.nombres import FASES
 
         orden_actual = (FASES.index(fase), version)
