@@ -19,6 +19,11 @@ CARPETAS_IGNORADAS = {
     # Scratch git-ignored de las herramientas de trabajo: no forma parte del
     # repositorio versionado y contiene copias de planes con ejemplos.
     ".superpowers",
+    # Arboles de trabajo aislados de los agentes. Son copias enteras del repo,
+    # asi que sin esto cada fichero del proyecto se inspecciona una vez por
+    # copia y los ejemplos sinteticos de tests/gobernanza/ se denuncian a si
+    # mismos desde una ruta que no coincide con su excepcion.
+    ".claude",
 }
 
 # Solo se inspecciona el contenido de texto plano.

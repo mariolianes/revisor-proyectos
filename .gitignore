@@ -11,3 +11,7 @@ dist/
 *.pdf
 *.docx
 *.doc
+
+# Trabajo de herramientas, fuera del proyecto
+.superpowers/
+.claude/
