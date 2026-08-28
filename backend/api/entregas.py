@@ -1,0 +1,214 @@
+"""Endpoints del flujo de entregas.
+
+Todo lo que devuelven es interno y provisional. Ningún endpoint aprueba
+nada, califica nada ni comunica nada al alumno: el §13 reserva eso al
+profesor, y la forma de respetarlo es que las operaciones no existan.
+"""
+
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+
+from backend.configuracion import Configuracion
+from backend.extraccion import medir
+from backend.extraccion.lectura import PdfIlegible
+from backend.persistencia.modelos import Almacen, EntregaNueva, EntregaRegistrada
+from backend.servicios.lectura_objetiva import FichaDeLectura, leer, localizar
+from backend.vigilancia.carpeta import ArchivoVisto, mirar
+
+router = APIRouter(prefix="/api")
+
+
+class Confirmacion(BaseModel):
+    """Lo que el docente confirma de un archivo pendiente."""
+
+    nombre_archivo: str
+    codigo_alumno: str
+    ciclo: str
+    fase: str
+    version: int = 1
+
+
+class CambioDeEstado(BaseModel):
+    estado: str
+    motivo: str | None = None
+
+
+class Entorno(BaseModel):
+    """Lo que el frontend necesita saber para avisar al docente."""
+
+    hay_carpeta: bool
+    carpeta: str | None
+    persistencia_duradera: bool
+    version_criterios: str
+    avisos: list[str]
+
+
+def _raiz(peticion: Request) -> Path:
+    return peticion.app.state.raiz
+
+
+def _configuracion(peticion: Request) -> Configuracion:
+    return peticion.app.state.configuracion
+
+
+def _almacen(peticion: Request) -> Almacen:
+    return peticion.app.state.almacen
+
+
+@router.get("/entorno")
+def obtener_entorno(peticion: Request) -> Entorno:
+    configuracion = _configuracion(peticion)
+    almacen = _almacen(peticion)
+
+    avisos = []
+    if configuracion.carpeta_entregas is None:
+        avisos.append(
+            "No hay carpeta de entregas configurada, así que no se vigila "
+            "ninguna. Indícala en REVISOR_CARPETA_ENTREGAS, en el fichero .env, "
+            "y tiene que estar fuera de este repositorio."
+        )
+    if not almacen.es_duradero:
+        avisos.append(
+            "No hay credenciales de Supabase: lo que registres vive solo "
+            "mientras el programa esté abierto y se pierde al cerrarlo."
+        )
+
+    return Entorno(
+        hay_carpeta=configuracion.carpeta_entregas is not None,
+        carpeta=str(configuracion.carpeta_entregas)
+                if configuracion.carpeta_entregas else None,
+        persistencia_duradera=almacen.es_duradero,
+        version_criterios=configuracion.version_criterios,
+        avisos=avisos,
+    )
+
+
+@router.get("/entregas/pendientes")
+def obtener_pendientes(peticion: Request) -> list[ArchivoVisto]:
+    """Los archivos de la carpeta que aún no se han confirmado."""
+    carpeta = _configuracion(peticion).carpeta_entregas
+    if carpeta is None:
+        return []
+    registrados = {
+        entrega.nombre_archivo for entrega in _almacen(peticion).listar()
+    }
+    return mirar(carpeta, registrados)
+
+
+@router.get("/entregas")
+def obtener_entregas(peticion: Request) -> list[EntregaRegistrada]:
+    return _almacen(peticion).listar()
+
+
+@router.post("/entregas")
+def confirmar(cuerpo: Confirmacion, peticion: Request) -> FichaDeLectura:
+    """El docente confirma de quién y de qué fase es el archivo.
+
+    Esta es la decisión que D-009 le reserva. El sistema propuso; aquí se
+    registra lo que él dice, no lo que se dedujo.
+    """
+    configuracion = _configuracion(peticion)
+    if configuracion.carpeta_entregas is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No hay carpeta de entregas configurada.",
+        )
+
+    ruta = localizar(configuracion.carpeta_entregas, cuerpo.nombre_archivo)
+    if ruta is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"«{cuerpo.nombre_archivo}» no está en la carpeta de entregas.",
+        )
+
+    try:
+        huella = medir(ruta).huella
+    except PdfIlegible as fallo:
+        raise HTTPException(status_code=400, detail=str(fallo)) from fallo
+
+    # La ruta relativa a la carpeta -no el nombre suelto del archivo- es lo
+    # que `mirar` compara para decidir qué sigue pendiente (Task 9): dos
+    # alumnos pueden dejar un archivo con el mismo nombre en subcarpetas
+    # distintas, y guardar solo el nombre haría que uno tapase al otro para
+    # siempre en la bandeja de pendientes.
+    relativa = ruta.relative_to(configuracion.carpeta_entregas).as_posix()
+
+    almacen = _almacen(peticion)
+    # Se mira antes de registrar: si la huella ya estaba, `registrar` no
+    # falla ni crea una segunda ficha -devuelve la que ya había-, y aquí es
+    # donde se distingue ese caso legítimo (mismos datos declarados; ver
+    # `_choca_con_lo_declarado` en persistencia) del alta nueva, para
+    # poder avisar de que no ha pasado nada nuevo.
+    ya_registrada = almacen.por_huella(huella)
+    try:
+        entrega = almacen.registrar(EntregaNueva(
+            codigo_alumno=cuerpo.codigo_alumno.strip().upper(),
+            ciclo=cuerpo.ciclo.strip().upper(),
+            fase=cuerpo.fase.strip().upper(),
+            version=cuerpo.version,
+            nombre_archivo=relativa,
+            huella=huella,
+            version_criterios=configuracion.version_criterios,
+        ))
+    except ValueError as fallo:
+        # La huella ya estaba registrada, pero con otro alumno, ciclo, fase
+        # o versión declarados: es un error de atribución (persistencia.py),
+        # no un fallo del servidor. El profesor tiene que leer el motivo,
+        # no un 500 genérico.
+        raise HTTPException(status_code=400, detail=str(fallo)) from fallo
+
+    ficha = leer(
+        _raiz(peticion), configuracion.carpeta_entregas,
+        configuracion.version_criterios, almacen, entrega,
+    )
+
+    if ya_registrada is not None and ya_registrada.id == entrega.id:
+        aviso_repetido = (
+            f"Este archivo ya estaba registrado como entrega desde el "
+            f"{ya_registrada.recibida_en:%d/%m/%Y %H:%M} (ficha "
+            f"{entrega.id}). No se ha creado una ficha nueva; si lo has "
+            "movido de carpeta, es lo esperado."
+        )
+        ficha.aviso = (
+            f"{aviso_repetido} {ficha.aviso}".strip() if ficha.aviso
+            else aviso_repetido
+        )
+
+    return ficha
+
+
+@router.get("/entregas/{identificador}")
+def obtener_ficha(identificador: str, peticion: Request) -> FichaDeLectura:
+    """La ficha completa. Las medidas se recalculan, no se guardan."""
+    almacen = _almacen(peticion)
+    entrega = almacen.por_id(identificador)
+    if entrega is None:
+        raise HTTPException(
+            status_code=404, detail="No existe esa entrega."
+        )
+    configuracion = _configuracion(peticion)
+    if configuracion.carpeta_entregas is None:
+        raise HTTPException(
+            status_code=409, detail="No hay carpeta de entregas configurada."
+        )
+    return leer(
+        _raiz(peticion), configuracion.carpeta_entregas,
+        configuracion.version_criterios, almacen, entrega,
+    )
+
+
+@router.post("/entregas/{identificador}/estado")
+def cambiar_estado(
+    identificador: str, cuerpo: CambioDeEstado, peticion: Request
+) -> EntregaRegistrada:
+    try:
+        cambiada = _almacen(peticion).cambiar_estado(
+            identificador, cuerpo.estado, cuerpo.motivo
+        )
+    except ValueError as fallo:
+        raise HTTPException(status_code=400, detail=str(fallo)) from fallo
+    if cambiada is None:
+        raise HTTPException(status_code=404, detail="No existe esa entrega.")
+    return cambiada
