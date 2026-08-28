@@ -29,34 +29,70 @@ coste-, y obligó a rehacerlo:
    profesor espera delante de la pantalla.
 
 La solución: reducir cada texto a su lista de palabras normalizadas y
-comparar los n-gramas de PALABRAS_POR_FIRMA palabras consecutivas. Un
-n-grama no sabe nada de párrafos, así que partirlos, fusionarlos,
-reordenarlos o perder las líneas en blanco deja de importar. Y comparar
-por tabla hash es lineal, no cuadrático como comparar cada elemento de una
-lista contra todos los de la otra.
+comparar los conjuntos de n-gramas de PALABRAS_POR_FIRMA palabras
+consecutivas. Un n-grama no sabe nada de párrafos, así que partirlos,
+fusionarlos, reordenarlos o perder las líneas en blanco deja de importar.
+Y comparar dos conjuntos por tabla hash es lineal, no cuadrático como
+comparar cada elemento de una lista contra todos los de la otra.
 
-Las firmas se cuentan como multiconjunto (``collections.Counter``), no
-como conjunto. La diferencia importa: como conjunto, veinte copias
-idénticas de una plantilla producen exactamente las mismas firmas que
-cuarenta, así que cortar la mitad de una plantilla repetida no cambiaba ni
-una firma y el aviso no saltaba -el trabajo perdía la mitad de sus filas
-y el sistema callaba-. Contando las repeticiones, esa pérdida sí se nota:
-la proporción conservada cae aproximadamente a la mitad, como con
-cualquier otro contenido eliminado.
+Conjunto, no multiconjunto: por qué se probó contar y se descartó
+--------------------------------------------------------------------
+Las firmas se comparan como conjunto: si una firma aparece en un texto, da
+igual cuántas veces se repita, cuenta una sola vez. Esto tiene un coste
+conocido: un bloque repetido literalmente muchas veces -una tabla de
+valores casi iguales, una plantilla con huecos, una fila que se copia y se
+pega- no se cuenta más de una vez, así que si un trabajo está hecho de
+filas idénticas puede perder la mitad de ellas sin que se avise. Es una
+limitación real, y queda documentada como tal en el ejemplo del final.
 
-Limitación conocida: si dos partes distintas del trabajo comparten una
-frase larga literal -una cita, una plantilla de tabla, un pie de página
-repetido palabra por palabra en un apartado que no es copia del otro-, esa
-frase cuenta como conservada estén donde estén sus copias, aunque no sea
-la misma frase que el docente validó en ese punto exacto del documento. El
-multiconjunto resuelve el caso de la plantilla repetida que se recorta;
-no resuelve -ni lo pretende- que el sistema entienda de dónde viene cada
-frase.
+Se probó la alternativa obvia: contar las repeticiones con un
+multiconjunto (``collections.Counter``) en vez de un conjunto, para que
+borrar la mitad de las copias de una plantilla sí se notara. Funcionaba
+para ese caso -pasar de 40 copias de una fila a 20 hacía caer la
+proporción conservada a la mitad, como debía- pero rompía uno mucho más
+corriente: un pie de página o un encabezado que aparece en cada página del
+documento y que, al cambiar de maquetación entre una entrega y la
+siguiente (más o menos páginas, un salto de columna distinto), pasa de
+repetirse, por ejemplo, 150 veces a 20, sin que el alumno haya tocado ni
+una palabra del cuerpo del trabajo. Con el multiconjunto, esa entrega
+intacta recibía una proporción conservada por debajo del 20 % y el aviso
+más grave que emite este módulo: que la entrega no parece incluir el
+trabajo anterior.
+
+Los dos casos son la misma forma -un bloque repetido N veces que pasa a
+M- y esa forma no distingue, mirando solo el texto, si el bloque es
+contenido (la plantilla que sí hay que proteger) o formato (el pie de
+página, que no). Topar el número de repeticiones que se cuentan y
+descartar las firmas muy frecuentes por considerarlas formato se probaron
+también; ninguna de las dos resuelve el caso de la plantilla sin reabrir
+el del pie de página.
+
+Así que hay que elegir qué error se prefiere, y el criterio es el mismo
+que en el resto del sistema: entre no ver un descuadre y acusar en falso,
+se prefiere no verlo. No ver un descuadre deja trabajo al docente, que lee
+la entrega de todos modos y puede notar la plantilla recortada él mismo.
+Acusar en falso hace daño, porque el docente traslada el aviso al alumno
+sin verificarlo primero, y aquí además el falso positivo dispara el aviso
+más severo sobre un trabajo en el que no ha cambiado ni una palabra. El
+conjunto se equivoca por defecto (calla ante la plantilla recortada); el
+multiconjunto se equivoca por exceso (acusa al pie de página). Entre los
+dos, se eligió el conjunto.
+
+Limitación conocida: si un trabajo consiste en filas o párrafos idénticos
+entre sí -no solo parecidos, literalmente iguales tras normalizar-, borrar
+la mitad de esas filas no cambia ni una firma y el sistema no lo detecta.
+Medido con una plantilla de una frase repetida 40 veces y recortada a 20:
+como conjunto, la proporción conservada sale 100 % y no hay aviso; como
+multiconjunto salía 49,6 % y sí lo había, pero ese mismo cambio hacía caer
+un pie de página que pasa de 150 a 20 repeticiones -sin tocar el cuerpo-
+al 15,8 %. Antes de tocar este criterio de nuevo, hay que volver a medir
+los dos casos a la vez: el experimento que llevó aquí ya está hecho, y
+quien lo repita sin mirar el segundo caso volverá a encontrarse con el
+mismo problema.
 """
 
 import re
 import unicodedata
-from collections import Counter
 
 from pydantic import BaseModel
 
@@ -98,27 +134,25 @@ def normalizar(texto: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", sin_tildes.lower())
 
 
-def _firmas(palabras: list[str]) -> Counter:
-    """Multiconjunto de n-gramas de PALABRAS_POR_FIRMA palabras consecutivas.
+def _firmas(palabras: list[str]) -> set[tuple[str, ...]]:
+    """Conjunto de n-gramas de PALABRAS_POR_FIRMA palabras consecutivas.
 
     Un texto más corto que la firma se recoge entero en una única firma,
     para que un párrafo suelto de pocas palabras no quede fuera de la
     comparación.
 
-    Es un multiconjunto, no un conjunto: cuenta cuántas veces aparece cada
-    firma, no solo si aparece. Como conjunto, veinte copias idénticas de
-    una misma plantilla producen las mismas firmas que cuarenta, así que
-    borrar la mitad de las copias no cambiaría ni una firma y esa pérdida
-    quedaría invisible.
+    Es un conjunto, no un multiconjunto: una firma que se repite cuenta
+    una sola vez. Ver el docstring del módulo para la razón -contar las
+    repeticiones se probó y se descartó por un falso positivo peor.
     """
     if not palabras:
-        return Counter()
+        return set()
     if len(palabras) < PALABRAS_POR_FIRMA:
-        return Counter([tuple(palabras)])
-    return Counter(
+        return {tuple(palabras)}
+    return {
         tuple(palabras[indice : indice + PALABRAS_POR_FIRMA])
         for indice in range(len(palabras) - PALABRAS_POR_FIRMA + 1)
-    )
+    }
 
 
 def _contar_parrafos(texto: str) -> int:
@@ -149,18 +183,13 @@ def comparar(texto_anterior: str, texto_nuevo: str) -> Evolucion:
     firmas_anteriores = _firmas(palabras_anteriores)
     firmas_nuevas = _firmas(palabras_nuevas)
 
-    # Sumas de repeticiones, no número de firmas distintas: es lo que hace
-    # que contar el multiconjunto tenga efecto sobre las proporciones.
-    total_anteriores = sum(firmas_anteriores.values())
-    total_nuevas = sum(firmas_nuevas.values())
-
-    # Counter.__and__ se queda con el mínimo de repeticiones de cada firma
-    # en ambos lados: si una firma aparece 40 veces antes y 20 después,
-    # cuenta como 20 conservadas, no como una.
-    comunes = sum((firmas_anteriores & firmas_nuevas).values())
-
-    proporcion_conservada = comunes / total_anteriores
-    proporcion_nueva = (total_nuevas - comunes) / total_nuevas if total_nuevas else 0.0
+    conservadas = firmas_anteriores & firmas_nuevas
+    proporcion_conservada = len(conservadas) / len(firmas_anteriores)
+    proporcion_nueva = (
+        len(firmas_nuevas - firmas_anteriores) / len(firmas_nuevas)
+        if firmas_nuevas
+        else 0.0
+    )
 
     avisos = []
     if proporcion_conservada < CONSERVADO_MINIMO:

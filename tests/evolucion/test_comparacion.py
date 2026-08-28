@@ -8,7 +8,6 @@ párrafos no coincidan por azar en una firma de ocho palabras.
 
 import random
 import time
-from collections import Counter
 
 from backend.evolucion.comparacion import (
     CONSERVADO_MINIMO,
@@ -18,12 +17,22 @@ from backend.evolucion.comparacion import (
     normalizar,
 )
 
-# Plantilla verbatim: la frase que se copia sin cambiar ni una palabra para
-# probar el caso que solo detecta el multiconjunto.
+# Plantilla verbatim: la frase que se copia sin cambiar ni una palabra.
+# Sirve para fijar la limitación conocida (§ test_una_plantilla_...): un
+# conjunto no distingue cuarenta copias de veinte.
 PLANTILLA = (
     "El grupo de trabajo completo la fase de pruebas siguiendo el "
     "protocolo establecido por el equipo docente y no se detectaron "
     "incidencias relevantes."
+)
+
+# Pie de página: un bloque de formato, no de contenido, que en un
+# documento real se repite una vez por página y puede cambiar de número de
+# repeticiones solo por maquetación, sin que el cuerpo del trabajo cambie
+# ni una palabra. Es el caso que motiva no contar las repeticiones.
+PIE_DE_PAGINA = (
+    "Documento generado automaticamente por el sistema de gestion del "
+    "taller de mantenimiento."
 )
 
 # ---------------------------------------------------------------------
@@ -109,35 +118,34 @@ def test_normalizar_de_texto_vacio_es_lista_vacia() -> None:
 # ---------------------------------------------------------------------
 
 
-def test_firmas_de_texto_vacio_es_multiconjunto_vacio() -> None:
-    assert _firmas([]) == Counter()
+def test_firmas_de_texto_vacio_es_conjunto_vacio() -> None:
+    assert _firmas([]) == set()
 
 
 def test_firmas_de_menos_de_ocho_palabras_da_una_sola_firma() -> None:
-    assert _firmas(["hola", "que", "tal"]) == Counter({("hola", "que", "tal"): 1})
+    assert _firmas(["hola", "que", "tal"]) == {("hola", "que", "tal")}
 
 
 def test_firmas_de_exactamente_ocho_palabras_da_una_sola_firma() -> None:
     palabras = [f"p{i}" for i in range(8)]
 
-    assert _firmas(palabras) == Counter({tuple(palabras): 1})
+    assert _firmas(palabras) == {tuple(palabras)}
 
 
 def test_firmas_de_nueve_palabras_da_dos_firmas_solapadas() -> None:
     palabras = [f"p{i}" for i in range(9)]
 
-    assert _firmas(palabras) == Counter(
-        {tuple(palabras[0:8]): 1, tuple(palabras[1:9]): 1}
-    )
+    assert _firmas(palabras) == {tuple(palabras[0:8]), tuple(palabras[1:9])}
 
 
-def test_firmas_cuenta_repeticiones_no_solo_presencia() -> None:
-    """La razón de ser del multiconjunto: contar, no solo marcar presencia."""
-    palabras = ["a"] * 16
+def test_firmas_colapsa_las_repeticiones_limitacion_conocida() -> None:
+    """Es un conjunto, no un multiconjunto: da igual cuántas veces se repita
+    una firma, cuenta una sola vez. Es la limitación documentada en el
+    docstring del módulo -y la razón por la que un bloque repetido puede
+    perder la mitad de sus copias sin que se avise."""
+    palabras = ["a"] * 16  # 9 posiciones, todas la misma firma de 8 "a"
 
-    firmas = _firmas(palabras)
-
-    assert firmas[("a",) * 8] == 9  # 16 - 8 + 1 posiciones, todas la misma firma
+    assert _firmas(palabras) == {("a",) * 8}
 
 
 # ---------------------------------------------------------------------
@@ -258,21 +266,42 @@ def test_un_retoque_de_una_palabra_no_dispara_avisos() -> None:
     assert evolucion.avisos == []
 
 
-def test_plantilla_repetida_recortada_a_la_mitad_avisa_de_contenido_no_reconocido() -> None:
-    """El caso que un conjunto no ve: cuarenta copias verbatim de la misma
-    plantilla, recortadas a veinte. Como conjunto, veinte copias idénticas
-    producen las mismas firmas que cuarenta, y la pérdida de la mitad de
-    las filas quedaría invisible. Este test falla si `_firmas` vuelve a
-    ser un `set` en vez de un `Counter`.
+def test_una_plantilla_verbatim_recortada_no_se_detecta_limitacion_conocida() -> None:
+    """Limitación conocida y aceptada, no un acierto: cuarenta copias
+    verbatim de la misma plantilla, recortadas a veinte, no se detectan.
+    Como conjunto, veinte copias idénticas producen exactamente las mismas
+    firmas que cuarenta, así que la pérdida de la mitad de las filas es
+    invisible para este módulo. Se probó un multiconjunto que sí lo veía
+    (Task 8, ronda 2) y se revirtió (ronda 3) porque generaba un falso
+    positivo peor: ver test_pie_de_pagina_que_cambia_de_repeticiones_...
     """
     anterior = "\n\n".join([PLANTILLA] * 40)
     recortado = "\n\n".join([PLANTILLA] * 20)
 
     evolucion = comparar(anterior, recortado)
 
-    assert CONSERVADO_MINIMO <= evolucion.proporcion_conservada < RECONOCIDO_MINIMO
-    assert 0.45 <= evolucion.proporcion_conservada <= 0.55
-    assert any("no se reconoce" in aviso for aviso in evolucion.avisos)
+    assert evolucion.proporcion_conservada == 1.0
+    assert evolucion.avisos == []
+
+
+def test_pie_de_pagina_que_cambia_de_repeticiones_no_dispara_avisos() -> None:
+    """El caso que motiva volver al conjunto. Un pie de página se repite en
+    cada hoja y puede cambiar de número de repeticiones solo por
+    maquetación -más o menos páginas, un salto de columna distinto- sin que
+    el alumno haya tocado una sola palabra del cuerpo del trabajo. Con el
+    multiconjunto (`Counter`) este test fallaba: la conservada caía a
+    15,8 % y disparaba el aviso más grave, sobre un trabajo intacto.
+    """
+    cuerpo = " ".join(f"palabra{i}" for i in range(60)) + "."
+
+    def con_pie(repeticiones: int) -> str:
+        pie = "\n\n".join([PIE_DE_PAGINA] * repeticiones)
+        return cuerpo + "\n\n" + pie
+
+    evolucion = comparar(con_pie(150), con_pie(20))
+
+    assert evolucion.proporcion_conservada == 1.0
+    assert evolucion.avisos == []
 
 
 # ---------------------------------------------------------------------
@@ -322,8 +351,7 @@ def test_comparar_seiscientos_parrafos_es_rapido() -> None:
 
 
 def test_comparar_mil_doscientos_parrafos_es_rapido() -> None:
-    """El multiconjunto (`Counter`) sigue siendo lineal, igual que el
-    conjunto que sustituye."""
+    """No debe volver al coste cuadrático del diseño por párrafos."""
     grande_anterior = _documento(1200, semilla=20)
     grande_nuevo = _documento(1200, semilla=21)
 
