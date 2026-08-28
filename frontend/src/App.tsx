@@ -4,6 +4,7 @@ import { Documentos } from "./paginas/Documentos"
 import { Editor } from "./paginas/Editor"
 import { Entregas } from "./paginas/Entregas"
 import { Estado } from "./paginas/Estado"
+import { Ficha } from "./paginas/Ficha"
 import { Pendientes } from "./paginas/Pendientes"
 
 type Vista = "entregas" | "documentos" | "estado" | "pendientes"
@@ -11,11 +12,11 @@ type Vista = "entregas" | "documentos" | "estado" | "pendientes"
 export default function App() {
   const [vista, setVista] = useState<Vista>("entregas")
   const [anclaEditando, setAnclaEditando] = useState<string | null>(null)
-  // La ficha de una entrega confirmada es de la Task 14 (componente Ficha,
-  // todavía sin escribir). Aquí se guarda igualmente qué entrega se acaba
-  // de confirmar, para que esa tarea solo tenga que añadir la rama que la
-  // muestra; hasta entonces la bandeja de Entregas sigue visible tras
-  // confirmar, y la pestaña funciona sin la ficha.
+  // Qué entrega tiene la ficha abierta (Task 14). Cambiar de pestaña la
+  // cierra, igual que ya hacía con `anclaEditando`. Al volver de la ficha,
+  // Entregas se vuelve a montar y su propio `useEffect` recarga la bandeja
+  // -así el archivo que se acaba de confirmar deja de aparecer como
+  // pendiente sin que la ficha tenga que saber nada de esa lista.
   const [fichaAbierta, setFichaAbierta] = useState<string | null>(null)
 
   const pestanas: { clave: Vista; texto: string }[] = [
@@ -53,7 +54,9 @@ export default function App() {
       </header>
 
       <main>
-        {anclaEditando ? (
+        {fichaAbierta ? (
+          <Ficha id={fichaAbierta} alVolver={() => setFichaAbierta(null)} />
+        ) : anclaEditando ? (
           <Editor ancla={anclaEditando} alVolver={() => setAnclaEditando(null)} />
         ) : vista === "entregas" ? (
           <Entregas alAbrirFicha={setFichaAbierta} />

@@ -1,0 +1,142 @@
+import { render, screen } from "@testing-library/react"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+import { Ficha } from "./Ficha"
+import { api } from "../lib/api"
+import type { FichaDeLectura } from "../lib/tipos"
+
+vi.mock("../lib/api")
+
+// Las formas siguen a `frontend/src/lib/tipos.ts` (que a su vez sigue al
+// backend), no al brief de la Task 14: `Evolucion` no tiene
+// `parrafos_eliminados` ni `parrafos_nuevos` -eso llevaba a inventar un
+// dato que el sistema no mide-, sino `parrafos_antes` y `parrafos_despues`
+// (el tamaño de cada lado). `MedidasDeEntrega` tampoco deja ningún campo
+// opcional: hay que rellenarlos todos para que el fixture sea del tipo que
+// dice ser.
+const COMPLETA: FichaDeLectura = {
+  entrega: {
+    id: "id-1", codigo_alumno: "AF023", ciclo: "DAM", fase: "E2", version: 1,
+    nombre_archivo: "AF023_DAM_E2_20260115_v1.pdf", huella: "a".repeat(64),
+    recibida_en: "2026-08-27T10:00:00", estado: "RECIBIDO",
+    motivo_bloqueo: null, version_criterios: "v2026-2027",
+  },
+  medidas: {
+    nombre_archivo: "AF023_DAM_E2_20260115_v1.pdf",
+    huella: "a".repeat(64),
+    paginas: [],
+    total_paginas: 24, paginas_en_blanco: [7], escaneado: false,
+    texto: {
+      familia_dominante: "Arial", cuerpo_dominante: 11,
+      proporcion_cuerpo_dominante: 0.92,
+      ratio_interlineado: 1.73,
+      margen_izquierdo_cm: 2.5, margen_derecho_cm: 2.5,
+      margen_superior_cm: 2.5, margen_inferior_cm: 2.5,
+      proporcion_lineas_al_margen_derecho: 0.81,
+    },
+    estructura: {
+      pagina_del_indice: 2, primera_pagina_de_contenido: 3,
+      primera_pagina_de_anexos: null, paginas_de_contenido: 20,
+      entradas_de_indice: [], titulos_no_encontrados: [],
+      paginas_declaradas_incorrectas: [],
+    },
+    imagenes: [
+      { pagina: 9, ancho_px: 900, alto_px: 600, dpi_efectivo: 42.1, proporcion_de_pagina: 0.22 },
+    ],
+  },
+  comprobaciones: [{
+    criterio: "extension", veredicto: "CUMPLE",
+    esperado: "20 páginas", medido: "20 páginas",
+    fuente: "maestro#6-estandar-academico", nota: "",
+  }],
+  evolucion: {
+    proporcion_conservada: 0.9, proporcion_nueva: 0.3,
+    parrafos_antes: 18, parrafos_despues: 30,
+    avisos: ["Han desaparecido 2 párrafos."],
+  },
+  comparada_con: "AF023_DAM_E1_20251201_v1.pdf",
+  aviso: "",
+}
+
+describe("Ficha", () => {
+  beforeEach(() => {
+    vi.mocked(api.ficha).mockResolvedValue(COMPLETA)
+  })
+
+  it("enseña de quién es la entrega", async () => {
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText(/AF023 · DAM · E2/)).toBeInTheDocument()
+  })
+
+  it("enseña lo medido", async () => {
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText("24")).toBeInTheDocument()
+    expect(screen.getByText(/Arial/)).toBeInTheDocument()
+  })
+
+  it("enseña las comprobaciones", async () => {
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText(/maestro#6-estandar-academico/)).toBeInTheDocument()
+  })
+
+  it("enseña con qué entrega se ha comparado", async () => {
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText(/AF023_DAM_E1_20251201_v1.pdf/)).toBeInTheDocument()
+    expect(screen.getByText(/Han desaparecido 2 párrafos/)).toBeInTheDocument()
+  })
+
+  it("no ofrece nota ni aprobar", async () => {
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+    await screen.findByText(/AF023 · DAM · E2/)
+
+    expect(screen.queryByRole("button", { name: /nota/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /aprobar/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /calificar/i })).not.toBeInTheDocument()
+  })
+
+  it("dice por qué no hay nota, para que no parezca un olvido", async () => {
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText(/ponderaciones/i)).toBeInTheDocument()
+  })
+
+  it("una entrega bloqueada enseña el motivo y nada más", async () => {
+    vi.mocked(api.ficha).mockResolvedValue({
+      ...COMPLETA,
+      entrega: {
+        ...COMPLETA.entrega, estado: "BLOQUEADO",
+        motivo_bloqueo: "El archivo está protegido con contraseña.",
+      },
+      medidas: null, comprobaciones: [], evolucion: null, comparada_con: null,
+    })
+
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText(/protegido con contraseña/)).toBeInTheDocument()
+  })
+
+  it("enseña el aviso cuando no se ha podido comparar", async () => {
+    vi.mocked(api.ficha).mockResolvedValue({
+      ...COMPLETA, evolucion: null, comparada_con: null,
+      aviso: "El archivo anterior ya no está en la carpeta.",
+    })
+
+    render(<Ficha id="id-1" alVolver={vi.fn()} />)
+
+    expect(await screen.findByText(/ya no está en la carpeta/)).toBeInTheDocument()
+  })
+
+  it("vuelve a la bandeja", async () => {
+    const alVolver = vi.fn()
+    const usuario = (await import("@testing-library/user-event")).default
+    render(<Ficha id="id-1" alVolver={alVolver} />)
+
+    await usuario.click(await screen.findByRole("button", { name: /volver/i }))
+
+    expect(alVolver).toHaveBeenCalled()
+  })
+})
