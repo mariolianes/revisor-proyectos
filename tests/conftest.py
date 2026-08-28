@@ -361,3 +361,190 @@ def pdf_con_imagen_sin_colocacion(tmp_path: Path) -> Path:
     documento.save(ruta)
     documento.close()
     return ruta
+
+
+# ---------------------------------------------------------------------------
+# Un PostgREST de mentira, para probar AlmacenSupabase de verdad
+# ---------------------------------------------------------------------------
+#
+# Vive en el conftest de la raíz y no junto a las pruebas que lo usan porque
+# los directorios de prueba no son paquetes: un módulo de prueba no puede
+# importar de otro (la misma razón por la que `escribir_pdf` se expone como
+# fixture). Lo usan las pruebas de la API con Supabase detrás y las de
+# paridad entre los dos almacenes.
+#
+# No pretende ser PostgREST: implementa lo que AlmacenSupabase le pide -filtros
+# `eq.`, el `select` con el alumno anidado, `order`, `limit`, insertar y
+# actualizar- y las tres restricciones `unique` del esquema que esta parte
+# puede llegar a violar. Todo lo demás responde como respondería el servidor
+# ante una petición que no entiende, para que un cambio en el almacén que se
+# salga de lo previsto se note en vez de pasar en silencio.
+
+import json as _json
+import uuid as _uuid
+from datetime import datetime as _datetime
+
+import httpx as _httpx
+
+# Las claves de `unique` de supabase/migrations, tabla por tabla.
+CLAVES_UNICAS = {
+    "alumno": ("codigo",),
+    "proyecto": ("alumno_id", "version_criterios"),
+    "entrega": ("proyecto_id", "fase", "version"),
+}
+
+# Lo que la base de datos rellena sola al insertar una entrega.
+VALORES_POR_OMISION = {
+    "entrega": {"estado": "RECIBIDO", "motivo_bloqueo": None},
+}
+
+_NO_SON_FILTROS = {"select", "limit", "order", "offset"}
+
+
+class PostgrestSimulado:
+    """Las tres tablas que esta parte del flujo usa, en memoria."""
+
+    def __init__(self) -> None:
+        self.tablas: dict[str, list[dict]] = {
+            "alumno": [], "proyecto": [], "entrega": [],
+        }
+        self.peticiones: list[str] = []
+
+    def cliente(self) -> _httpx.Client:
+        """Un cliente httpx que habla con este servidor de mentira."""
+        return _httpx.Client(transport=_httpx.MockTransport(self.responder))
+
+    # -- lectura ------------------------------------------------------------
+
+    def _anidar(self, tabla: str, fila: dict, select: str) -> dict:
+        """Añade el `proyecto.alumno` que pide SELECCION, si lo pide."""
+        if tabla != "entrega" or "proyecto" not in select:
+            return dict(fila)
+        proyecto = next(
+            (p for p in self.tablas["proyecto"] if p["id"] == fila["proyecto_id"]),
+            None,
+        )
+        alumno = next(
+            (a for a in self.tablas["alumno"]
+             if proyecto and a["id"] == proyecto["alumno_id"]),
+            None,
+        )
+        if alumno is None:
+            # `!inner`: sin alumno la fila no sale. En el esquema real no
+            # puede pasar -las dos claves ajenas son NOT NULL-, pero si
+            # pasara, callarlo sería inventar un alumno vacío.
+            return {}
+        return {
+            **fila,
+            "proyecto": {"alumno": {
+                "codigo": alumno["codigo"], "ciclo": alumno["ciclo"],
+            }},
+        }
+
+    def _valor(self, fila: dict, columna: str):
+        """El valor de `columna`, que puede venir anidado: `proyecto.alumno.codigo`."""
+        actual = fila
+        for tramo in columna.split("."):
+            if not isinstance(actual, dict):
+                return None
+            actual = actual.get(tramo)
+        return actual
+
+    def _filtrar(self, filas: list[dict], parametros: dict) -> list[dict]:
+        for columna, filtro in parametros.items():
+            if columna in _NO_SON_FILTROS:
+                continue
+            if not filtro.startswith("eq."):
+                raise AssertionError(
+                    f"El servidor simulado solo entiende filtros «eq.»; ha "
+                    f"llegado «{columna}={filtro}»."
+                )
+            esperado = filtro[3:]
+            filas = [
+                fila for fila in filas
+                if str(self._valor(fila, columna)) == esperado
+            ]
+        return filas
+
+    def _ordenar(self, filas: list[dict], orden: str | None) -> list[dict]:
+        if not orden:
+            return filas
+        columna, _, sentido = orden.partition(".")
+        return sorted(
+            filas, key=lambda fila: fila.get(columna) or "",
+            reverse=(sentido == "desc"),
+        )
+
+    # -- escritura ----------------------------------------------------------
+
+    def _choca_con_una_unica(self, tabla: str, nueva: dict) -> bool:
+        claves = CLAVES_UNICAS.get(tabla, ())
+        return any(
+            all(fila.get(clave) == nueva.get(clave) for clave in claves)
+            for fila in self.tablas[tabla]
+        )
+
+    def _insertar(self, tabla: str, cuerpo) -> _httpx.Response:
+        nuevas = cuerpo if isinstance(cuerpo, list) else [cuerpo]
+        creadas = []
+        for datos in nuevas:
+            fila = {
+                "id": str(_uuid.uuid4()),
+                "recibida_en": _datetime.now().isoformat(),
+                **VALORES_POR_OMISION.get(tabla, {}),
+                **datos,
+            }
+            if self._choca_con_una_unica(tabla, fila):
+                return _httpx.Response(409, json={
+                    "code": "23505",
+                    "message": f'duplicate key value violates unique '
+                               f'constraint "{tabla}_unique"',
+                })
+            self.tablas[tabla].append(fila)
+            creadas.append(fila)
+        return _httpx.Response(201, json=creadas)
+
+    # -- despacho -----------------------------------------------------------
+
+    def responder(self, peticion: _httpx.Request) -> _httpx.Response:
+        tabla = peticion.url.path.rsplit("/", 1)[-1]
+        self.peticiones.append(f"{peticion.method} {tabla}")
+        if tabla not in self.tablas:
+            return _httpx.Response(404, json={"message": f"no existe {tabla}"})
+
+        parametros = dict(peticion.url.params)
+        cuerpo = _json.loads(peticion.content) if peticion.content else None
+
+        if peticion.method == "POST":
+            return self._insertar(tabla, cuerpo)
+
+        select = parametros.get("select", "*")
+        filas = [self._anidar(tabla, fila, select) for fila in self.tablas[tabla]]
+        filas = [fila for fila in filas if fila]
+        filas = self._filtrar(filas, parametros)
+
+        if peticion.method == "PATCH":
+            actualizadas = []
+            for fila in filas:
+                original = next(
+                    f for f in self.tablas[tabla] if f["id"] == fila["id"]
+                )
+                original.update(cuerpo)
+                actualizadas.append(self._anidar(tabla, original, select))
+            return _httpx.Response(200, json=actualizadas)
+
+        if peticion.method != "GET":
+            return _httpx.Response(
+                405, json={"message": f"metodo no previsto: {peticion.method}"}
+            )
+
+        filas = self._ordenar(filas, parametros.get("order"))
+        if "limit" in parametros:
+            filas = filas[: int(parametros["limit"])]
+        return _httpx.Response(200, json=filas)
+
+
+@pytest.fixture
+def postgrest() -> PostgrestSimulado:
+    """Un servidor de mentira vacío, uno por prueba."""
+    return PostgrestSimulado()

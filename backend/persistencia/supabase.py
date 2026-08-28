@@ -100,6 +100,21 @@ class AlmacenSupabase:
                 "No se ha podido conectar con Supabase. Comprueba la conexión "
                 "y que SUPABASE_URL es correcta."
             ) from fallo
+        if respuesta.status_code == 409:
+            # PostgREST devuelve 409 cuando la fila choca con una restricción
+            # `unique`. En `entrega` la restricción es
+            # `unique (proyecto_id, fase, version)`, y el choque tiene una
+            # causa concreta y frecuente que conviene nombrar: el alumno
+            # reentrega la misma fase con el mismo número de versión y otro
+            # archivo. Sin esto, el caso más probable de todos llegaba como
+            # un volcado de PostgREST en inglés.
+            raise ErrorDeAlmacen(
+                f"Supabase ha rechazado guardar en «{tabla}» porque choca con "
+                "algo que ya está registrado. En una entrega ocurre cuando ya "
+                "hay una de ese alumno para la misma fase y la misma versión: "
+                "si es una reentrega, confírmala con el número de versión "
+                f"siguiente. Respuesta de Supabase: {respuesta.text[:300]}"
+            )
         if respuesta.status_code >= 400:
             raise ErrorDeAlmacen(
                 f"Supabase ha respondido {respuesta.status_code} al acceder a "
