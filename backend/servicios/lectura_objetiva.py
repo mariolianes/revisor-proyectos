@@ -25,7 +25,12 @@ from backend.extraccion import medir
 from backend.extraccion.lectura import PdfIlegible
 from backend.extraccion.medidas import Medidas
 from backend.formato.comprobacion import Comprobacion, comprobar
-from backend.persistencia.modelos import Almacen, EntregaRegistrada
+from backend.persistencia.modelos import (
+    BLOQUEADO,
+    ESTADO_INICIAL,
+    Almacen,
+    EntregaRegistrada,
+)
 
 
 class FichaDeLectura(BaseModel):
@@ -33,7 +38,9 @@ class FichaDeLectura(BaseModel):
 
     `medidas` es `None` cuando el archivo no se ha podido leer. En ese caso
     la entrega queda en BLOQUEADO con su motivo, que es una salida prevista
-    del §18.2 y no un fallo del sistema.
+    del §18.2 y no un fallo del sistema. Y al revés: si una entrega que
+    estaba bloqueada se lee entera, el bloqueo se levanta, porque la propia
+    lectura acaba de demostrar que su motivo ya no se sostiene.
 
     `aviso` no es solo para la comparación que no se pudo hacer: también lo
     usa `api/entregas.py` para decir que la entrega que se acaba de
@@ -51,8 +58,26 @@ class FichaDeLectura(BaseModel):
 
 
 def _bloquear(almacen: Almacen, entrega: EntregaRegistrada, motivo: str) -> FichaDeLectura:
-    bloqueada = almacen.cambiar_estado(entrega.id, "BLOQUEADO", motivo) or entrega
+    bloqueada = almacen.cambiar_estado(entrega.id, BLOQUEADO, motivo) or entrega
     return FichaDeLectura(entrega=bloqueada)
+
+
+def _desbloquear(almacen: Almacen, entrega: EntregaRegistrada) -> EntregaRegistrada:
+    """Quita el bloqueo cuando la lectura acaba de demostrar que no se sostiene.
+
+    Una entrega se bloquea porque el archivo no está o no se puede abrir. Si
+    la siguiente lectura lo mide entero, ese motivo ya no es cierto, y
+    dejarlo puesto hacía que la ficha enseñara las medidas completas junto
+    al aviso «El archivo ya no está en la carpeta de entregas», en tinta de
+    señal. Un motivo falso pintado como incumplimiento es peor que no
+    avisar de nada.
+
+    Vuelve a RECIBIDO, que es el estado del que salió: ANALIZADO lo pone el
+    docente, y esta función no decide nada del §13.
+    """
+    if entrega.estado != BLOQUEADO:
+        return entrega
+    return almacen.cambiar_estado(entrega.id, ESTADO_INICIAL, None) or entrega
 
 
 def leer(
@@ -76,6 +101,7 @@ def leer(
     except PdfIlegible as fallo:
         return _bloquear(almacen, entrega, str(fallo))
 
+    entrega = _desbloquear(almacen, entrega)
     ficha = FichaDeLectura(
         entrega=entrega,
         medidas=medidas,

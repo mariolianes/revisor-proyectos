@@ -169,6 +169,56 @@ def test_un_archivo_que_desaparecio_bloquea_la_entrega(criterios_de_formato: Pat
     assert ficha.entrega.motivo_bloqueo is not None
 
 
+def test_devolver_el_archivo_levanta_el_bloqueo(
+    criterios_de_formato: Path, entregas: Path, pdf_con_indice: Path
+) -> None:
+    """Una entrega bloqueada no se quedaba bloqueada para siempre.
+
+    Si el archivo desaparecía, la entrega quedaba en BLOQUEADO. Al volver a
+    dejarlo en la carpeta seguía bloqueada, y la ficha enseñaba las medidas
+    completas junto al motivo falso «El archivo ya no está en la carpeta de
+    entregas», en tinta de señal.
+    """
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas, pdf_con_indice, "E2")
+    ruta = entregas / entrega.nombre_archivo
+    guardado = ruta.read_bytes()
+    ruta.unlink()
+
+    bloqueada = leer(criterios_de_formato, entregas, "v2026-2027", almacen, entrega)
+    assert bloqueada.entrega.estado == "BLOQUEADO"
+    assert bloqueada.entrega.motivo_bloqueo is not None
+
+    ruta.write_bytes(guardado)
+    ficha = leer(
+        criterios_de_formato, entregas, "v2026-2027", almacen,
+        almacen.por_id(entrega.id),
+    )
+
+    assert ficha.entrega.estado == "RECIBIDO"
+    assert ficha.entrega.motivo_bloqueo is None
+    assert ficha.medidas is not None
+    # Y ha quedado guardado, no solo en la ficha que se devuelve.
+    assert almacen.por_id(entrega.id).estado == "RECIBIDO"
+    assert almacen.por_id(entrega.id).motivo_bloqueo is None
+
+
+def test_una_lectura_correcta_no_toca_el_estado_que_puso_el_docente(
+    criterios_de_formato: Path, entregas: Path, pdf_con_indice: Path
+) -> None:
+    """Solo se levanta el bloqueo. ANALIZADO es del docente y ahí se queda."""
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas, pdf_con_indice, "E2")
+    almacen.cambiar_estado(entrega.id, "ANALIZADO", None)
+
+    ficha = leer(
+        criterios_de_formato, entregas, "v2026-2027", almacen,
+        almacen.por_id(entrega.id),
+    )
+
+    assert ficha.entrega.estado == "ANALIZADO"
+
+
 def test_un_pdf_ilegible_bloquea_la_entrega(criterios_de_formato: Path, entregas: Path) -> None:
     almacen = AlmacenEnMemoria()
     roto = entregas / "AF023_DAM_E2_20260115_v1.pdf"
