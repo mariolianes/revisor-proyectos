@@ -31,7 +31,11 @@
     @apply mb-4;
   }
 
-  /* Una sola tinta, y solo para la relacion seccion <-> criterio. */
+  /* Una sola tinta. Marca la relacion seccion <-> criterio en el editor, y
+     en las pantallas de entregas lo que espera una decision del docente:
+     una propuesta que no se ha podido deducir, el problema de un archivo
+     que no se ha podido leer, un aviso del entorno, una entrega bloqueada.
+     No decora nada mas. */
   .senal {
     @apply text-senal;
   }

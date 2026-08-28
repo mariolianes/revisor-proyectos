@@ -24,7 +24,15 @@ export function ArchivoPendiente({ archivo, alConfirmar }: Props) {
   const [fase, setFase] = useState(propuesta.fase ?? "")
   const [version, setVersion] = useState(String(propuesta.version ?? 1))
 
-  const listo = codigo.trim() !== "" && ciclo.trim() !== "" && fase !== ""
+  // La versión entra en la condición de "listo": el campo lleva min={1},
+  // pero eso no basta -no está dentro de un <form> con envío validado, así
+  // que el navegador no lo hace cumplir-, y sin esta comprobación el botón
+  // seguía habilitado con "-3" o con el campo vacío. El backend lo habría
+  // rechazado, pero con un aviso desconectado del archivo que lo causó.
+  const versionNumero = Number(version)
+  const versionValida = Number.isInteger(versionNumero) && versionNumero >= 1
+  const listo =
+    codigo.trim() !== "" && ciclo.trim() !== "" && fase !== "" && versionValida
 
   function confirmar() {
     alConfirmar({
@@ -32,8 +40,26 @@ export function ArchivoPendiente({ archivo, alConfirmar }: Props) {
       codigo_alumno: codigo.trim().toUpperCase(),
       ciclo: ciclo.trim().toUpperCase(),
       fase,
-      version: Number(version) || 1,
+      version: versionNumero,
     })
+  }
+
+  /**
+   * Vuelve a lo que proponía el sistema y sale de la corrección.
+   *
+   * La pantalla entera existe para que el docente pueda corregir la
+   * propuesta; dejarle atrapado dentro de una corrección que empezó por
+   * error, o de la que se arrepiente, contradice eso mismo. Solo tiene
+   * sentido cuando había una propuesta completa a la que volver -si el
+   * archivo llegó sin deducir, el formulario es la única vista posible y
+   * no hay nada que descartar.
+   */
+  function descartar() {
+    setCodigo(propuesta.codigo_alumno ?? "")
+    setCiclo(propuesta.ciclo ?? "")
+    setFase(propuesta.fase ?? "")
+    setVersion(String(propuesta.version ?? 1))
+    setEditando(false)
   }
 
   return (
@@ -119,6 +145,14 @@ export function ArchivoPendiente({ archivo, alConfirmar }: Props) {
             className="text-[13px] text-gris pb-1"
           >
             Corregir
+          </button>
+        )}
+        {editando && propuesta.completa && (
+          <button
+            onClick={descartar}
+            className="text-[13px] text-gris pb-1"
+          >
+            Descartar
           </button>
         )}
       </div>

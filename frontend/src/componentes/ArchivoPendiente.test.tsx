@@ -101,4 +101,42 @@ describe("ArchivoPendiente", () => {
 
     expect(screen.getByText(/permiso denegado/)).toBeInTheDocument()
   })
+
+  it("descartar una corrección repone los valores propuestos", async () => {
+    render(<ArchivoPendiente archivo={DEDUCIDO} alConfirmar={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole("button", { name: /corregir/i }))
+    await userEvent.selectOptions(screen.getByLabelText(/fase/i), "E3")
+    await userEvent.click(screen.getByRole("button", { name: /descartar/i }))
+
+    expect(screen.getByText(/AF023 · DAM · E2 · versión 1/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/fase/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /corregir/i })).toBeInTheDocument()
+  })
+
+  it("no ofrece descartar en un archivo sin propuesta que restaurar", async () => {
+    render(<ArchivoPendiente archivo={SIN_DEDUCIR} alConfirmar={vi.fn()} />)
+
+    expect(screen.queryByRole("button", { name: /descartar/i })).not.toBeInTheDocument()
+  })
+
+  it("no ofrece confirmar con una versión negativa", async () => {
+    render(<ArchivoPendiente archivo={DEDUCIDO} alConfirmar={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole("button", { name: /corregir/i }))
+    const campoVersion = screen.getByLabelText(/versión/i)
+    await userEvent.clear(campoVersion)
+    await userEvent.type(campoVersion, "-3")
+
+    expect(screen.getByRole("button", { name: /confirmar/i })).toBeDisabled()
+  })
+
+  it("no ofrece confirmar con la versión vacía", async () => {
+    render(<ArchivoPendiente archivo={DEDUCIDO} alConfirmar={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole("button", { name: /corregir/i }))
+    await userEvent.clear(screen.getByLabelText(/versión/i))
+
+    expect(screen.getByRole("button", { name: /confirmar/i })).toBeDisabled()
+  })
 })
