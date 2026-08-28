@@ -119,6 +119,33 @@ describe("Ficha", () => {
     expect(await screen.findByText(/protegido con contraseña/)).toBeInTheDocument()
   })
 
+  it("distingue un fallo técnico de una entrega bloqueada: solo el bloqueo lleva la tinta de señal", async () => {
+    // Que el servidor esté apagado no es culpa del alumno ni dice nada de
+    // su trabajo: pintarlo igual que un incumplimiento le daría un peso
+    // que no tiene, y diluiría el significado de la única tinta que hay.
+    // Las dos ramas van en el mismo test porque lo que se protege es la
+    // distinción, no cada rama por separado.
+    vi.mocked(api.ficha).mockRejectedValueOnce(
+      new Error("No se ha podido contactar con el servidor."),
+    )
+    const fallo = render(<Ficha id="id-error" alVolver={vi.fn()} />)
+    await screen.findByText(/No se ha podido contactar con el servidor/)
+    expect(fallo.container.querySelectorAll(".senal")).toHaveLength(0)
+    fallo.unmount()
+
+    vi.mocked(api.ficha).mockResolvedValueOnce({
+      ...COMPLETA,
+      entrega: {
+        ...COMPLETA.entrega, estado: "BLOQUEADO",
+        motivo_bloqueo: "El archivo está protegido con contraseña.",
+      },
+      medidas: null, comprobaciones: [], evolucion: null, comparada_con: null,
+    })
+    const bloqueada = render(<Ficha id="id-bloqueada" alVolver={vi.fn()} />)
+    await screen.findByText(/protegido con contraseña/)
+    expect(bloqueada.container.querySelectorAll(".senal").length).toBeGreaterThan(0)
+  })
+
   it("enseña el aviso cuando no se ha podido comparar", async () => {
     vi.mocked(api.ficha).mockResolvedValue({
       ...COMPLETA, evolucion: null, comparada_con: null,

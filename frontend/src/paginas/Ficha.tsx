@@ -20,6 +20,14 @@ interface Props {
  * la pantalla no ofrezca esos gestos es la forma de que el sistema no los
  * haga; el pie lo dice con todas las letras para que la ausencia no parezca
  * una función a medio hacer.
+ *
+ * `error` es un fallo técnico -sin servidor, sin red-, no una decisión que
+ * le toque al docente, así que no lleva la tinta `senal`: se pinta igual
+ * que en Documentos, Estado y Pendientes (ver el docstring de Entregas).
+ * `senal` aquí se reserva al motivo de una entrega bloqueada y a los
+ * avisos: que el servidor esté apagado no es culpa del alumno ni dice nada
+ * de su trabajo, y pintarlo igual que un incumplimiento le daría un peso
+ * que no tiene.
  */
 export function Ficha({ id, alVolver }: Props) {
   const [ficha, setFicha] = useState<FichaDeLectura | null>(null)
@@ -38,7 +46,7 @@ export function Ficha({ id, alVolver }: Props) {
   if (error) {
     return (
       <div className="max-w-3xl">
-        <p className="mb-6 max-w-lectura text-[13px] senal">{error}</p>
+        <p className="mb-6 max-w-lectura text-[13px] text-tinta">{error}</p>
         <button onClick={alVolver} className="text-[13px] text-gris">
           Volver
         </button>
