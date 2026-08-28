@@ -6,11 +6,13 @@ llama a las tablas correctas, con los filtros correctos, y que un error se
 convierte en un mensaje que el docente entiende.
 """
 
+from datetime import datetime
+
 import httpx
 import pytest
 
 from backend.persistencia.memoria import AlmacenEnMemoria
-from backend.persistencia.modelos import EntregaNueva
+from backend.persistencia.modelos import EntregaNueva, EntregaRegistrada
 from backend.persistencia.supabase import AlmacenSupabase, ErrorDeAlmacen
 
 URL = "https://ejemplo.supabase.co"
@@ -328,3 +330,40 @@ def test_cambiar_estado_con_identificador_invalido_no_hace_ninguna_peticion() ->
 
     assert resultado is None
     assert llamadas == []
+
+
+def test_una_fase_huerfana_en_una_fila_guardada_da_el_mismo_resultado_en_los_dos_almacenes() -> None:
+    """La simetría inversa del bug de la fase inválida de entrada.
+
+    Una fila ya guardada puede llevar una fase que ya no está en `FASES`
+    -un dato heredado de otra versión de criterios-. `AlmacenSupabase.
+    anterior_de` ya la descartaba con `entrega.fase in FASES`;
+    `AlmacenEnMemoria` no, e indexaba `FASES.index(entrega.fase)`
+    directamente, reventando con el `ValueError` en inglés de
+    `tuple.index`. Se inserta la fila huérfana directamente en el almacén
+    -no vía `registrar`, que la rechazaría por tener una fase que
+    `validar_fase` no admite- y se compara el resultado de los dos frente
+    a la misma búsqueda.
+    """
+    huerfana = EntregaRegistrada(
+        id="id-huerfana", codigo_alumno="AF023", ciclo="DAM",
+        fase="FASE_ANTIGUA", version=1, nombre_archivo="viejo.pdf",
+        huella="f" * 64, recibida_en=datetime.now(), estado="RECIBIDO",
+        motivo_bloqueo=None, version_criterios="v2025-2026",
+    )
+    almacen_memoria = AlmacenEnMemoria()
+    almacen_memoria._entregas[huerfana.id] = huerfana
+
+    fila_huerfana = {
+        **ENTREGA, "id": "id-huerfana", "fase": "FASE_ANTIGUA",
+        "proyecto": {"alumno": {"codigo": "AF023", "ciclo": "DAM"}},
+    }
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[fila_huerfana])
+
+    resultado_memoria = almacen_memoria.anterior_de("AF023", "E2")
+    resultado_supabase = _almacen(responder).anterior_de("AF023", "E2")
+
+    assert resultado_memoria is None
+    assert resultado_supabase == resultado_memoria

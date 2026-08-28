@@ -107,6 +107,14 @@ class AlmacenEnMemoria:
             entrega
             for entrega in self._entregas.values()
             if entrega.codigo_alumno == codigo_alumno
+            # Una fila guardada puede llevar una fase que ya no está en
+            # FASES -un dato heredado de otra versión de criterios-. Sin
+            # este filtro, FASES.index(entrega.fase) revienta con un
+            # ValueError en inglés en vez de descartar sin más esa fila.
+            # AlmacenSupabase.anterior_de ya descarta estas filas -no puede
+            # indexar lo que no está en el enum de la tabla-; aquí se hace
+            # lo mismo para que los dos almacenes se comporten igual.
+            and entrega.fase in FASES
             and (FASES.index(entrega.fase), entrega.version) < orden_actual
         ]
         if not candidatas:
