@@ -43,7 +43,9 @@ programador: han de decir qué pasa y qué hacer, sin jerga.
 
 | Ruta | Qué es |
 |---|---|
-| `docs/maestro/` | La fuente de verdad. Prosa normativa. |
+| `docs/maestro/` | La fuente de verdad. Prosa normativa. Cuatro documentos, |
+| | y el orden importa: el de calibración es el nivel 5 del §14.1 y no |
+| | puede contradecir a los tres primeros. |
 | `criteria/` | Destilado ejecutable. Derivado, nunca original. |
 | `docs/decisions.md` | Por qué el sistema es como es. |
 | `docs/PENDIENTE_OFICIAL.md` | Lo que no se sabe y no se inventa. |
