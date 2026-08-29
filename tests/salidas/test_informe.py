@@ -331,7 +331,7 @@ def test_el_resumen_no_lleva_una_fortaleza_con_la_cita_inventada(
 ) -> None:
     """El caso peligroso de verdad: una fortaleza cuya evidencia NO se ha
     localizado -la cita pudo inventarla el motor- no puede titular el
-    informe. Si `_resumen` dejara de filtrar por `evidencia_localizada` en
+    informe. Si `componer_resumen` dejara de filtrar por `evidencia_localizada` en
     algún punto de su composición, este test tiene que fallar: es la
     protección explícita que el brief pidió para el filtro de evidencia
     localizada del resumen."""

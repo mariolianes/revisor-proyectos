@@ -73,6 +73,15 @@ responde 428 con el aviso completo (`AVISO_PROTECCION_DATOS`). Quien
 integre esto en la pantalla decide cómo pedir esa confirmación; este
 endpoint solo garantiza que, sin ella, no se envía nada.
 
+Y solo se comprueba cuando de verdad hay algo que salga: la guarda también
+exige `proveedor.nombre != "simulado"`. `AVISO_PROTECCION_DATOS` dice que
+«el texto íntegro del documento se envía a un proveedor de análisis
+externo», y con el motor simulado eso no ocurre -`ProveedorSimulado` no
+habla con ningún servicio, devuelve lo que la prueba le programó-. Pedir
+una confirmación consciente para un envío que no va a pasar no protege
+nada: enseña al docente a aceptar el aviso sin leerlo, que es justo lo
+contrario de lo que esta guarda busca para cuando el motor sí sea el real.
+
 `revisar()` puede fallar por un motivo que no tenía manejador: el docente
 edita una observación y el texto que escribe supera un límite. Ese límite
 no es el mismo que el del motor: `LIMITE_DE_OBSERVACION` (800,
@@ -102,6 +111,21 @@ Error» crudo de siempre. Por eso se captura, se revierte la entrega a
 RECIBIDO -el estado no miente- y se traduce a 503 con un mensaje que dice
 que no ha sido un fallo suyo ni del alumno, y que nada se ha guardado. Ver
 `_guardar_o_fallar` y `_mensaje_de_desbordamiento_del_motor`.
+
+`guardar_correccion` puede fallar por un tercer motivo, ajeno al texto por
+completo: `ErrorDeAlmacen` (`backend/persistencia/supabase.py`) -la red
+caída, la clave caducada, cualquier 4xx de PostgREST que no sea el choque
+de una restricción `unique`-. El mismo punto ciego que dejaba pasar el
+`TextoFueraDeLimite` sin capturar lo dejaba pasar también a este: la
+entrega ya está ANALIZADO cuando `guardar_correccion` se llama, así que un
+`ErrorDeAlmacen` sin capturar aquí dejaba la entrega marcada como analizada
+sin corrección detrás, con el profesor habiendo pagado la llamada al motor
+y sin llevarse nada. El manejador global de `ErrorDeAlmacen`
+(`backend/app.py`) ya traduce el mensaje a un 503 legible -por eso
+`_guardar_o_fallar` no compone uno nuevo para este caso, solo revierte el
+estado y deja subir la misma excepción-, pero ese manejador no sabe nada
+del estado de la entrega: revertirlo es cosa de esta capa. Ver
+`_guardar_o_fallar`.
 """
 
 from threading import Lock
@@ -116,8 +140,10 @@ from backend.persistencia.correccion import (
     TextoFueraDeLimite,
 )
 from backend.persistencia.modelos import EntregaRegistrada
+from backend.persistencia.supabase import ErrorDeAlmacen
 from backend.salidas.borrador import BorradorNoValido, Devolucion
-from backend.salidas.informe import Informe
+from backend.salidas.informe import Informe, componer_resumen
+from backend.salidas.seleccion import SeleccionDePrioridades
 from backend.servicios.analisis_de_entrega import InformeSinBorrador, analizar_entrega
 from tools.calibrar import proteccion_datos_pendiente
 
@@ -298,21 +324,40 @@ def _guardar_o_fallar(
     almacen, identificador: str, informe: Informe, devolucion: Devolucion | None,
     motor: str, aviso: str | None = None,
 ) -> None:
-    """Guarda la corrección; si el texto del motor no cabe en su límite,
+    """Guarda la corrección; si `guardar_correccion` no llega a escribirla,
     deja la entrega tal como estaba antes de este intento.
 
     `analizar_entrega` marca la entrega ANALIZADO -en las dos ramas que
     llaman a esta función- antes de que el resultado se intente guardar
     aquí, porque hasta ese punto el informe es válido. Pero si
-    `guardar_correccion` no consigue escribirlo (`TextoFueraDeLimite`, un
-    texto del motor por encima de `LIMITE_DE_OBSERVACION`), no queda
-    ninguna corrección detrás de ese estado: `GET /analisis` respondería
-    404 -«no se ha analizado todavía»- sobre una entrega que dice
-    ANALIZADO, una entrega que miente. Por eso se revierte a RECIBIDO antes
-    de devolver el error: el estado no miente (ver el docstring de
+    `guardar_correccion` no consigue escribirlo, no queda ninguna
+    corrección detrás de ese estado: `GET /analisis` respondería 404 -«no
+    se ha analizado todavía»- sobre una entrega que dice ANALIZADO, una
+    entrega que miente. Por eso se revierte a RECIBIDO antes de devolver el
+    error: el estado no miente (ver el docstring de
     `backend/servicios/analisis_de_entrega.py`), y RECIBIDO es honesto aquí
     -nada de este intento ha quedado guardado, así que nada distingue esta
     entrega de una que todavía no se ha analizado-.
+
+    Hay dos formas de que `guardar_correccion` falle, y las dos revierten
+    igual:
+
+    - `TextoFueraDeLimite`: un texto del motor por encima de
+      `LIMITE_DE_OBSERVACION`. Se traduce a un mensaje propio -ver
+      `_mensaje_de_desbordamiento_del_motor`-, porque `str(fallo)` no basta
+      por sí solo (ver ese docstring).
+    - `ErrorDeAlmacen` (`backend/persistencia/supabase.py`): la escritura en
+      sí no llega -red caída, clave caducada, cualquier fallo de
+      PostgREST-. Antes solo se capturaba `TextoFueraDeLimite` aquí, y
+      `ErrorDeAlmacen` se escapaba directa hacia el manejador global de
+      `backend/app.py` -que sí la traduce a un 503 legible-, pero sin pasar
+      por este revertido antes: el profesor pagaba la llamada al motor, no
+      se llevaba nada, y la entrega se quedaba ANALIZADO sin corrección
+      detrás, el mismo callejón sin salida que el bloqueante original. Aquí
+      no se compone un mensaje nuevo -el que ya trae `ErrorDeAlmacen` está
+      escrito para el docente-: se revierte el estado y se deja subir la
+      misma excepción, para que el manejador global la traduzca como ya
+      hace en cualquier otro endpoint.
     """
     try:
         almacen.guardar_correccion(identificador, informe, devolucion, motor, aviso)
@@ -322,6 +367,9 @@ def _guardar_o_fallar(
             status_code=503,
             detail=_mensaje_de_desbordamiento_del_motor(fallo),
         ) from fallo
+    except ErrorDeAlmacen:
+        almacen.cambiar_estado(identificador, "RECIBIDO", None)
+        raise
 
 
 @router.get("/motor")
@@ -381,7 +429,24 @@ def analizar(
     # recuerda de una pasada a la siguiente. Va antes de tocar el candado y
     # antes de llamar al motor: es una decisión de si se puede seguir en
     # absoluto, no un paso más de la validación técnica.
-    if proteccion_datos_pendiente(raiz) and not cuerpo.confirmo_datos_reales:
+    #
+    # `proveedor.nombre != "simulado"` es la condición que faltaba: el
+    # aviso dice, literalmente, que «el texto íntegro del documento se
+    # envía a un proveedor de análisis externo», y con el motor simulado
+    # eso es falso -`ProveedorSimulado` no manda nada a ningún sitio, solo
+    # devuelve lo que ya se le programó en la prueba-. Pedir una
+    # confirmación consciente para algo que no ocurre no es prudencia, es
+    # ruido: es justo así como un aviso se convierte en un clic automático,
+    # y cuando de verdad haga falta -con el motor real- el docente ya
+    # tendrá el hábito de descartarlo sin leerlo. `obtener_motor` usa el
+    # mismo criterio (`proveedor.nombre == "simulado"`) para decidir si
+    # avisa de que lo que se ve no es un análisis real; aquí se comprueba
+    # lo mismo, para la pregunta contraria: si de verdad va a salir algo.
+    if (
+        proteccion_datos_pendiente(raiz)
+        and proveedor.nombre != "simulado"
+        and not cuerpo.confirmo_datos_reales
+    ):
         raise HTTPException(status_code=428, detail=AVISO_PROTECCION_DATOS)
 
     candado = _candado(peticion)
@@ -524,10 +589,36 @@ def revisar(
                 aplicada.append(resuelta)
         return aplicada
 
+    nuevas_prioridades = _aplicar(guardada.informe.prioridades)
+    nuevas_descartadas = _aplicar(guardada.informe.prioridades_descartadas)
     informe = guardada.informe.model_copy(update={
         "valoraciones": _aplicar(guardada.informe.valoraciones),
-        "prioridades": _aplicar(guardada.informe.prioridades),
-        "prioridades_descartadas": _aplicar(guardada.informe.prioridades_descartadas),
+        "prioridades": nuevas_prioridades,
+        "prioridades_descartadas": nuevas_descartadas,
+        # El resumen es un recuento de estas mismas piezas -ver
+        # `componer_resumen`, en `backend/salidas/informe.py`-, y antes esta
+        # llamada no existía: `revisar()` recomponía `valoraciones`,
+        # `prioridades` y `prioridades_descartadas`, pero dejaba el
+        # `resumen` guardado tal cual, con las cifras de ANTES de aplicar la
+        # revisión. El docente volvía a la ficha y leía, por ejemplo, «2
+        # prioridades verificadas (1 P1, 1 P2)» encima de una lista de
+        # prioridades con una sola entrada y ningún P1 -justo lo que
+        # `prioridades` decía tras el `_aplicar` de arriba-. Recomponerlo
+        # aquí no cuesta una llamada al motor: `componer_resumen` es una
+        # función pura sobre piezas que esta petición ya tiene en la mano.
+        # El semáforo no se recalcula -no es una de las piezas que el
+        # docente edita aquí, sigue siendo el de `guardada.informe.semaforo`
+        # tras el `model_copy`- y por eso se pasa tal cual, para que la
+        # primera frase del resumen («Semáforo propuesto: …») siga diciendo
+        # lo mismo que el campo `semaforo` del informe.
+        "resumen": componer_resumen(
+            guardada.informe.semaforo,
+            SeleccionDePrioridades(
+                elegidas=nuevas_prioridades, descartadas=nuevas_descartadas,
+            ),
+            guardada.informe.dimensiones_ausentes,
+            guardada.informe.reparos,
+        ),
     })
     # Sustituye la corrección entera: mismo método que guarda un análisis,
     # mismo criterio de «la segunda sustituye a la primera». La devolución y

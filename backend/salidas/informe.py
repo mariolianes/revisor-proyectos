@@ -87,7 +87,7 @@ class Informe(BaseModel):
     control_administrativo: list[str]
     # Un recuento de lo ya verificado -semáforo, prioridades, dimensiones
     # ausentes y reparos-, no la síntesis interpretativa que el §17.1 y el
-    # §11.1 describen. Ver `_resumen` para por qué, y D-011 en
+    # §11.1 describen. Ver `componer_resumen` para por qué, y D-011 en
     # `docs/decisions.md` para el hueco que eso deja.
     resumen: str
     valoraciones: list[ValoracionVerificada]
@@ -138,13 +138,22 @@ def _semaforo(analisis: AnalisisVerificado) -> str:
     return "VERDE"
 
 
-def _resumen(
+def componer_resumen(
     color: str,
     seleccion: SeleccionDePrioridades,
     dimensiones_ausentes: list[str],
     reparos: list[Reparo],
 ) -> str:
     """El «Resumen» del §17.1, compuesto solo con lo que ya está verificado.
+
+    Público -sin guion bajo- a propósito: no es solo lo que
+    `componer_informe` llama al analizar por primera vez.
+    `backend/api/analisis.py` la reutiliza en `revisar()`, para recomponer
+    este mismo campo después de que el docente acepte, edite o descarte
+    observaciones -ver el docstring de `revisar()`-, sobre las piezas ya
+    actualizadas de esa petición. Es una función pura -sin caché, sin
+    estado, sin llamar al motor-, así que no hay ningún motivo para que
+    solo exista una vía hacia ella.
 
     El §17.1 pide «estado general en cinco o seis líneas» y el §11.1 un
     «resumen ejecutivo del estado del proyecto»: los dos piden una síntesis
@@ -279,7 +288,9 @@ def componer_informe(
             "criterios": entrega.version_criterios,
         },
         control_administrativo=control,
-        resumen=_resumen(color, seleccion, analisis.dimensiones_ausentes, analisis.reparos),
+        resumen=componer_resumen(
+            color, seleccion, analisis.dimensiones_ausentes, analisis.reparos
+        ),
         valoraciones=analisis.valoraciones,
         fortalezas=analisis.fortalezas,
         prioridades=seleccion.elegidas,

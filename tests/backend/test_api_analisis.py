@@ -17,6 +17,7 @@ from backend.persistencia.correccion import (
 )
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva
+from backend.persistencia.supabase import ErrorDeAlmacen
 from backend.salidas.borrador import Devolucion
 from backend.salidas.informe import Informe
 
@@ -40,6 +41,95 @@ def _devolucion():
         apertura="Has avanzado.", fortalezas=["La estructura es clara."],
         acciones=["Justifica las cifras con fuentes."], cierre="Sigue asi.",
     )
+
+
+class _ProveedorNoSimulado:
+    """`ProveedorSimulado`, con un `nombre` que no es "simulado".
+
+    La guarda de protección de datos (bug 3, ver
+    `test_sin_confirmar_el_analisis_no_llama_al_proveedor`) solo se aplica
+    cuando `proveedor.nombre != "simulado"`: es la condición que distingue
+    un motor que de verdad enviaría el trabajo del alumno fuera de un motor
+    de pruebas que no envía nada a ningún sitio. `ProveedorSimulado` no
+    sirve para probar ese lado de la condición porque su propio `nombre` es
+    literalmente `"simulado"` -sería probar la guarda contra el caso que
+    precisamente la desactiva-. Este envoltorio delega todo el
+    comportamiento en un `ProveedorSimulado` interno y solo cambia el
+    nombre, para no duplicar la lógica de respuestas y fallos en cola.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._interno = ProveedorSimulado(*args, **kwargs)
+
+    @property
+    def nombre(self) -> str:
+        return "real-de-prueba"
+
+    @property
+    def llamadas(self) -> list[tuple[str, str]]:
+        return self._interno.llamadas
+
+    def analizar(self, instruccion: str, texto: str, formato):
+        return self._interno.analizar(instruccion, texto, formato)
+
+
+class _AlmacenQueFallaAlGuardar:
+    """Un `AlmacenEnMemoria` de verdad, salvo que `guardar_correccion`
+    siempre levanta `ErrorDeAlmacen`, como levantaría `AlmacenSupabase` con
+    la red caída, la clave caducada o un 4xx cualquiera de PostgREST.
+
+    Cierra un punto ciego concreto: los tests de este fichero -todos, salvo
+    los que usan este doble- pasan por `AlmacenEnMemoria`, y
+    `AlmacenEnMemoria.guardar_correccion` nunca levanta `ErrorDeAlmacen` -no
+    hay red que tumbar en memoria-. Es el mismo punto ciego que dejó pasar
+    el bloqueante original con `TextoFueraDeLimite` sin capturar: aquella
+    excepción sí se colaba en un test normal, porque
+    `AlmacenEnMemoria.guardar_correccion` valida de verdad el límite de
+    longitud del motor y la levanta ella misma; `ErrorDeAlmacen` nace de una
+    conexión que el almacén en memoria no tiene, así que ningún test
+    existente podía reproducirla sin un doble como este.
+
+    El resto del comportamiento no se inventa: se delega en un
+    `AlmacenEnMemoria` real -confirmar la entrega, cambiar su estado, leer
+    lo guardado-, para que lo único distinto en el test sea la escritura que
+    se quiere ver fallar. Con esto en su sitio, cualquier test futuro de
+    este fichero que necesite reproducir un almacén caído -no solo el que
+    prueba este bug- ya tiene con qué, sin volver a montar el doble desde
+    cero.
+    """
+
+    MENSAJE = "Supabase no responde. Vuelve a intentarlo en unos minutos."
+
+    def __init__(self) -> None:
+        self._interno = AlmacenEnMemoria()
+
+    @property
+    def es_duradero(self) -> bool:
+        return self._interno.es_duradero
+
+    def registrar(self, entrega):
+        return self._interno.registrar(entrega)
+
+    def listar(self):
+        return self._interno.listar()
+
+    def por_id(self, identificador):
+        return self._interno.por_id(identificador)
+
+    def por_huella(self, huella):
+        return self._interno.por_huella(huella)
+
+    def anterior_de(self, codigo_alumno, fase, version=1):
+        return self._interno.anterior_de(codigo_alumno, fase, version)
+
+    def cambiar_estado(self, identificador, estado, motivo):
+        return self._interno.cambiar_estado(identificador, estado, motivo)
+
+    def guardar_correccion(self, *args, **kwargs):
+        raise ErrorDeAlmacen(self.MENSAJE)
+
+    def correccion_de(self, entrega_id):
+        return self._interno.correccion_de(entrega_id)
 
 
 def _devolucion_con_nota():
@@ -712,6 +802,69 @@ def test_descartar_una_observacion_la_quita_de_prioridades_descartadas(
     assert cuerpo["informe"]["prioridades_descartadas"] == []
 
 
+def test_revisar_recompone_el_resumen(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """El resumen contradice al informe que tiene debajo si no se
+    recompone: `revisar()` ya recompone `valoraciones`, `prioridades` y
+    `prioridades_descartadas` (los dos tests anteriores), pero dejaba
+    `resumen` guardado tal cual, con el recuento de ANTES de aplicar la
+    revisión. El docente que vuelve al día siguiente leía, por ejemplo, «2
+    prioridades verificadas (1 P1, 1 P2)» encima de una lista de
+    prioridades con una sola entrada y ningún P1 -exactamente lo que este
+    test reproduce y comprueba que ya no pasa-.
+
+    El semáforo no se recalcula -no es una de las piezas que el docente
+    edita aquí-, así que la primera frase del resumen sigue diciendo lo
+    mismo que el campo `semaforo`, sin tocar.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
+                 [["1. Introduccion", "Texto suficiente del trabajo."]])
+    c = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
+    ident = _confirmar(c)
+
+    p1 = _valoracion_de_prueba(
+        "D06", "Carencia crítica sin justificar.", prioridad="P1"
+    )
+    p2 = _valoracion_de_prueba(
+        "D05", "Faltan fuentes que respalden las cifras.", prioridad="P2"
+    )
+    informe = _informe_de_prueba(
+        valoraciones=[p1, p2],
+        prioridades=[p1, p2],
+        semaforo="ROJO",
+        resumen=(
+            "Semáforo propuesto: ROJO. 2 prioridades verificadas para la "
+            "devolución (1 P1, 1 P2)."
+        ),
+    )
+    c.app.state.almacen.guardar_correccion(ident, informe, None, "simulado")
+
+    r = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [{"dimension": "D06", "decision": "DESCARTADA",
+                        "texto": None}],
+    })
+
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert [v["dimension"] for v in cuerpo["informe"]["prioridades"]] == ["D05"]
+
+    resumen = cuerpo["informe"]["resumen"]
+    assert "2 prioridades" not in resumen
+    assert "1 P1" not in resumen
+    assert "1 prioridad verificada" in resumen
+    assert "1 P2" in resumen
+    # El semáforo no lo toca la revisión: la primera frase del resumen
+    # sigue de acuerdo con el campo `semaforo`, sin recalcular.
+    assert cuerpo["informe"]["semaforo"] == "ROJO"
+    assert "Semáforo propuesto: ROJO" in resumen
+
+    # Lo guardado coincide con lo devuelto: una recarga de la ficha no
+    # vuelve a enseñar el resumen de antes de la revisión.
+    r2 = c.get(f"/api/entregas/{ident}/analisis")
+    assert r2.json()["informe"]["resumen"] == resumen
+
+
 def test_una_edicion_demasiado_larga_no_da_un_500_y_no_guarda_nada(
     cliente,
 ) -> None:
@@ -783,10 +936,16 @@ def test_sin_confirmar_el_analisis_no_llama_al_proveedor(
     `tools/calibrar.py`-, así que analizar sin confirmar no puede ni tocar
     al proveedor: ese es justo el canal por el que saldría el trabajo real
     de un alumno.
+
+    Con `_ProveedorNoSimulado`, no `ProveedorSimulado`: la guarda ahora solo
+    se comprueba cuando el motor configurado no es el simulado -ver
+    `test_con_el_motor_simulado_no_hace_falta_confirmar_aunque_siga_pendiente`,
+    justo debajo, para el otro lado de esa misma condición-, y este test
+    tiene que seguir demostrando el bloqueo con un motor que sí es real.
     """
     escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
                  [["1. Introduccion", "Texto suficiente del trabajo."]])
-    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    proveedor = _ProveedorNoSimulado(respuestas=[_analisis(), _devolucion()])
     c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
     ident = _confirmar(c)
 
@@ -799,6 +958,33 @@ def test_sin_confirmar_el_analisis_no_llama_al_proveedor(
     assert _sin_jerga(detalle)
     assert proveedor.llamadas == []
     assert c.app.state.almacen.correccion_de(ident) is None
+
+
+def test_con_el_motor_simulado_no_hace_falta_confirmar_aunque_siga_pendiente(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """Bug 3, el reverso del test anterior: `AVISO_PROTECCION_DATOS` dice
+    que «el texto íntegro del documento se envía a un proveedor de análisis
+    externo», y con el motor simulado eso es falso -`ProveedorSimulado` no
+    manda nada a ningún sitio-. Pedir una confirmación consciente para un
+    envío que no va a ocurrir no protege nada, así que la guarda no debe
+    pedirla: el análisis sigue su curso con normalidad, sin
+    `confirmo_datos_reales`, aunque `proteccion_datos` siga pendiente -la
+    misma raíz de prueba que en el test anterior, sin
+    `docs/PENDIENTE_OFICIAL.md`-.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis")
+
+    assert r.status_code == 200
+    assert len(proveedor.llamadas) == 2
 
 
 def test_confirmando_se_puede_analizar_aunque_siga_pendiente(
@@ -895,5 +1081,66 @@ def test_el_motor_devuelve_una_observacion_demasiado_larga_no_da_un_500(
     # ...y la entrega no se ha quedado marcada ANALIZADO sin nada detrás:
     # el estado no miente, así que ha vuelto a RECIBIDO y se puede volver
     # a intentar.
+    entrega = next(e for e in c.get("/api/entregas").json() if e["id"] == ident)
+    assert entrega["estado"] == "RECIBIDO"
+
+
+def test_un_almacen_que_falla_al_guardar_revierte_la_entrega_y_no_da_un_500(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """El mismo bug que la observación demasiado larga del motor -el test
+    anterior-, con la otra excepción que `guardar_correccion` puede
+    levantar: `ErrorDeAlmacen` (red caída, clave caducada, un 4xx cualquiera
+    de PostgREST), no `TextoFueraDeLimite`.
+
+    `analizar_entrega` ya ha marcado la entrega ANALIZADO antes de que este
+    endpoint intente guardar la corrección. Antes de este arreglo,
+    `_guardar_o_fallar` capturaba `TextoFueraDeLimite` pero no
+    `ErrorDeAlmacen`: esta se escapaba directa hacia el manejador global de
+    `backend/app.py`, que sí la traducía a un 503 legible, pero sin pasar
+    antes por el revertido de estado. El resultado era justo el callejón
+    sin salida que describe el encargo: el profesor pagaba la llamada al
+    motor, no se llevaba nada, y la entrega se quedaba diciendo ANALIZADO
+    sin corrección detrás -`GET /analisis` respondía 404 sobre una entrega
+    que decía estar analizada, y en la pantalla no había ningún botón que
+    la desatascara, porque «analizar» solo aparece en RECIBIDO y «ver
+    revisión» solo en ANALIZADO-.
+
+    Usa `_AlmacenQueFallaAlGuardar`, no `AlmacenEnMemoria`: es el doble que
+    cierra el punto ciego real -`AlmacenEnMemoria.guardar_correccion` nunca
+    levanta `ErrorDeAlmacen`, así que ningún test que pase por el almacén de
+    siempre podía reproducir este bug-.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    app = crear_app(
+        criterios_de_analisis,
+        configuracion=Configuracion(carpeta_entregas=entregas,
+                                    version_criterios="v2026-2027"),
+        almacen=_AlmacenQueFallaAlGuardar(),
+        proveedor=proveedor,
+    )
+    c = TestClient(app)
+    ident = _confirmar(c)
+    estado_antes = next(
+        e for e in c.get("/api/entregas").json() if e["id"] == ident
+    )["estado"]
+    assert estado_antes == "RECIBIDO"
+
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
+
+    assert r.status_code == 503
+    assert r.json()["detail"] == _AlmacenQueFallaAlGuardar.MENSAJE
+    assert _sin_jerga(r.json()["detail"])
+
+    # No queda nada guardado...
+    assert c.get(f"/api/entregas/{ident}/analisis").status_code == 404
+    # ...y la entrega no se ha quedado marcada ANALIZADO sin nada detrás:
+    # ha vuelto a RECIBIDO, tal y como estaba antes de este intento, y se
+    # puede volver a analizar.
     entrega = next(e for e in c.get("/api/entregas").json() if e["id"] == ident)
     assert entrega["estado"] == "RECIBIDO"
