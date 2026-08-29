@@ -28,9 +28,13 @@ import re
 
 import pytest
 
+from backend.analisis.contrato import Evidencia
+from backend.analisis.verificacion import ValoracionVerificada
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva, EntregaRegistrada
 from backend.persistencia.supabase import AlmacenSupabase
+from backend.salidas.borrador import Devolucion
+from backend.salidas.informe import Informe
 
 # `postgrest` viene de tests/conftest.py.
 
@@ -431,3 +435,267 @@ def test_es_duradero_es_lo_unico_que_los_dos_no_comparten(dos_almacenes) -> None
 
     assert memoria.es_duradero is False
     assert supabase.es_duradero is True
+
+
+# --- guardar_correccion / correccion_de -------------------------------------
+#
+# Task 12: el análisis y sus dos salidas. `entrega_id` va siempre atado a una
+# entrega registrada de verdad -es como se usa desde la API-, aunque el
+# servidor de mentira no imponga la clave ajena: registrarla primero es lo
+# realista y evita que un test pase por una vía que `AlmacenSupabase` nunca
+# recorre en producción.
+
+
+def _valoracion(
+    dimension: str = "D05",
+    cita: str = "El presupuesto asciende a 4.500 euros en total del proyecto",
+    evidencia_localizada: bool = True,
+) -> ValoracionVerificada:
+    return ValoracionVerificada(
+        dimension=dimension, nivel="EN_DESARROLLO", prioridad="P2",
+        evidencia=Evidencia(cita=cita, apartado="5"),
+        observacion="Falta justificar las cifras con una fuente.",
+        evidencia_localizada=evidencia_localizada,
+    )
+
+
+def _informe(**cambios) -> Informe:
+    datos = dict(
+        identificacion={
+            "alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": "1",
+            "archivo": "AF023_DAM_E2_20260115_v1.pdf", "criterios": "v2026-2027",
+        },
+        control_administrativo=["2 páginas en total."],
+        resumen="Resumen del análisis.",
+        valoraciones=[_valoracion()],
+        fortalezas=[], prioridades=[_valoracion()], prioridades_descartadas=[],
+        dudas=["¿El presupuesto incluye impuestos?"], indicios=[], reparos=[],
+        dimensiones_ausentes=[],
+        semaforo="AMBAR",
+        recomendacion="Aplicar cambios antes de cerrar la siguiente fase",
+        motor="simulado",
+    )
+    datos.update(cambios)
+    return Informe(**datos)
+
+
+def _devolucion() -> Devolucion:
+    return Devolucion(
+        apertura="Has avanzado.", fortalezas=["La estructura es clara."],
+        acciones=["Justifica las cifras con una fuente."], cierre="Sigue así.",
+    )
+
+
+def _sin_id(correccion):
+    """Lo comparable de una `Correccion`: todo menos el `id`.
+
+    El `id` lo genera cada almacén por su cuenta -uuid4 en memoria, la base
+    de datos en Supabase-, igual que el de una entrega: no puede coincidir
+    entre los dos.
+    """
+    if correccion is None:
+        return None
+    return (
+        correccion.informe.model_dump(mode="json"),
+        correccion.devolucion.model_dump(mode="json")
+        if correccion.devolucion is not None else None,
+        correccion.motor,
+        correccion.aviso,
+    )
+
+
+def test_guardar_una_correccion_y_recuperarla_da_lo_mismo_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        identificador = almacen.guardar_correccion(
+            entrega.id, _informe(), _devolucion(), "simulado", "un aviso"
+        )
+        # El id que devuelve guardar_correccion es el mismo que trae la
+        # corrección recuperada, dentro de cada almacén.
+        recuperada = almacen.correccion_de(entrega.id)
+        assert recuperada is not None and recuperada.id == identificador
+        return recuperada
+
+    memoria, supabase = dos_almacenes
+    resultado_memoria = _sin_id(guion(memoria))
+    resultado_supabase = _sin_id(guion(supabase))
+
+    assert resultado_memoria == resultado_supabase
+    assert resultado_memoria[0]["valoraciones"][0]["dimension"] == "D05"
+    assert resultado_memoria[1]["acciones"]
+    assert resultado_memoria[3] == "un aviso"
+
+
+def test_recuperar_una_correccion_que_no_existe_da_none_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        # Nunca se analiza: no hay corrección para ninguna de las dos.
+        return [
+            almacen.correccion_de(entrega.id),
+            almacen.correccion_de(UUID_INEXISTENTE),
+            almacen.correccion_de(NO_ES_UN_UUID),
+        ]
+
+    memoria, supabase = dos_almacenes
+    assert [_sin_id(c) for c in guion(memoria)] == [None, None, None]
+    assert [_sin_id(c) for c in guion(supabase)] == [None, None, None]
+
+
+def test_guardar_dos_veces_sobre_la_misma_entrega_sustituye_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """Una entrega tiene una corrección: `unique (entrega_id)`. La segunda
+    llamada no acumula una segunda fila, sustituye la primera entera -es lo
+    que necesitan tanto un reanálisis como una revisión del docente."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        primera_id = almacen.guardar_correccion(
+            entrega.id, _informe(), _devolucion(), "simulado"
+        )
+        segundo_informe = _informe(
+            resumen="Segundo resumen, tras revisión.",
+            valoraciones=[_valoracion(dimension="D06")],
+            prioridades=[_valoracion(dimension="D06")],
+        )
+        segunda_id = almacen.guardar_correccion(
+            entrega.id, segundo_informe, _devolucion(), "simulado"
+        )
+        recuperada = almacen.correccion_de(entrega.id)
+        assert recuperada is not None and recuperada.id == segunda_id
+        return [primera_id != segunda_id, recuperada]
+
+    memoria, supabase = dos_almacenes
+    distintos_m, recuperada_m = guion(memoria)
+    distintos_s, recuperada_s = guion(supabase)
+
+    assert distintos_m is True and distintos_s is True
+    assert _sin_id(recuperada_m) == _sin_id(recuperada_s)
+    # La primera no sobrevive: solo queda el segundo informe.
+    assert recuperada_m.informe.valoraciones[0].dimension == "D06"
+    assert len(recuperada_m.informe.valoraciones) == 1
+
+
+def test_guardar_una_correccion_sin_devolucion_da_lo_mismo_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """El caso de `InformeSinBorrador`: el informe es válido y ya está
+    guardado; el borrador no existe. No se fuerza una `Devolucion` vacía -se
+    confundiría con la que ya se produce a propósito cuando no hay nada que
+    redactar-, se guarda `None`."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        aviso = "El informe se ha completado; el borrador no."
+        almacen.guardar_correccion(
+            entrega.id, _informe(), None, "simulado", aviso
+        )
+        return almacen.correccion_de(entrega.id)
+
+    memoria, supabase = dos_almacenes
+    recuperada_m = guion(memoria)
+    recuperada_s = guion(supabase)
+
+    assert _sin_id(recuperada_m) == _sin_id(recuperada_s)
+    assert recuperada_m.devolucion is None
+    assert recuperada_m.aviso == "El informe se ha completado; el borrador no."
+
+
+def test_una_cita_de_mas_de_1500_caracteres_falla_igual_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """D-001: el límite de `evidencia.fragmento` en la migración, comprobado
+    en código antes de escribir -por eso falla igual con o sin credenciales-.
+    """
+    informe_con_cita_larga = _informe(valoraciones=[_valoracion(cita="x" * 1501)])
+
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        return _intentar(lambda: almacen.guardar_correccion(
+            entrega.id, informe_con_cita_larga, _devolucion(), "simulado"
+        ))
+
+    memoria, supabase = dos_almacenes
+    fallo_memoria = guion(memoria)
+    fallo_supabase = guion(supabase)
+
+    assert isinstance(fallo_memoria, ValueError)
+    assert isinstance(fallo_supabase, ValueError)
+    assert str(fallo_memoria) == str(fallo_supabase)
+    assert "1500" in str(fallo_memoria) or "1.500" in str(fallo_memoria)
+    # Nada queda a medio guardar: ni la corrección ni sus hijas.
+    assert memoria.correccion_de(memoria.listar()[0].id) is None
+    assert supabase.correccion_de(supabase.listar()[0].id) is None
+
+
+def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
+    dos_almacenes, postgrest,
+) -> None:
+    """Guardar una corrección escribe la información dos veces en Supabase:
+    el `jsonb` que se relee (`correccion.informe`, ver
+    `AlmacenSupabase.correccion_de`) y las filas de
+    `valoracion_dimension`/`evidencia`, que son la proyección consultable
+    por SQL y la que aplica el límite de D-001 con un `CHECK` real. Las dos
+    representaciones tienen que decir lo mismo: si un cambio futuro tocara
+    una y no la otra, el docente vería un informe que no cuadra con lo que
+    la base de datos dice tener, y nada lo avisaría sin este test.
+
+    Se ejecuta en los dos almacenes -memoria no tiene una segunda
+    representación con la que discrepar, solo guarda el objeto que se le
+    da-, para que la comparación de siempre (memoria == supabase) también
+    alcance a lo que aquí se reconstruye, y no solo a Supabase por su cuenta.
+    """
+    informe = _informe(valoraciones=[
+        _valoracion(
+            dimension="D05",
+            cita="El presupuesto asciende a 4.500 euros en total",
+        ),
+        _valoracion(
+            dimension="D06",
+            cita="La memoria describe el reparto de tareas del equipo",
+        ),
+    ])
+
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(entrega.id, informe, _devolucion(), "simulado")
+        guardada = almacen.correccion_de(entrega.id)
+        assert guardada is not None
+        return {
+            v.dimension: (v.nivel, v.evidencia.cita)
+            for v in guardada.informe.valoraciones
+        }
+
+    memoria, supabase = dos_almacenes
+    reconstruido_memoria = guion(memoria)
+    reconstruido_supabase = guion(supabase)
+
+    esperado = {
+        "D05": ("EN_DESARROLLO", "El presupuesto asciende a 4.500 euros en total"),
+        "D06": ("EN_DESARROLLO", "La memoria describe el reparto de tareas del equipo"),
+    }
+    assert reconstruido_memoria == esperado
+    assert reconstruido_supabase == esperado
+
+    # Lo que de verdad quedó en la tabla estructurada tras la escritura
+    # sobre `supabase` -no el jsonb, que es lo que acaba de comparar
+    # `reconstruido_supabase`-.
+    correccion_id = postgrest.tablas["correccion"][0]["id"]
+    filas_valoracion = {
+        fila["id"]: fila for fila in postgrest.tablas["valoracion_dimension"]
+        if fila["correccion_id"] == correccion_id
+    }
+    assert {f["dimension"] for f in filas_valoracion.values()} == {"D05", "D06"}
+
+    estructurado = {}
+    for fila in postgrest.tablas["evidencia"]:
+        valoracion = filas_valoracion.get(fila["valoracion_id"])
+        if valoracion is None:
+            continue
+        estructurado[valoracion["dimension"]] = (
+            valoracion["nivel"], fila["fragmento"],
+        )
+
+    assert estructurado == reconstruido_supabase

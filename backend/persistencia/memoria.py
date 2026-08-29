@@ -9,6 +9,7 @@ aparenta guardar y no guarda es peor que uno que no guarda.
 import uuid
 from datetime import datetime
 
+from backend.persistencia.correccion import Correccion, validar_citas_acotadas
 from backend.persistencia.modelos import (
     ESTADO_INICIAL,
     EntregaNueva,
@@ -19,6 +20,8 @@ from backend.persistencia.modelos import (
     validar_estado,
     validar_fase,
 )
+from backend.salidas.borrador import Devolucion
+from backend.salidas.informe import Informe
 
 
 class AlmacenEnMemoria:
@@ -32,6 +35,10 @@ class AlmacenEnMemoria:
         # AlmacenSupabase, que reutiliza el alumno ya existente con el
         # ciclo con el que se creó. El primero que se registra manda.
         self._ciclo_del_alumno: dict[str, str] = {}
+        # Una corrección por entrega: guardar dos veces sobre la misma
+        # entrega sustituye el valor del diccionario entero, igual que
+        # `unique (entrega_id)` sustituye la fila en Supabase.
+        self._correcciones: dict[str, Correccion] = {}
 
     @property
     def es_duradero(self) -> bool:
@@ -127,3 +134,24 @@ class AlmacenEnMemoria:
         )
         self._entregas[identificador] = cambiada
         return cambiada
+
+    def guardar_correccion(
+        self,
+        entrega_id: str,
+        informe: Informe,
+        devolucion: Devolucion | None,
+        motor: str,
+        aviso: str | None = None,
+    ) -> str:
+        # Misma regla que en Supabase, y antes de tocar nada: D-001 no
+        # depende de que haya credenciales.
+        validar_citas_acotadas(informe)
+        identificador = str(uuid.uuid4())
+        self._correcciones[entrega_id] = Correccion(
+            id=identificador, informe=informe, devolucion=devolucion,
+            motor=motor, aviso=aviso,
+        )
+        return identificador
+
+    def correccion_de(self, entrega_id: str) -> Correccion | None:
+        return self._correcciones.get(entrega_id)

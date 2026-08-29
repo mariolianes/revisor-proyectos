@@ -32,11 +32,6 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
     app.state.configuracion = configuracion or cargar(raiz)
     app.state.almacen = almacen or crear_almacen(app.state.configuracion)
     app.state.proveedor = proveedor or crear_proveedor(app.state.configuracion)
-    # Los análisis de esta sesión. Persistirlos en las tablas es la Task 12;
-    # hasta entonces, pedir la ficha de una entrega analizada no puede
-    # volver a llamar al motor, y esta caché en memoria es lo que evita esa
-    # segunda llamada.
-    app.state.correcciones = {}
     # El candado que impide que un segundo clic sobre la misma entrega
     # lance una segunda llamada al motor mientras la primera sigue en
     # marcha. Ver el docstring de `backend/api/analisis.py`.

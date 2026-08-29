@@ -11,9 +11,12 @@ from datetime import datetime
 import httpx
 import pytest
 
+from backend.analisis.contrato import Evidencia
+from backend.analisis.verificacion import ValoracionVerificada
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva, EntregaRegistrada
 from backend.persistencia.supabase import AlmacenSupabase, ErrorDeAlmacen
+from backend.salidas.informe import Informe
 
 URL = "https://ejemplo.supabase.co"
 CLAVE = "clave-de-servicio"
@@ -599,3 +602,110 @@ def test_anterior_de_sin_entrega_previa_da_none_en_los_dos_almacenes() -> None:
 
     assert resultado_supabase is None
     assert resultado_supabase == resultado_memoria
+
+
+# --- guardar_correccion: la atomicidad de las tres escrituras ---------------
+#
+# Estos tres no tienen equivalente en `AlmacenEnMemoria` -ahí guardar es una
+# sola asignación de diccionario, no hay «a mitad» posible- ni cabían en el
+# test de paridad. Usan `postgrest` (tests/conftest.py), no un responder a
+# mano: hace falta la cadena entera -alumno, proyecto, entrega- para tener un
+# `entrega_id` real antes de guardar la corrección.
+
+
+def _valoracion(dimension: str = "D05", cita: str | None = None) -> ValoracionVerificada:
+    return ValoracionVerificada(
+        dimension=dimension,
+        nivel="EN_DESARROLLO", prioridad="P2",
+        evidencia=Evidencia(
+            cita=cita or "El presupuesto asciende a 4.500 euros en total",
+            apartado="5",
+        ),
+        observacion="Falta justificar las cifras con una fuente.",
+        evidencia_localizada=True,
+    )
+
+
+def _informe_de_prueba(valoraciones: list[ValoracionVerificada]) -> Informe:
+    return Informe(
+        identificacion={
+            "alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": "1",
+            "archivo": "AF023_DAM_E2_20260115_v1.pdf", "criterios": "v2026-2027",
+        },
+        control_administrativo=[], resumen="Resumen.",
+        valoraciones=valoraciones, fortalezas=[], prioridades=[],
+        prioridades_descartadas=[], dudas=[], indicios=[], reparos=[],
+        dimensiones_ausentes=[], semaforo="AMBAR",
+        recomendacion="Aplicar cambios antes de cerrar la siguiente fase",
+        motor="simulado",
+    )
+
+
+def test_si_falla_la_segunda_escritura_se_deshace_la_primera(postgrest) -> None:
+    """Dos valoraciones con la misma dimensión chocan con
+    `unique (correccion_id, dimension)` al insertar `valoracion_dimension`:
+    la corrección ya se había escrito, y no puede quedar huérfana -sin sus
+    valoraciones, el docente la vería como un informe vacío y no lo es-.
+    """
+    almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())
+    entrega = almacen.registrar(_entrega())
+    informe = _informe_de_prueba([
+        _valoracion("D05"),
+        _valoracion("D05", cita="Otra cita distinta, también breve y localizable"),
+    ])
+
+    with pytest.raises(ErrorDeAlmacen):
+        almacen.guardar_correccion(entrega.id, informe, None, "simulado")
+
+    # No queda ni la corrección ni ninguna valoración: se deshizo entera.
+    assert postgrest.tablas["correccion"] == []
+    assert postgrest.tablas["valoracion_dimension"] == []
+    assert almacen.correccion_de(entrega.id) is None
+
+
+def test_si_falla_la_tercera_escritura_se_deshace_todo(postgrest, monkeypatch) -> None:
+    """Una cita de más de 1.500 caracteres choca con el CHECK
+    `fragmento_acotado` de `evidencia` (D-001) al insertarla. En uso normal
+    esto no llega nunca a la base de datos -`validar_citas_acotadas` ya lo
+    rechaza antes de escribir nada, en código-, así que aquí se desactiva esa
+    guarda a propósito: es la segunda línea de defensa, la que existe por si
+    la primera falla, y tiene que sostener la atomicidad ella sola -la
+    corrección y la valoración que ya se habían escrito no pueden quedar
+    huérfanas-.
+    """
+    import backend.persistencia.supabase as modulo
+
+    monkeypatch.setattr(modulo, "validar_citas_acotadas", lambda informe: None)
+
+    almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())
+    entrega = almacen.registrar(_entrega())
+    informe = _informe_de_prueba([_valoracion("D05")])
+    informe.valoraciones[0].evidencia.cita = "x" * 1501
+
+    with pytest.raises(ErrorDeAlmacen):
+        almacen.guardar_correccion(entrega.id, informe, None, "simulado")
+
+    assert postgrest.tablas["correccion"] == []
+    assert postgrest.tablas["valoracion_dimension"] == []
+    assert postgrest.tablas["evidencia"] == []
+    assert almacen.correccion_de(entrega.id) is None
+
+
+def test_guardar_correccion_son_tres_peticiones_como_maximo(postgrest) -> None:
+    """El brief pide «tres escrituras encadenadas»: un `POST` a
+    `correccion`, uno a `valoracion_dimension` -con todas las dimensiones en
+    un solo cuerpo, no una petición por dimensión- y uno a `evidencia`, igual.
+    """
+    almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())
+    entrega = almacen.registrar(_entrega())
+    informe = _informe_de_prueba([_valoracion("D05"), _valoracion("D06")])
+
+    postgrest.peticiones.clear()
+    almacen.guardar_correccion(entrega.id, informe, None, "simulado")
+
+    escrituras = [p for p in postgrest.peticiones if p.startswith("POST")]
+    assert escrituras == [
+        "POST correccion", "POST valoracion_dimension", "POST evidencia",
+    ]
+    assert len(postgrest.tablas["valoracion_dimension"]) == 2
+    assert len(postgrest.tablas["evidencia"]) == 2
