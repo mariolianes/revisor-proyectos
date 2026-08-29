@@ -35,6 +35,14 @@ exige `--confirmo` antes de enviar nada. Los casos de calibración son
 trabajos reales; que el piloto con entregas reales siga sin resolver no
 impide -por sí solo- correr la calibración, pero el docente tiene que
 decidirlo él, no que el comando lo dé por hecho.
+
+Cada caso completado se escribe en disco, en la carpeta de calibración, en
+cuanto se obtiene -no solo al final de la tanda-. Cada uno es una llamada
+de pago, y un Ctrl+C o un corte a mitad de las nueve no debe borrar lo que
+ya costó dinero y ya terminó. Esto no es una reanudación automática -una
+pasada interrumpida se relanza entera, no retoma por donde se quedó-, es
+solo que el trabajo pagado quede en disco, no únicamente en la memoria de
+un proceso que puede morir antes del final.
 """
 
 import argparse
@@ -477,6 +485,55 @@ def _componer_informe(resultados: list[ResultadoDeCaso]) -> InformeDeCalibracion
     )
 
 
+def _progreso_por_omision(carpeta: Path) -> Path:
+    """La ruta del fichero de progreso de esta pasada, junto al informe.
+
+    Un nombre por ejecución -con su propia marca de tiempo-, no un fichero
+    fijo: dos pasadas seguidas no se pisan la una a la otra, y cada una deja
+    su propio rastro de lo que llegó a completarse.
+    """
+    marca = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return carpeta / f"progreso-calibracion-{marca}.jsonl"
+
+
+def _registrar_progreso(raiz: Path, fichero: Path, resultado: ResultadoDeCaso) -> None:
+    """Añade `resultado` al fichero de progreso, en cuanto se obtiene.
+
+    Cada caso es una llamada de pago, y un fallo del proceso entero -un
+    Ctrl+C, un corte- no debe perder los que ya se han completado y pagado.
+    Por eso esto se llama una vez por caso, dentro del bucle de `ejecutar`,
+    y no una sola vez al final con la tanda entera: si el proceso muere en
+    el caso cinco de nueve, quedan los cuatro anteriores escritos en disco,
+    no solo en una lista en memoria que desaparece con el proceso.
+
+    Una línea JSON por caso -no un documento que se reescribe entero cada
+    vez-: el fichero se abre, se escribe y se cierra en cada llamada, así
+    que un corte a mitad de un caso deja como mucho una línea a medias al
+    final, nunca corrompe las que ya se cerraron antes.
+
+    Usa la misma guarda que la ruta de salida final -`_dentro_del_repositorio`,
+    la que ya protege que un informe con códigos de alumno no acabe en un
+    commit-: si por lo que sea `fichero` cayera dentro del repositorio, aquí
+    no se escribe nada. No es una segunda oportunidad para el mismo fallo:
+    en el uso normal `carpeta` ya la valida `_problema_de_carpeta` antes de
+    que `ejecutar` llegue a llamarse; esto es la misma comprobación, otra
+    vez, en el sitio exacto donde se escribe.
+
+    Un fallo de disco -sin espacio, sin permiso- no aborta la tanda: perder
+    el progreso persistido de este caso es peor que no tenerlo, pero no es
+    motivo para tirar los casos que aún quedan por evaluar.
+    """
+    if _dentro_del_repositorio(raiz, fichero):
+        return
+    try:
+        with fichero.open("a", encoding="utf-8") as flujo:
+            flujo.write(resultado.model_dump_json())
+            flujo.write("\n")
+            flujo.flush()
+    except OSError:
+        pass
+
+
 def ejecutar(
     raiz: Path,
     casos: list[CasoDeCalibracion],
@@ -494,12 +551,23 @@ def ejecutar(
     entorno por su cuenta -y menos en una función que los tests llaman
     directamente y esperan determinista, sin que una variable de entorno
     del equipo de quien la ejecuta le cambie el resultado.
+
+    Cada resultado se persiste en `carpeta`, junto al informe final, tan
+    pronto como se obtiene -ver `_registrar_progreso`-. Esto no es una
+    reanudación: una pasada interrumpida no retoma los casos que ya se
+    completaron, se vuelve a lanzar entera. Es, únicamente, que el trabajo
+    ya pagado quede en disco y no solo en la memoria de un proceso que
+    puede morir antes de llegar al final.
     """
     almacen = AlmacenEnMemoria()
-    resultados = [
-        _ejecutar_caso(raiz, carpeta, VERSION_CRITERIOS_POR_OMISION, almacen, proveedor, caso)
-        for caso in casos
-    ]
+    fichero_de_progreso = _progreso_por_omision(carpeta)
+    resultados: list[ResultadoDeCaso] = []
+    for caso in casos:
+        resultado = _ejecutar_caso(
+            raiz, carpeta, VERSION_CRITERIOS_POR_OMISION, almacen, proveedor, caso
+        )
+        _registrar_progreso(raiz, fichero_de_progreso, resultado)
+        resultados.append(resultado)
     return _componer_informe(resultados)
 
 
