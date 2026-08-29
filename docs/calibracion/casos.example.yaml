@@ -1,0 +1,166 @@
+# Banco de casos de calibracion (Task 14). Plantilla versionada, sin PDF.
+#
+# Los nueve casos históricos -P01 a P09- vienen del párrafo 6 del documento
+# de calibración (docs/maestro/04-calibracion.md). Los PDF de esos proyectos
+# son trabajos reales de alumnos del curso pasado y nunca entran en el
+# repositorio: viven en la carpeta que se indica en
+# REVISOR_CARPETA_CALIBRACION, fuera del árbol versionado. Este fichero solo
+# describe el comportamiento esperado -lo que ya es público en el documento
+# de calibración-, y sirve de ejemplo o de base para la copia real del
+# docente, que puede editarlo o sustituirlo por la suya sin tocar este.
+#
+# semaforo_esperado usa los códigos del sistema (VERDE, AMBAR, ROJO, GRIS),
+# no la palabra AMARILLO que usa el párrafo 9 del documento de calibración:
+# el Documento Maestro llama AMBAR a ese mismo estado y manda por ser fuente
+# superior, y el docente confirmó mantener AMBAR el 2026-08-28 (ver
+# criteria/v2026-2027/semaforo.yaml). Donde el párrafo 6 describe un caso en
+# la frontera entre dos colores (amarillo/puerta formal, verde/amarillo...)
+# se ha elegido el más prudente de los dos.
+#
+# El párrafo 6 no fija la fase de cada caso: solo el párrafo 3 dice, de la
+# muestra entera, que predominan tercera entrega o entrega final y que no
+# se simulan fases iniciales. Se asume E3 para los nueve salvo aviso en
+# contra en la nota de un caso concreto; si el docente conoce la fase real
+# de alguno, debe corregirla antes de ejecutar el arnés.
+#
+# debe_encontrar y no_debe son búsquedas literales (sin tildes ni
+# mayúsculas, como una cita) sobre las observaciones del informe interno, no
+# sobre el borrador que leería el alumno ni una interpretación semántica del
+# texto: localizan una frase, no juzgan un comportamiento. Los rasgos de
+# tono o de economía pedagógica que describe el párrafo 6 quedan también
+# como no_debe cuando ese párrafo los nombra con una frase concreta, a
+# sabiendas de que una búsqueda literal es una señal débil para algo que es,
+# en el fondo, un juicio de lectura; el resto de cada caso queda en notas,
+# para que lo lea el docente.
+
+- codigo: P01
+  archivo: P01.pdf
+  fase: E3
+  semaforo_esperado: ROJO
+  debe_encontrar:
+    - desarrollo superficial
+    - resultados sin evidencia
+    - tablas vacías
+    - bibliografía ausente
+    - páginas en blanco
+  no_debe:
+    - enumerar cada defecto menor
+  notas: >-
+    Mejora de pequeño negocio. Feedback centrado en desarrollar y cerrar,
+    sin enumerar cada defecto menor. Fase asumida (E3): el párrafo 6 no la
+    fija por caso.
+
+- codigo: P02
+  archivo: P02.pdf
+  fase: E3
+  semaforo_esperado: AMBAR
+  debe_encontrar:
+    - extensión insuficiente
+    - metodología débil
+    - proveedor genérico
+    - cifras sin apoyo
+  no_debe: []
+  notas: >-
+    Alimentación canina por dropshipping. El docente lo llama amarillo o
+    puerta formal; en el sistema es AMBAR. Reconocer limpieza y coherencia,
+    pero la prioridad es completar el desarrollo y cumplir los mínimos.
+    Fase asumida (E3).
+
+- codigo: P03
+  archivo: P03.pdf
+  fase: E3
+  semaforo_esperado: AMBAR
+  debe_encontrar:
+    - errores aritméticos
+    - costes omitidos
+  no_debe:
+    - todos los errores aritméticos
+  notas: >-
+    Exportación de tortilla española. Valorar estructura y aplicación, pero
+    trasladar solo los errores que alteren la viabilidad o la defensa, no
+    todos. Fase asumida (E3).
+
+- codigo: P04
+  archivo: P04.pdf
+  fase: E3
+  semaforo_esperado: AMBAR
+  debe_encontrar:
+    - ausencia de fuentes
+    - confusión entre ingresos y costes
+  no_debe: []
+  notas: >-
+    Exportación de vino de nicho. No dejarse llevar por la presentación;
+    feedback breve, orientado a justificar la viabilidad. Fase asumida
+    (E3).
+
+- codigo: P05
+  archivo: P05.pdf
+  fase: E3
+  semaforo_esperado: VERDE
+  debe_encontrar:
+    - desarrollo aplicado
+    - objetivos numéricos
+    - conexión entre inversión y retorno
+  no_debe:
+    - exigir una auditoría financiera
+  notas: >-
+    Transición de moda al modelo D2C. Verde con alertas: recomendar cierre
+    general y objetivos numéricos de KPI, sin exigir una auditoría
+    financiera completa. Fase asumida (E3).
+
+- codigo: P06
+  archivo: P06.pdf
+  fase: E3
+  semaforo_esperado: AMBAR
+  debe_encontrar:
+    - lenguaje poco neutral
+    - contradicción entre comunicación y contingencia
+  no_debe:
+    - juzgar la ideología
+  notas: >-
+    Marca de ropa identitaria. El docente lo llama amarillo o verde; en el
+    sistema es AMBAR. Juzgar coherencia y ética, no la ideología. Fase
+    asumida (E3).
+
+- codigo: P07
+  archivo: P07.pdf
+  fase: E3
+  semaforo_esperado: ROJO
+  debe_encontrar:
+    - cálculos frágiles
+    - redacción irregular
+    - cierre insuficiente
+  no_debe:
+    - una lista exhaustiva
+  notas: >-
+    Importación textil desde China. Priorizar tres correcciones
+    estructurales; evitar una lista exhaustiva. Fase asumida (E3).
+
+- codigo: P08
+  archivo: P08.pdf
+  fase: FINAL
+  semaforo_esperado: AMBAR
+  debe_encontrar:
+    - verificación regulatoria
+    - cálculo de margen
+  no_debe:
+    - una rentabilidad real absoluta
+  notas: >-
+    Exportación de AOVE a EAU. El docente lo llama verde o amarillo; se
+    elige AMBAR, la lectura más prudente. No exigir demostrar una
+    rentabilidad real absoluta. Se asume entrega final, y no E3 como en los
+    demás casos, porque "revisar un cálculo de margen representativo" es
+    más propio de cierre que de desarrollo.
+
+- codigo: P09
+  archivo: P09.pdf
+  fase: E3
+  semaforo_esperado: AMBAR
+  debe_encontrar:
+    - inconsistencia entre beneficio
+    - punto de equilibrio
+    - costes incompletos
+  no_debe: []
+  notas: >-
+    Gimnasio con cafetería en Zúrich. Feedback centrado en la prudencia
+    financiera. Fase asumida (E3).
