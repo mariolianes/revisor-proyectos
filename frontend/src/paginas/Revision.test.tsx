@@ -17,6 +17,14 @@ const ENTREGA = {
 const CITA_1 = "El presupuesto inicial asciende a 4.500 euros"
 const CITA_2 = "La arquitectura se apoya en tres capas"
 const CITA_3 = "El plan de pruebas cubre los casos principales"
+// Distinta de la descripción a propósito: descripción y cita coincidiendo
+// palabra por palabra habría hecho que `getByText` encontrara el mismo
+// texto en dos nodos del DOM (el `<li>` y el `<span>` de la cita) y
+// reventara con «se ha encontrado más de un elemento», que es justo lo
+// que no puede pasar en la vida real -la cita es un fragmento literal del
+// trabajo, la descripción es la lectura del motor sobre ese fragmento-.
+const CITA_INDICIO =
+  "adopta un enfoque de arquitectura hexagonal desacoplada mediante inversión de dependencias"
 
 /** Cuatro dimensiones: dos prioridades, una fuera del límite, una sin prioridad. */
 const RESULTADO: ResultadoAnalisis = {
@@ -84,7 +92,14 @@ const RESULTADO: ResultadoAnalisis = {
       },
     ],
     dudas: ["No queda claro si el anexo B es del alumno o de un tercero citado."],
-    indicios: [],
+    indicios: [
+      {
+        descripcion:
+          "El vocabulario técnico de este párrafo no aparece en ningún otro apartado del trabajo.",
+        evidencia: { cita: CITA_INDICIO, apartado: "4. Desarrollo" },
+        evidencia_localizada: true,
+      },
+    ],
     reparos: [],
     dimensiones_ausentes: [],
     semaforo: "AMBAR",
@@ -114,6 +129,43 @@ describe("Revision", () => {
 
     expect(screen.getByText(/cubre la mayoría de los apartados/i)).toBeInTheDocument()
     expect(screen.getByText(/has avanzado bien en esta fase/i)).toBeInTheDocument()
+  })
+
+  it("muestra las dudas del motor con la tinta de señal", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    const duda = screen.getByText(/anexo b es del alumno o de un tercero/i)
+    expect(duda).toBeInTheDocument()
+    // No es la única `.senal` de la pantalla, así que se comprueba la
+    // clase del propio elemento, no un recuento global del contenedor.
+    expect(duda).toHaveClass("senal")
+  })
+
+  it("muestra el indicio de autoría, con su cita, y con la tinta de señal", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    const indicio = screen.getByText(/el vocabulario técnico de este párrafo/i)
+    expect(indicio).toBeInTheDocument()
+    expect(indicio).toHaveClass("senal")
+    expect(screen.getByText(/arquitectura hexagonal desacoplada/i)).toBeInTheDocument()
+    // El aviso del §13 -que es un indicio, no un veredicto, y la decisión
+    // es del docente- tiene que estar junto al indicio, no solo en algún
+    // sitio de la pantalla.
+    expect(screen.getByText(/no es un veredicto/i)).toBeInTheDocument()
+  })
+
+  it("sin indicios de autoría, no se enseña la sección entera", () => {
+    render(
+      <Revision
+        id="id-1"
+        inicial={{ ...RESULTADO, informe: { ...RESULTADO.informe, indicios: [] } }}
+        alVolver={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.queryByRole("heading", { name: /indicios de autoría/i }),
+    ).not.toBeInTheDocument()
   })
 
   it("el aviso del motor simulado se ve antes que nada", () => {
