@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from backend.analisis.contrato import (
     AnalisisDelMotor,
     Evidencia,
@@ -10,7 +13,13 @@ from backend.analisis.contrato import (
     Patron,
     Valoracion,
 )
-from backend.analisis.verificacion import verificar
+from backend.analisis.verificacion import (
+    FortalezaVerificada,
+    IndicioDeAutoriaVerificado,
+    PatronVerificado,
+    ValoracionVerificada,
+    verificar,
+)
 
 TRABAJO = """
 1. Introducción
@@ -403,3 +412,52 @@ def test_todas_las_dimensiones_inventadas(criterios_de_analisis: Path) -> None:
 
     assert v.valoraciones == []
     assert len(v.reparos) >= 1
+
+
+# --- Los modelos verificados son inmutables ---
+
+def test_una_valoracion_verificada_no_se_puede_modificar() -> None:
+    """Es la constancia de un juicio ya emitido, no un borrador que un
+    consumidor posterior -el borrador de la Task 8, el informe de la Task 9-
+    pueda retocar en el sitio."""
+    v = ValoracionVerificada(
+        dimension="D05", nivel="EN_DESARROLLO", prioridad="P1",
+        evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="5"),
+        observacion="Observación original.", evidencia_localizada=True,
+    )
+
+    with pytest.raises(ValidationError):
+        v.observacion = "Otra cosa."
+
+
+def test_un_patron_verificado_no_se_puede_modificar() -> None:
+    p = PatronVerificado(
+        nombre="Patrón", descripcion="Descripción.",
+        evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="5"),
+        evidencia_localizada=True,
+    )
+
+    with pytest.raises(ValidationError):
+        p.descripcion = "Otra cosa."
+
+
+def test_una_fortaleza_verificada_no_se_puede_modificar() -> None:
+    f = FortalezaVerificada(
+        descripcion="Descripción.",
+        evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="5"),
+        evidencia_localizada=True,
+    )
+
+    with pytest.raises(ValidationError):
+        f.descripcion = "Otra cosa."
+
+
+def test_un_indicio_verificado_no_se_puede_modificar() -> None:
+    i = IndicioDeAutoriaVerificado(
+        descripcion="Descripción.",
+        evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="5"),
+        evidencia_localizada=True,
+    )
+
+    with pytest.raises(ValidationError):
+        i.descripcion = "Otra cosa."

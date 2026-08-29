@@ -220,3 +220,26 @@ def test_llamar_dos_veces_da_el_mismo_resultado_y_no_toca_la_entrada(
 
     assert primera == segunda
     assert analisis.model_dump() == antes
+
+
+def test_el_desempate_por_dimension_es_estable_ante_el_orden_de_entrada(
+    criterios_de_analisis: Path,
+) -> None:
+    """Dos ejecuciones sobre el mismo trabajo no pueden darle al alumno
+    prioridades distintas solo porque el motor haya enumerado las
+    valoraciones en otro orden. `sort` es estable, así que si se quitara el
+    desempate por dimensión, el orden de entrada se colaría en el de salida
+    sin que ningún otro test lo notara -todos los demás llegan ya
+    ordenados-. Este cruza el mismo conjunto en dos órdenes distintos."""
+    a, b, c = _v("D07", "P1"), _v("D01", "P1"), _v("D03", "P1")
+    esperado = ["D01", "D03", "D07"]
+
+    primer_orden = seleccionar_prioridades(
+        criterios_de_analisis, "v2026-2027", _analisis([a, b, c]),
+    )
+    segundo_orden = seleccionar_prioridades(
+        criterios_de_analisis, "v2026-2027", _analisis([b, c, a]),
+    )
+
+    assert [v.dimension for v in primer_orden.elegidas] == esperado
+    assert [v.dimension for v in segundo_orden.elegidas] == esperado
