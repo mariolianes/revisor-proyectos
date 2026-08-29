@@ -36,6 +36,23 @@ LIMITE_DE_REPARO = 500
 LIMITE_DE_APERTURA_O_CIERRE = 600
 LIMITE_DE_LINEA_DE_DEVOLUCION = 400
 
+# El límite de una observación cuando quien la escribe es el docente, no el
+# motor -aplicado al guardar una revisión (`revisar()`,
+# `backend/api/analisis.py`), nunca al guardar el resultado de un análisis-.
+# `LIMITE_DE_OBSERVACION` (800) existe por D-001: una observación verbosa es
+# la vía por la que un motor podría reconstruir el trabajo del alumno sin
+# tocar el límite de la cita, y ese riesgo es real porque el motor puede
+# citar el documento sin que nadie lo revise antes de guardarlo. El docente
+# no tiene ese riesgo -no va a pegar el trabajo de su propio alumno dentro
+# de su observación sobre ese mismo trabajo; si lo hiciera, sería contra su
+# propio interés, no un atajo que le convenga-, así que este límite no
+# defiende D-001: solo evita que el campo quede sin fondo. Más holgado a
+# propósito -2.400 caracteres son unas 400 palabras, un párrafo largo con
+# margen de sobra para reescribir una observación completa a mano-, y sin
+# relación numérica con `LIMITE_DE_OBSERVACION`: subir uno no tiene por qué
+# mover el otro, porque protegen cosas distintas.
+LIMITE_DE_OBSERVACION_DOCENTE = 2400
+
 
 class TextoFueraDeLimite(ValueError):
     """Un texto de la corrección supera el límite de caracteres que le toca.
@@ -70,7 +87,9 @@ def _validar_longitud(texto: str, limite: int, etiqueta: str) -> None:
 
 
 def validar_textos_acotados(
-    informe: Informe, devolucion: Devolucion | None = None
+    informe: Informe,
+    devolucion: Devolucion | None = None,
+    limite_de_observacion: int = LIMITE_DE_OBSERVACION,
 ) -> None:
     """Ninguna cita ni ningún bloque de prosa del análisis pasa de su límite.
 
@@ -100,6 +119,17 @@ def validar_textos_acotados(
     la cita, y el límite de D-001 dejaría de significar lo que el §19 del
     Documento Maestro dice que significa.
 
+    `limite_de_observacion` es la única excepción a que cada campo tenga un
+    único límite fijo: por omisión es `LIMITE_DE_OBSERVACION` (el del motor,
+    D-001), pero `revisar()` guarda pasando `LIMITE_DE_OBSERVACION_DOCENTE`
+    -más holgado-, porque la observación de una valoración es el único
+    campo de este módulo que puede llegar de dos autores distintos con dos
+    motivos de límite distintos: el motor, al analizar, y el docente, al
+    editar una observación al revisar. El resto de campos de este módulo
+    -la cita, el resumen, las dudas, los reparos, la devolución entera- solo
+    los escribe el motor o el propio sistema, nunca el docente a mano, así
+    que no necesitan ese segundo límite.
+
     Se llama antes de escribir nada, en los dos almacenes: un análisis con
     un texto fuera de límite no debe dejar ni una fila a medias.
     """
@@ -109,7 +139,7 @@ def validar_textos_acotados(
             v.evidencia.cita, LIMITE_DE_CITA, f"La cita de {v.dimension}"
         )
         _validar_longitud(
-            v.observacion, LIMITE_DE_OBSERVACION,
+            v.observacion, limite_de_observacion,
             f"La observación de {v.dimension}",
         )
     for f in informe.fortalezas:

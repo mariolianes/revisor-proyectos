@@ -11,7 +11,10 @@ from backend.analisis.proveedor import ErrorDelProveedor, ProveedorSimulado
 from backend.analisis.verificacion import ValoracionVerificada
 from backend.app import crear_app
 from backend.configuracion import Configuracion
-from backend.persistencia.correccion import LIMITE_DE_OBSERVACION
+from backend.persistencia.correccion import (
+    LIMITE_DE_OBSERVACION,
+    LIMITE_DE_OBSERVACION_DOCENTE,
+)
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva
 from backend.salidas.borrador import Devolucion
@@ -712,18 +715,19 @@ def test_descartar_una_observacion_la_quita_de_prioridades_descartadas(
 def test_una_edicion_demasiado_larga_no_da_un_500_y_no_guarda_nada(
     cliente,
 ) -> None:
-    """Bug 2: `validar_textos_acotados` limita la observación a
-    `LIMITE_DE_OBSERVACION` caracteres y levanta una excepción; `revisar()`
-    no la capturaba, así que una edición larga del docente reventaba en un
-    «Internal Server Error» crudo y todas las decisiones de esa petición se
-    perdían. El mensaje de la excepción de base, además, dice «esto indica
-    un fallo del motor»: falso en este canal, el texto lo ha escrito el
-    docente a mano, y ese mensaje concreto no puede llegarle tal cual.
+    """Bug 2: `validar_textos_acotados` limita la observación del docente a
+    `LIMITE_DE_OBSERVACION_DOCENTE` caracteres y levanta una excepción;
+    `revisar()` no la capturaba, así que una edición larga del docente
+    reventaba en un «Internal Server Error» crudo y todas las decisiones de
+    esa petición se perdían. El mensaje de la excepción de base, además,
+    dice «esto indica un fallo del motor»: falso en este canal, el texto lo
+    ha escrito el docente a mano, y ese mensaje concreto no puede llegarle
+    tal cual.
     """
     cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
                  json={"confirmo_datos_reales": True})
 
-    texto_largo = "x" * (LIMITE_DE_OBSERVACION + 1)
+    texto_largo = "x" * (LIMITE_DE_OBSERVACION_DOCENTE + 1)
     r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
         "decisiones": [{"dimension": "D05", "decision": "EDITADA",
                         "texto": texto_largo}],
@@ -733,7 +737,7 @@ def test_una_edicion_demasiado_larga_no_da_un_500_y_no_guarda_nada(
     detalle = r.json()["detail"]
     assert "fallo del motor" not in detalle
     assert str(len(texto_largo)) in detalle
-    assert str(LIMITE_DE_OBSERVACION) in detalle
+    assert str(LIMITE_DE_OBSERVACION_DOCENTE) in detalle
     assert "no se ha guardado" in detalle.lower()
     assert _sin_jerga(detalle)
 
@@ -742,6 +746,32 @@ def test_una_edicion_demasiado_larga_no_da_un_500_y_no_guarda_nada(
     r2 = cliente.get(f"/api/entregas/{cliente.identificador}/analisis")
     observacion_guardada = r2.json()["informe"]["valoraciones"][0]["observacion"]
     assert observacion_guardada != texto_largo
+
+
+def test_una_edicion_por_debajo_del_limite_del_docente_pero_por_encima_del_motor_se_guarda(
+    cliente,
+) -> None:
+    """El límite del docente es más holgado que el del motor a propósito
+    (bug 2): un texto que el motor nunca podría guardar -por encima de
+    `LIMITE_DE_OBSERVACION`- tiene que poder guardarse igual cuando lo
+    escribe el docente al revisar, siempre que quepa en su propio límite,
+    más generoso.
+    """
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+    assert LIMITE_DE_OBSERVACION < LIMITE_DE_OBSERVACION_DOCENTE  # la premisa del test
+
+    texto_entre_los_dos_limites = "x" * (LIMITE_DE_OBSERVACION + 100)
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [{"dimension": "D05", "decision": "EDITADA",
+                        "texto": texto_entre_los_dos_limites}],
+    })
+
+    assert r.status_code == 200
+    assert (
+        r.json()["informe"]["valoraciones"][0]["observacion"]
+        == texto_entre_los_dos_limites
+    )
 
 
 def test_sin_confirmar_el_analisis_no_llama_al_proveedor(
@@ -817,3 +847,53 @@ def test_si_proteccion_datos_ya_no_esta_pendiente_no_hace_falta_confirmar(
 
     assert r.status_code == 200
     assert len(proveedor.llamadas) == 2
+
+
+def test_el_motor_devuelve_una_observacion_demasiado_larga_no_da_un_500(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """La otra mitad del bug 2/3: si es el motor -no el docente- quien
+    devuelve una observación por encima de `LIMITE_DE_OBSERVACION`,
+    `analizar()` tampoco puede reventar en un «Internal Server Error»
+    crudo. Y aquí hay algo más que capturar la excepción: `analizar_entrega`
+    ya ha marcado la entrega ANALIZADO antes de que este endpoint intente
+    guardar la corrección, así que si no se revirtiera, el docente vería la
+    entrega como analizada sin ninguna corrección detrás -`GET /analisis`
+    respondería 404 sobre una entrega que dice estar analizada-.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    analisis_con_observacion_larga = AnalisisDelMotor(
+        valoraciones=[Valoracion(
+            dimension="D05", nivel="EN_DESARROLLO", prioridad="P2",
+            evidencia=Evidencia(cita=CITA, apartado="5"),
+            observacion="x" * (LIMITE_DE_OBSERVACION + 1),
+        )],
+        fortalezas=[], patrones=[], dudas_para_el_docente=[],
+        indicios_de_autoria=[],
+    )
+    proveedor = ProveedorSimulado(
+        respuestas=[analisis_con_observacion_larga, _devolucion()]
+    )
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
+
+    assert r.status_code == 503
+    detalle = r.json()["detail"]
+    assert "no es un fallo tuyo" in detalle.lower()
+    assert "no se ha guardado" in detalle.lower()
+    assert "motor" in detalle.lower()
+    assert _sin_jerga(detalle)
+
+    # No queda nada guardado...
+    assert c.get(f"/api/entregas/{ident}/analisis").status_code == 404
+    # ...y la entrega no se ha quedado marcada ANALIZADO sin nada detrás:
+    # el estado no miente, así que ha vuelto a RECIBIDO y se puede volver
+    # a intentar.
+    entrega = next(e for e in c.get("/api/entregas").json() if e["id"] == ident)
+    assert entrega["estado"] == "RECIBIDO"

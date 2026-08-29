@@ -39,6 +39,7 @@ from backend.persistencia.correccion import (
     LIMITE_DE_DUDA,
     LIMITE_DE_LINEA_DE_DEVOLUCION,
     LIMITE_DE_OBSERVACION,
+    LIMITE_DE_OBSERVACION_DOCENTE,
     LIMITE_DE_REPARO,
     LIMITE_DE_RESUMEN,
     TextoFueraDeLimite,
@@ -164,6 +165,50 @@ def test_el_fallo_lleva_los_datos_para_que_otra_capa_componga_su_mensaje() -> No
     assert fallo.etiqueta == "La observación de D05"
     assert fallo.longitud == len(texto)
     assert fallo.limite == LIMITE_DE_OBSERVACION
+
+
+def test_limite_de_observacion_se_puede_sustituir_por_uno_mas_holgado() -> None:
+    """`revisar()` (`backend/api/analisis.py`) llama con
+    `LIMITE_DE_OBSERVACION_DOCENTE`, más holgado que el del motor: un texto
+    que el motor nunca podría guardar tiene que poder guardarse igual
+    cuando lo escribe el docente, siempre que quepa en su propio límite.
+    """
+    texto = "x" * (LIMITE_DE_OBSERVACION + 100)
+    informe = _informe(valoraciones=[_valoracion(observacion=texto)])
+    assert LIMITE_DE_OBSERVACION_DOCENTE > len(texto)  # la premisa del test
+
+    validar_textos_acotados(  # no levanta
+        informe, limite_de_observacion=LIMITE_DE_OBSERVACION_DOCENTE
+    )
+
+
+def test_limite_de_observacion_sustituido_tambien_se_hace_cumplir() -> None:
+    """No es un interruptor que desactive el límite: sigue habiendo uno,
+    solo que distinto -más holgado, no infinito-.
+    """
+    texto = "x" * (LIMITE_DE_OBSERVACION_DOCENTE + 1)
+    informe = _informe(valoraciones=[_valoracion(observacion=texto)])
+
+    with pytest.raises(TextoFueraDeLimite) as info:
+        validar_textos_acotados(
+            informe, limite_de_observacion=LIMITE_DE_OBSERVACION_DOCENTE
+        )
+
+    assert info.value.limite == LIMITE_DE_OBSERVACION_DOCENTE
+
+
+def test_sin_pasar_limite_de_observacion_se_usa_el_del_motor_por_omision() -> None:
+    """`analizar()` guarda el resultado del motor sin pasar
+    `limite_de_observacion`: por omisión sigue siendo `LIMITE_DE_OBSERVACION`,
+    el mismo de siempre.
+    """
+    texto = "x" * (LIMITE_DE_OBSERVACION + 1)
+    informe = _informe(valoraciones=[_valoracion(observacion=texto)])
+
+    with pytest.raises(TextoFueraDeLimite) as info:
+        validar_textos_acotados(informe)
+
+    assert info.value.limite == LIMITE_DE_OBSERVACION
 
 
 # --- la prosa: un límite propio por campo, no el de la cita -----------------

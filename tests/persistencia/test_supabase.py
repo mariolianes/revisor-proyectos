@@ -676,7 +676,8 @@ def test_si_falla_la_tercera_escritura_se_deshace_todo(postgrest, monkeypatch) -
     import backend.persistencia.supabase as modulo
 
     monkeypatch.setattr(
-        modulo, "validar_textos_acotados", lambda informe, devolucion=None: None
+        modulo, "validar_textos_acotados",
+        lambda informe, devolucion=None, limite_de_observacion=None: None,
     )
 
     almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())

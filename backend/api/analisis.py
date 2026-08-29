@@ -74,13 +74,34 @@ integre esto en la pantalla decide cómo pedir esa confirmación; este
 endpoint solo garantiza que, sin ella, no se envía nada.
 
 `revisar()` puede fallar por un motivo que no tenía manejador: el docente
-edita una observación y el texto que escribe supera `LIMITE_DE_OBSERVACION`
-(`backend/persistencia/correccion.py`). `guardar_correccion` valida antes
-de escribir y levanta `TextoFueraDeLimite` -no se guarda ni esa edición ni
-ninguna otra decisión de la misma petición-, y aquí se captura y se
-traduce a 400 con un mensaje compuesto para el docente, no con
+edita una observación y el texto que escribe supera un límite. Ese límite
+no es el mismo que el del motor: `LIMITE_DE_OBSERVACION` (800,
+`backend/persistencia/correccion.py`) existe por D-001 -un motor verboso
+podría reconstruir el trabajo del alumno por el campo de la observación,
+sin tocar el límite de la cita-, y el docente no tiene ese riesgo -no va a
+pegar el trabajo de su propio alumno dentro de su propia observación sobre
+ese trabajo-, así que su edición se guarda con `LIMITE_DE_OBSERVACION_DOCENTE`
+(2400), más holgado: un límite que solo evita un campo sin fondo, no que
+defiende D-001. `guardar_correccion` valida antes de escribir y
+levanta `TextoFueraDeLimite` si aun así se pasa -no se guarda ni esa
+edición ni ninguna otra decisión de la misma petición-, y aquí se captura y
+se traduce a 400 con un mensaje compuesto para el docente, no con
 `str(fallo)`: ese texto asume que lo largo lo escribió el motor, y aquí lo
 ha escrito él a mano. Ver `_mensaje_de_edicion_demasiado_larga`.
+
+`analizar()` puede toparse con la misma excepción por el motivo contrario:
+el motor devuelve una observación que supera su propio límite,
+`LIMITE_DE_OBSERVACION`. Aquí `str(fallo)` sí describe lo que ha pasado
+-el texto largo es del motor-, pero no basta con dejarlo subir sin
+capturar: `analizar_entrega` ya ha marcado la entrega ANALIZADO antes de
+que este endpoint intente guardar la corrección, así que un
+`guardar_correccion` que falla aquí sin capturar dejaría la entrega marcada
+como analizada sin ninguna corrección detrás -el docente la vería como
+«analizada» y no habría nada que revisar-, además del «Internal Server
+Error» crudo de siempre. Por eso se captura, se revierte la entrega a
+RECIBIDO -el estado no miente- y se traduce a 503 con un mensaje que dice
+que no ha sido un fallo suyo ni del alumno, y que nada se ha guardado. Ver
+`_guardar_o_fallar` y `_mensaje_de_desbordamiento_del_motor`.
 """
 
 from threading import Lock
@@ -90,7 +111,10 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.analisis.proveedor import ErrorDelProveedor
 from backend.extraccion.lectura import PdfIlegible
-from backend.persistencia.correccion import TextoFueraDeLimite
+from backend.persistencia.correccion import (
+    LIMITE_DE_OBSERVACION_DOCENTE,
+    TextoFueraDeLimite,
+)
 from backend.persistencia.modelos import EntregaRegistrada
 from backend.salidas.borrador import BorradorNoValido, Devolucion
 from backend.salidas.informe import Informe
@@ -108,10 +132,10 @@ _DECISIONES = ("ACEPTADA", "EDITADA", "DESCARTADA")
 # se duplica el criterio de cuándo avisar, solo el texto de cómo se avisa,
 # porque el lector y el gesto disponible para seguir no son los mismos.
 AVISO_PROTECCION_DATOS = (
-    "Antes de enviar el contenido de esta entrega a un proveedor de "
-    "análisis externo hace falta tu confirmación: las condiciones de "
-    "protección de datos para tratar documentos reales de alumnos con esa "
-    "herramienta todavía no están cerradas (proteccion_datos, pendiente en "
+    "Analizar esta entrega envía el texto íntegro del documento a un "
+    "proveedor de análisis externo. Las condiciones de protección de "
+    "datos para tratar documentos reales de alumnos con esa herramienta "
+    "todavía no están cerradas (proteccion_datos, pendiente en "
     "docs/PENDIENTE_OFICIAL.md). Si esto es una prueba con un documento "
     "tuyo, puedes seguir sin problema. Pero si es el trabajo real de un "
     "alumno, la decisión de mandarlo fuera es tuya, y tiene que ser "
@@ -249,6 +273,57 @@ def _mensaje_de_edicion_demasiado_larga(fallo: TextoFueraDeLimite) -> str:
     )
 
 
+def _mensaje_de_desbordamiento_del_motor(fallo: TextoFueraDeLimite) -> str:
+    """El aviso que ve el docente cuando es el propio motor -no él- quien ha
+    devuelto un texto que no cabe en su límite.
+
+    Al contrario que en `_mensaje_de_edicion_demasiado_larga`, aquí
+    `str(fallo)` sí describe lo que ha pasado -el texto largo es del motor,
+    y eso es justo lo que dice-, pero no se reenvía tal cual: no dice que no
+    se ha guardado nada, y ese es el dato que de verdad le hace falta al
+    docente para saber que puede volver a intentarlo sin que nada se haya
+    quedado a medias.
+    """
+    return (
+        "El motor de análisis ha devuelto un texto que no cabe en su "
+        f"límite: {fallo.etiqueta} tiene {fallo.longitud} caracteres, y el "
+        f"límite es {fallo.limite}. No es un fallo tuyo ni del trabajo del "
+        "alumno: es del motor. No se ha guardado nada de este análisis; la "
+        "entrega sigue disponible para volver a analizarla, y la respuesta "
+        "del motor puede ser distinta la próxima vez."
+    )
+
+
+def _guardar_o_fallar(
+    almacen, identificador: str, informe: Informe, devolucion: Devolucion | None,
+    motor: str, aviso: str | None = None,
+) -> None:
+    """Guarda la corrección; si el texto del motor no cabe en su límite,
+    deja la entrega tal como estaba antes de este intento.
+
+    `analizar_entrega` marca la entrega ANALIZADO -en las dos ramas que
+    llaman a esta función- antes de que el resultado se intente guardar
+    aquí, porque hasta ese punto el informe es válido. Pero si
+    `guardar_correccion` no consigue escribirlo (`TextoFueraDeLimite`, un
+    texto del motor por encima de `LIMITE_DE_OBSERVACION`), no queda
+    ninguna corrección detrás de ese estado: `GET /analisis` respondería
+    404 -«no se ha analizado todavía»- sobre una entrega que dice
+    ANALIZADO, una entrega que miente. Por eso se revierte a RECIBIDO antes
+    de devolver el error: el estado no miente (ver el docstring de
+    `backend/servicios/analisis_de_entrega.py`), y RECIBIDO es honesto aquí
+    -nada de este intento ha quedado guardado, así que nada distingue esta
+    entrega de una que todavía no se ha analizado-.
+    """
+    try:
+        almacen.guardar_correccion(identificador, informe, devolucion, motor, aviso)
+    except TextoFueraDeLimite as fallo:
+        almacen.cambiar_estado(identificador, "RECIBIDO", None)
+        raise HTTPException(
+            status_code=503,
+            detail=_mensaje_de_desbordamiento_del_motor(fallo),
+        ) from fallo
+
+
 @router.get("/motor")
 def obtener_motor(peticion: Request) -> EstadoDelMotor:
     """Con qué motor se analiza ahora mismo. El frontend lo enseña siempre.
@@ -332,8 +407,9 @@ def analizar(
                 entrega=fallo.entrega, informe=fallo.informe, devolucion=None,
                 motor=proveedor.nombre, aviso=aviso,
             )
-            almacen.guardar_correccion(
-                identificador, resultado.informe, None, resultado.motor, aviso
+            _guardar_o_fallar(
+                almacen, identificador, resultado.informe, None,
+                resultado.motor, aviso,
             )
             return resultado
         except ErrorDelProveedor as fallo:
@@ -350,8 +426,9 @@ def analizar(
         entrega=correccion.entrega, informe=correccion.informe,
         devolucion=correccion.devolucion, motor=correccion.motor, aviso=None,
     )
-    almacen.guardar_correccion(
-        identificador, resultado.informe, resultado.devolucion, resultado.motor
+    _guardar_o_fallar(
+        almacen, identificador, resultado.informe, resultado.devolucion,
+        resultado.motor,
     )
     return resultado
 
@@ -458,9 +535,12 @@ def revisar(
     # informe, no vuelve a pedir la redacción-, así que se conservan tal
     # cual estaban.
     try:
+        # `LIMITE_DE_OBSERVACION_DOCENTE`, no el del motor: el texto que
+        # esta llamada guarda puede llevar una observación que ha escrito
+        # el docente a mano (ver el docstring del módulo).
         almacen.guardar_correccion(
             identificador, informe, guardada.devolucion, guardada.motor,
-            guardada.aviso,
+            guardada.aviso, limite_de_observacion=LIMITE_DE_OBSERVACION_DOCENTE,
         )
     except TextoFueraDeLimite as fallo:
         # `TextoFueraDeLimite.__str__()` no sirve aquí: asume que el texto

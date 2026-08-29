@@ -15,7 +15,11 @@ from datetime import datetime
 
 import httpx
 
-from backend.persistencia.correccion import Correccion, validar_textos_acotados
+from backend.persistencia.correccion import (
+    LIMITE_DE_OBSERVACION,
+    Correccion,
+    validar_textos_acotados,
+)
 from backend.persistencia.modelos import (
     EntregaNueva,
     EntregaRegistrada,
@@ -356,6 +360,7 @@ class AlmacenSupabase:
         devolucion: Devolucion | None,
         motor: str,
         aviso: str | None = None,
+        limite_de_observacion: int = LIMITE_DE_OBSERVACION,
     ) -> str:
         """Tres escrituras encadenadas: `correccion`, `valoracion_dimension`
         y `evidencia`. Si la segunda o la tercera fallan, se deshace la
@@ -379,7 +384,7 @@ class AlmacenSupabase:
         operación que reanalizar y que guardar una revisión del docente: las
         dos sustituyen la corrección entera, no la editan campo a campo.
         """
-        validar_textos_acotados(informe, devolucion)
+        validar_textos_acotados(informe, devolucion, limite_de_observacion)
 
         existente = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
         if existente is not None:

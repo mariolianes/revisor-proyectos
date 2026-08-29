@@ -9,7 +9,11 @@ aparenta guardar y no guarda es peor que uno que no guarda.
 import uuid
 from datetime import datetime
 
-from backend.persistencia.correccion import Correccion, validar_textos_acotados
+from backend.persistencia.correccion import (
+    LIMITE_DE_OBSERVACION,
+    Correccion,
+    validar_textos_acotados,
+)
 from backend.persistencia.modelos import (
     ESTADO_INICIAL,
     EntregaNueva,
@@ -142,10 +146,11 @@ class AlmacenEnMemoria:
         devolucion: Devolucion | None,
         motor: str,
         aviso: str | None = None,
+        limite_de_observacion: int = LIMITE_DE_OBSERVACION,
     ) -> str:
         # Misma regla que en Supabase, y antes de tocar nada: los límites de
         # longitud no dependen de que haya credenciales.
-        validar_textos_acotados(informe, devolucion)
+        validar_textos_acotados(informe, devolucion, limite_de_observacion)
         identificador = str(uuid.uuid4())
         self._correcciones[entrega_id] = Correccion(
             id=identificador, informe=informe, devolucion=devolucion,
