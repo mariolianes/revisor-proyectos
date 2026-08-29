@@ -12,8 +12,10 @@ cualquiera.
 
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import httpx
+import yaml
 
 from backend.persistencia.correccion import Correccion, validar_textos_acotados
 from backend.persistencia.modelos import (
@@ -83,12 +85,76 @@ CHOQUE_EN_ENTREGA = (
     "antes, ábrela desde la lista y compruébalo antes de tocar nada."
 )
 
+# La raíz del repositorio, para leer `criteria/`. Este fichero vive en
+# <repo>/backend/persistencia/supabase.py: dos niveles por encima está la
+# raíz, el mismo cómputo que ya hacen `backend/__main__.py` y `backend/app.py`
+# para encontrarse a sí mismos. `AlmacenSupabase` puede recibir una raíz
+# distinta en el constructor -las pruebas la usan para apuntar a una copia
+# de `criteria/` con un valor alterado-, pero en uso normal es esta.
+RAIZ = Path(__file__).resolve().parents[2]
+
+
+def _correspondencia_de_prioridades(raiz: Path, version: str) -> dict[str, str]:
+    """La tabla P1..P4 -> CRITICA..BAJA, leída de `prioridades.yaml`.
+
+    `criteria/<version>/prioridades.yaml` declara, para cada prioridad, su
+    `en_base_de_datos`, y dice literalmente que «la equivalencia vive aquí y
+    en ningún otro sitio»: el criterio habla en el vocabulario del docente
+    -P1 a P4-, y la columna `prioridad` de `valoracion_dimension`
+    (`supabase/migrations/20260827120000_esquema_inicial.sql`) es un tipo
+    enumerado con el vocabulario de la tabla -CRITICA, ALTA, MEDIA, BAJA-.
+    Escribir esa correspondencia a mano aquí la duplicaría, que es
+    justamente lo que el comentario del YAML prohíbe: si el profesor cambia
+    una equivalencia, este código tiene que seguirla sin que nadie edite una
+    línea de Python. Mismo patrón que `backend/analisis/instruccion.py` y
+    `backend/salidas/seleccion.py`, que leen de `criteria/` en vez de
+    codificar el criterio.
+    """
+    fichero = raiz / "criteria" / version / "prioridades.yaml"
+    if not fichero.is_file():
+        raise ErrorDeAlmacen(
+            f"No se ha podido leer criteria/{version}/prioridades.yaml: sin "
+            "ese fichero no hay con qué traducir la prioridad de un hallazgo "
+            "al vocabulario de la base de datos, y guardar la corrección se "
+            "detiene aquí en vez de escribir un valor inventado."
+        )
+    catalogo = yaml.safe_load(fichero.read_text(encoding="utf-8")) or []
+    return {
+        entrada["codigo"]: entrada["en_base_de_datos"]
+        for entrada in catalogo
+        if isinstance(entrada, dict) and entrada.get("codigo") and entrada.get("en_base_de_datos")
+    }
+
+
+def _prioridad_en_base_de_datos(
+    correspondencia: dict[str, str], prioridad: str | None
+) -> str | None:
+    """La prioridad, en el vocabulario que admite la columna, o `None` si no
+    se valoró ninguna -la columna es la única de las cuatro que escribe
+    `guardar_correccion` que admite nulo-.
+    """
+    if prioridad is None:
+        return None
+    if prioridad not in correspondencia:
+        raise ErrorDeAlmacen(
+            f"«{prioridad}» no tiene correspondencia en "
+            "criteria/<version>/prioridades.yaml (campo 'en_base_de_datos'): "
+            "sin ella no hay con qué guardar esta prioridad, y guardar la "
+            "corrección se detiene aquí en vez de escribir un valor que la "
+            "base de datos rechazaría."
+        )
+    return correspondencia[prioridad]
+
 
 class AlmacenSupabase:
     """Las nueve tablas, vistas por las tres que esta parte usa."""
 
     def __init__(
-        self, url: str, clave: str, cliente: httpx.Client | None = None
+        self,
+        url: str,
+        clave: str,
+        cliente: httpx.Client | None = None,
+        raiz: Path | None = None,
     ) -> None:
         self._base = url.rstrip("/") + "/rest/v1"
         self._cliente = cliente or httpx.Client(timeout=ESPERA)
@@ -98,6 +164,11 @@ class AlmacenSupabase:
             "Content-Type": "application/json",
             "Prefer": "return=representation",
         }
+        # La raíz desde la que se lee `criteria/prioridades.yaml` en
+        # `guardar_correccion`. Un parámetro y no siempre `RAIZ` porque las
+        # pruebas necesitan poder apuntar a una copia de `criteria/` con un
+        # valor alterado, sin depender del repositorio real.
+        self._raiz = raiz or RAIZ
 
     @property
     def es_duradero(self) -> bool:
@@ -378,8 +449,23 @@ class AlmacenSupabase:
         había una, se borra antes de insertar la nueva. Es la misma
         operación que reanalizar y que guardar una revisión del docente: las
         dos sustituyen la corrección entera, no la editan campo a campo.
+
+        `valoracion_dimension.prioridad` es del tipo enumerado `prioridad`
+        -CRITICA, ALTA, MEDIA, BAJA-, y `v.prioridad` habla en el vocabulario
+        del docente -P1 a P4-. La correspondencia se lee de
+        `criteria/<version>/prioridades.yaml` antes de escribir nada -si el
+        fichero falta, `ErrorDeAlmacen` se levanta aquí, antes de la primera
+        escritura-. Si el fichero existe pero no cubre alguna prioridad
+        concreta, el fallo llega más tarde, al traducir esa valoración
+        dentro de la escritura de `valoracion_dimension`; lo protege el
+        mismo `try`/`except` que ya deshace la corrección si esa escritura
+        falla por cualquier otro motivo, así que tampoco ahí queda nada a
+        medio guardar. Ver `_correspondencia_de_prioridades`.
         """
         validar_textos_acotados(informe, devolucion)
+        correspondencia_de_prioridades = _correspondencia_de_prioridades(
+            self._raiz, informe.identificacion.get("criterios") or ""
+        )
 
         existente = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
         if existente is not None:
@@ -408,7 +494,9 @@ class AlmacenSupabase:
                         "correccion_id": correccion_id,
                         "dimension": v.dimension,
                         "nivel": v.nivel,
-                        "prioridad": v.prioridad,
+                        "prioridad": _prioridad_en_base_de_datos(
+                            correspondencia_de_prioridades, v.prioridad
+                        ),
                         "observacion": v.observacion,
                     }
                     for v in informe.valoraciones

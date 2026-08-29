@@ -32,7 +32,11 @@ from backend.analisis.contrato import Evidencia
 from backend.analisis.verificacion import ValoracionVerificada
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva, EntregaRegistrada
-from backend.persistencia.supabase import AlmacenSupabase
+from backend.persistencia.supabase import (
+    RAIZ,
+    AlmacenSupabase,
+    _correspondencia_de_prioridades,
+)
 from backend.salidas.borrador import Devolucion
 from backend.salidas.informe import Informe
 
@@ -653,6 +657,18 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
     tabla estructurada tiene que poder confiar en que coincide con lo que el
     docente ve en la ficha, campo por campo.
 
+    Salvo la prioridad: `valoracion_dimension.prioridad` es del tipo
+    enumerado `prioridad` -CRITICA, ALTA, MEDIA, BAJA-, y lo que se relee del
+    `jsonb` de `correccion.informe` habla en el vocabulario del docente -P1
+    a P4-. Las dos representaciones no dicen lo mismo por error: son el
+    mismo dato en dos vocabularios distintos, a propósito -es lo que declara
+    `criteria/v2026-2027/prioridades.yaml`, en su campo `en_base_de_datos`-,
+    así que la comparación traduce ese único campo con la misma
+    correspondencia que usa `AlmacenSupabase.guardar_correccion`
+    (`_correspondencia_de_prioridades`, leída del propio fichero de
+    criterios y no copiada aquí a mano) antes de comparar; los otros cuatro
+    campos sí tienen que coincidir tal cual.
+
     Se ejecuta en los dos almacenes -memoria no tiene una segunda
     representación con la que discrepar, solo guarda el objeto que se le
     da-, para que la comparación de siempre (memoria == supabase) también
@@ -723,4 +739,15 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
             fila["apartado"], fila["fragmento"],
         )
 
-    assert estructurado == reconstruido_supabase
+    # La prioridad de `reconstruido_supabase` está en el vocabulario del
+    # docente -viene del `jsonb`-; la de `estructurado` está en el de la
+    # columna -viene de `valoracion_dimension`, un tipo enumerado-. Se
+    # traduce la del docente antes de comparar, con la misma correspondencia
+    # que usa el código, no con una copiada a mano aquí.
+    correspondencia = _correspondencia_de_prioridades(RAIZ, "v2026-2027")
+    esperado_estructurado = {
+        dimension: (nivel, correspondencia[prioridad], observacion, apartado, cita)
+        for dimension, (nivel, prioridad, observacion, apartado, cita)
+        in reconstruido_supabase.items()
+    }
+    assert estructurado == esperado_estructurado
