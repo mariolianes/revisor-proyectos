@@ -1,22 +1,22 @@
 # Condiciones de parada. Derivado del §18.2 del Documento Maestro.
-# 'alcance: total' detiene la correccion entera. 'alcance: juicio' detiene
+# 'alcance: total' detiene la corrección entera. 'alcance: juicio' detiene
 # solo el juicio afectado y permite continuar con el resto.
 
 - codigo: pdf_ilegible
   condicion: PDF ilegible, vacio o protegido
-  respuesta: Bloquear y solicitar archivo valido
+  respuesta: Bloquear y solicitar archivo válido
   alcance: total
   fuente: maestro#18-reglas-y-paradas
 
 - codigo: identidad_no_coincide
   condicion: Alumno o fase no coinciden con la ficha
-  respuesta: Bloquear y pedir seleccion correcta
+  respuesta: Bloquear y pedir selección correcta
   alcance: total
   fuente: maestro#18-reglas-y-paradas
 
 - codigo: fuera_de_plazo
   condicion: Entrega presentada fuera de plazo
-  respuesta: Marcar GRIS y 0; no corregir salvo instruccion docente
+  respuesta: Marcar GRIS y 0; no corregir salvo instrucción docente
   alcance: total
   fuente: maestro#18-reglas-y-paradas
 
@@ -33,13 +33,13 @@
   fuente: maestro#18-reglas-y-paradas
 
 - codigo: indicio_de_autoria
-  condicion: Indicio critico sobre autoria o uso indebido de IA
+  condicion: Indicio crítico sobre autoría o uso indebido de IA
   respuesta: Generar nota interna prudente y escalar al profesor
   alcance: juicio
   fuente: maestro#18-reglas-y-paradas
 
 - codigo: error_tecnico
-  condicion: Error tecnico durante la generacion de salidas
+  condicion: Error técnico durante la generacion de salidas
   respuesta: Conservar la entrada, registrar el error y no crear salida aprobable
   alcance: total
   fuente: maestro#18-reglas-y-paradas

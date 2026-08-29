@@ -93,7 +93,7 @@ CARPETAS_IGNORADAS = {
     "dist", ".superpowers", ".claude",
 }
 
-EXTENSIONES = {".py", ".md"}
+EXTENSIONES = {".py", ".md", ".yaml"}
 
 # Este fichero contiene el vocabulario, asi que se denuncia a si mismo. Los
 # planes y specs de superpowers son cuadernos de trabajo, no producto.
@@ -114,6 +114,9 @@ def _esta_exento(relativa: str) -> bool:
 _CODIGO_EN_LINEA = re.compile(r"`[^`]*`|'[^']*'")
 _INTERPOLACION = re.compile(r"\{[^{}]*\}")
 _RUTA = re.compile(r"[\w<>./\\-]*[./\\][\w<>./\\-]*")
+# Una referencia a la prosa maestra: `calibracion#9-semaforo`. Es un ancla, no
+# una frase, y va sin tildes a proposito para que sea estable como enlace.
+_ANCLA = re.compile(r"\w+#[\w-]+")
 _CLAVE = re.compile(r"\b\w+(?=:)")
 _MAYUSCULAS = re.compile(r"\b[A-Z][A-Z_0-9]{2,}\b")
 # Un nombre propio o de clase en mitad de una frase: `Evolucion`, `Medidas`.
@@ -131,6 +134,7 @@ def _limpiar(texto: str) -> str:
     """
     texto = _CODIGO_EN_LINEA.sub(" ", texto)
     texto = _INTERPOLACION.sub(" ", texto)
+    texto = _ANCLA.sub(" ", texto)
     texto = _RUTA.sub(" ", texto)
     texto = _CLAVE.sub(" ", texto)
     texto = _MAYUSCULAS.sub(" ", texto)
@@ -237,6 +241,8 @@ def faltas_en(relativa: str, fuente: str) -> list[tuple[int, str, str]]:
     if relativa.endswith(".py"):
         trozos = prosa_de_python(fuente)
     else:
+        # Markdown y YAML se tratan igual: en ambos el texto legible esta en
+        # el cuerpo, y lo que no es prosa lo quitan los filtros de _limpiar.
         trozos = prosa_de_markdown(fuente)
 
     eximidas = _lineas_eximidas(fuente)

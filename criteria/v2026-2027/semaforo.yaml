@@ -5,7 +5,7 @@
 #
 # El calibrador llama AMARILLO a lo que el Maestro llama AMBAR. Es el mismo
 # estado con otro nombre, y manda el Maestro por ser fuente superior (§14.1).
-# Decision del docente, 2026-08-28: se mantiene AMBAR.
+# Decisión del docente, 2026-08-28: se mantiene AMBAR.
 #
 # 'calibrado' recoge la lectura afinada con la muestra historica. No sustituye
 # al significado: lo precisa.
@@ -31,7 +31,7 @@
 
 - codigo: ROJO
   significado: Carencia estructural o academica que exige reconduccion
-  accion: Revision docente y plan de correccion
+  accion: Revision docente y plan de corrección
   calibrado: >-
     Carencia critica o bloqueo academico. Falta desarrollo, incumple una
     condicion esencial o contiene una incoherencia que afecta al nucleo.
@@ -40,7 +40,7 @@
 
 - codigo: GRIS
   significado: No evaluable por falta, fuera de plazo, archivo ilegible o criterio bloqueado
-  accion: Resolver incidencia; no emitir juicio academico automatico
+  accion: Resolver incidencia; no emitir juicio académico automático
   calibrado: >-
     No evaluable o incidencia: archivo ausente, fuera de plazo, ilegible,
     fragmentado cuando impide revisar, o criterio bloqueado por falta de

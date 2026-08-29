@@ -39,7 +39,7 @@ E2:
     - desarrollo_aplicado_inicial
     - datos_ejemplos_o_evidencias
     - bibliografia_actualizada
-  alerta_caracteristica: Subir solo los capitulos nuevos o repetir la version anterior sin progreso real
+  alerta_caracteristica: Subir solo los capitulos nuevos o repetir la versión anterior sin progreso real
   fuente: maestro#9-matriz-entregas
 
 E3:
@@ -52,7 +52,7 @@ E3:
     - conclusiones_provisionales
     - bibliografia_casi_completa
     - presentacion_formal_cercana_a_definitiva
-  regla_clave: No es la entrega final; debe estar casi terminada para que el ultimo feedback cierre, no construya
+  regla_clave: No es la entrega final; debe estar casi terminada para que el último feedback cierre, no construya
   fuente: maestro#9-matriz-entregas
 
 FINAL:

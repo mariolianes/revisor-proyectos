@@ -419,7 +419,7 @@ def test_una_clave_con_solo_un_comentario_no_se_guarda(repo: Path):
     contenido_original = (
         "extra:\n"
         "  fuente: maestro#6-estandar-academico\n"
-        "  excluye:  # lo que no cuenta para el minimo\n"
+        "  excluye:  # lo que no cuenta para el mínimo\n"
         "    - portada\n"
         "    - indice\n"
         "    - anexos\n"

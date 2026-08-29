@@ -1,10 +1,10 @@
 # Dimensiones de evaluacion. Derivado de docs/maestro/01-documento-maestro.md
 # NO EDITAR sin cambiar antes la prosa. Ver GOVERNANCE.md.
 #
-# 'activa_en' enumera las fases en las que la dimension se observa.
+# 'activa_en' enumera las fases en las que la dimensión se observa.
 # Que esa observacion produzca nota o no lo determina 'evaluable' en
 # matriz-fases.yaml: en TEMA se comprueban concrecion, interes profesional
-# y adecuacion al ciclo (§9.1) pero no se puntua (§5).
+# y adecuación al ciclo (§9.1) pero no se puntua (§5).
 
 - codigo: D01
   nombre: Adecuación al ciclo e intermodularidad

@@ -38,7 +38,7 @@ def _fortaleza(descripcion="La estructura es clara.", localizada=True):
     # `list[FortalezaVerificada]` (ver backend/analisis/verificacion.py); una
     # cadena suelta no valida contra ese modelo y `AnalisisVerificado(**datos)`
     # lanzaria un error de Pydantic antes de llegar a `componer_informe`. Se
-    # corrige aqui construyendo el objeto real, con su propia evidencia.
+    # corrige aquí construyendo el objeto real, con su propia evidencia.
     return FortalezaVerificada(
         descripcion=descripcion,
         evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="2"),
@@ -211,7 +211,7 @@ def test_la_recomendacion_acompana_al_semaforo_y_no_es_una_nota(
                          _analisis([_v("D05", "P1")]), "simulado")
 
     assert i.semaforo == "ROJO"
-    assert i.recomendacion == "Revision docente y plan de correccion"
+    assert i.recomendacion == "Revision docente y plan de corrección"
 
 
 def test_dimensiones_no_valoradas_quedan_a_la_vista(

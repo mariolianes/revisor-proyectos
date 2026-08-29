@@ -1,7 +1,7 @@
-"""El informe tecnico interno, segun el Anexo C del Documento Maestro.
+"""El informe técnico interno, según el Anexo C del Documento Maestro.
 
 Es la salida donde SI aparece todo: los P4, las observaciones cuya evidencia
-no se pudo localizar, los reparos de la verificacion, las dudas que el motor
+no se pudo localizar, los reparos de la verificación, las dudas que el motor
 reserva al docente y los indicios de autoria. Al alumno le llega un resumen
 (Task 8); al docente, el trabajo entero. Esa es la diferencia entre las dos
 salidas, y no es de formato: este documento no llega jamas al alumno, y por
@@ -10,12 +10,12 @@ eso puede ser franco donde el borrador tiene que ser prudente.
 No hay campo para la nota. El Anexo C la menciona -"Semaforo, nota y
 recomendacion"- porque el Maestro la preve para cuando exista la rubrica
 oficial con sus ponderaciones; mientras esas ponderaciones sigan
-PENDIENTE_OFICIAL, R3 impide inventarlas y aqui no existe ni el hueco. El
+PENDIENTE_OFICIAL, R3 impide inventarlas y aquí no existe ni el hueco. El
 semaforo y la recomendacion si tienen hueco: los dos proponen -un estado
 provisional y una accion sugerida, calibrados en
 `criteria/<version>/semaforo.yaml`-, y ninguno de los dos califica.
 
-Ningun indicio de autoria se presenta como un veredicto. `verificar()` ya le
+Ningun indicio de autoría se presenta como un veredicto. `verificar()` ya le
 pone a cada uno el aviso del §13 (un `Reparo` con `regla:
 "autoria_es_indicio"`, incondicional, en `analisis.reparos`); este modulo no
 repite ni suaviza ese aviso, se limita a no esconderlo: `indicios` y
@@ -44,7 +44,7 @@ from backend.servicios.lectura_objetiva import FichaDeLectura
 # aqui: es el color de una incidencia administrativa -archivo ausente, fuera
 # de plazo, ilegible-, y esas se deciden en la Parte A, antes de que exista
 # un `AnalisisVerificado` sobre el que razonar. Este modulo solo resume lo
-# que el analisis, ya verificado, dice sobre el contenido.
+# que el análisis, ya verificado, dice sobre el contenido.
 _SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "AMBAR"}
 
 # Si `semaforo.yaml` no existiera. Los mismos textos que ese fichero declara
@@ -53,8 +53,8 @@ _SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "AMBAR"}
 _RECOMENDACION_POR_OMISION = {
     "VERDE": "Mantener fortalezas y aplicar ajustes menores",
     "AMBAR": "Aplicar cambios antes de cerrar la siguiente fase",
-    "ROJO": "Revision docente y plan de correccion",
-    "GRIS": "Resolver incidencia; no emitir juicio academico automatico",
+    "ROJO": "Revision docente y plan de corrección",
+    "GRIS": "Resolver incidencia; no emitir juicio académico automático",
 }
 
 
@@ -93,12 +93,12 @@ def _semaforo(analisis: AnalisisVerificado) -> str | None:
     documento. No es un matiz menor: si el motor devolviera diez P1 y
     ninguna de sus citas existiera en el texto -las diez inventadas-, un
     semaforo calculado sobre la prioridad en bruto diria ROJO con la misma
-    confianza que si las diez estuvieran bien fundadas. Aqui no se computa
-    sobre lo que el motor afirmo, sino sobre lo que la verificacion ya dio
+    confianza que si las diez estuvieran bien fundadas. Aquí no se computa
+    sobre lo que el motor afirmo, sino sobre lo que la verificación ya dio
     por localizable; el resto se queda en `valoraciones` -entero, para que
     el docente lo vea- pero no decide el color.
 
-    Y si no queda ninguna valoracion fiable -porque no hubo ninguna, o
+    Y si no queda ninguna valoración fiable -porque no hubo ninguna, o
     porque las que hubo no se localizaron- no se devuelve color: no hay
     estado que resumir, y un verde por defecto diria que el trabajo esta
     bien cuando lo que pasa es que no se ha podido valorar nada. Ese
@@ -118,9 +118,9 @@ def _recomendaciones_por_color(raiz: Path, version: str) -> dict[str, str]:
     """La accion calibrada de cada color, leida de `semaforo.yaml`.
 
     No se escribe un texto nuevo aqui: se reutiliza la columna `accion` que
-    ese fichero ya declara para cada codigo, con su propia `fuente` al
-    Documento Maestro. Inventar una redaccion distinta en este modulo
-    duplicaria una decision que ya vive, versionada, en `criteria/`.
+    ese fichero ya declara para cada código, con su propia `fuente` al
+    Documento Maestro. Inventar una redacción distinta en este modulo
+    duplicaria una decisión que ya vive, versionada, en `criteria/`.
     """
     fichero = raiz / "criteria" / version / "semaforo.yaml"
     if not fichero.is_file():
