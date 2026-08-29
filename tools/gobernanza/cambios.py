@@ -2,7 +2,7 @@
 
 Todo cambio de criterio deja constancia de que cambia, por que, con que
 respaldo y a que afecta. No es burocracia: es lo que permite defender una
-nota meses despues de haberla puesto.
+nota meses después de haberla puesto.
 """
 
 import re

@@ -8,7 +8,7 @@ from collections import Counter
 class Infraccion:
     """Una infraccion concreta de una regla de gobernanza.
 
-    regla: identificador corto, "R1" a "R7".
+    regla: identificador corto, "R1" a "R8".
     fichero: ruta relativa a la raiz del repositorio.
     detalle: explicacion accionable, en castellano, sin jerga.
     """

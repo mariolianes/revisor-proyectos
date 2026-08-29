@@ -1,7 +1,7 @@
 import type {
   ArchivoVisto, CambioDeValor, Confirmacion, Documento, EntregaRegistrada,
-  Entorno, EstadoGobernanza, FichaDeLectura, Pendiente,
-  Propuesta, Resultado, Seccion, CriterioDerivado,
+  Entorno, EstadoGobernanza, FichaDeLectura, Pendiente, PeticionRevision,
+  Propuesta, ResultadoAnalisis, Resultado, Seccion, CriterioDerivado,
 } from "./tipos"
 
 const BASE = "/api"
@@ -87,5 +87,41 @@ export const api = {
     pedir<EntregaRegistrada>(`/entregas/${encodeURIComponent(id)}/estado`, {
       method: "POST",
       body: JSON.stringify({ estado, motivo }),
+    }),
+
+  // Llama al motor y guarda el resultado. No hay forma de repetir solo el
+  // borrador (ver `backend/api/analisis.py`): un segundo intento repite el
+  // análisis entero, y por eso no hay aquí ningún atajo que lo prometa.
+  //
+  // `confirmoDatosReales` viaja siempre en el cuerpo, no solo cuando es
+  // `true`: el backend lo lee con el mismo nombre
+  // (`confirmo_datos_reales`) y por omisión vale `false`, así que la
+  // primera llamada de `Ficha` -sin confirmar todavía- ya declara
+  // explícitamente que no hay confirmación, en vez de omitir el campo y
+  // dejar que la ausencia signifique lo mismo por casualidad. Mientras
+  // `proteccion_datos` siga pendiente (`docs/PENDIENTE_OFICIAL.md`), un
+  // primer intento sin confirmar vuelve con 428: `Ficha` lo distingue de
+  // un fallo cualquiera por `estado` y enseña la pregunta antes de
+  // reintentar con `confirmoDatosReales: true`.
+  analizar: (id: string, confirmoDatosReales = false) =>
+    pedir<ResultadoAnalisis>(`/entregas/${encodeURIComponent(id)}/analisis`, {
+      method: "POST",
+      body: JSON.stringify({ confirmo_datos_reales: confirmoDatosReales }),
+    }),
+
+  // Recupera un análisis ya guardado, sin volver a llamar al motor: es lo
+  // que abre la revisión de una entrega ANALIZADO cuando el docente vuelve
+  // a ella -tras interrumpirse a media revisión, por ejemplo- en vez de
+  // dejarle sin más camino que analizar otra vez y pagarlo dos veces.
+  analisis: (id: string) =>
+    pedir<ResultadoAnalisis>(`/entregas/${encodeURIComponent(id)}/analisis`),
+
+  // Lo que el docente decide, observación por observación. Devuelve el
+  // resultado ya con las decisiones aplicadas: solo lo aceptado o editado
+  // se conserva.
+  revisar: (id: string, peticion: PeticionRevision) =>
+    pedir<ResultadoAnalisis>(`/entregas/${encodeURIComponent(id)}/revision`, {
+      method: "POST",
+      body: JSON.stringify(peticion),
     }),
 }

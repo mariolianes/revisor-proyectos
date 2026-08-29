@@ -11,10 +11,23 @@ adelante hace falta el histórico de lo medido, será su propia migración con
 su documento de cambio.
 """
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel, field_validator
+
+if TYPE_CHECKING:
+    # Solo para anotar el protocolo `Almacen`. `from __future__ import
+    # annotations` (arriba) hace que estas anotaciones se guarden como
+    # cadenas y no se evalúen en tiempo de ejecución, así que este import no
+    # se ejecuta nunca fuera de un comprobador de tipos: si se ejecutara,
+    # cerraría un ciclo, porque `salidas/informe.py` importa
+    # `EntregaRegistrada` de este mismo módulo.
+    from backend.persistencia.correccion import Correccion
+    from backend.salidas.borrador import Devolucion
+    from backend.salidas.informe import Informe
 
 # Los siete del §16.1, en el orden en que ocurren.
 ESTADOS: tuple[str, ...] = (
@@ -124,6 +137,65 @@ class Almacen(Protocol):
     def cambiar_estado(
         self, identificador: str, estado: str, motivo: str | None
     ) -> EntregaRegistrada | None: ...
+
+    def guardar_correccion(
+        self,
+        entrega_id: str,
+        informe: Informe,
+        devolucion: Devolucion | None,
+        motor: str,
+        aviso: str | None = None,
+        # 800, el valor de `LIMITE_DE_OBSERVACION`
+        # (`backend/persistencia/correccion.py`). No se importa esa
+        # constante aquí -importar de `correccion.py` en este módulo
+        # cerraría el ciclo que el docstring de ese fichero explica-, así
+        # que este número es una copia deliberada de un límite que vive en
+        # otro sitio, no un valor propio: este `Protocol` no se instancia
+        # nunca, solo documenta la forma; las dos implementaciones reales
+        # (`memoria.py`, `supabase.py`) sí importan la constante.
+        limite_de_observacion: int = 800,
+    ) -> str:
+        """Guarda el análisis y sus dos salidas. Devuelve el id de la corrección.
+
+        Una entrega tiene una corrección -lo impone `unique (entrega_id)` en
+        la migración-: guardar dos veces sobre la misma entrega sustituye la
+        anterior entera, no la amplía. Es lo que necesitan tanto un
+        reanálisis como una revisión del docente, que en esta API son la
+        misma operación: guardar de nuevo con el informe ya corregido.
+
+        `devolucion` es `None` cuando el informe se completó pero el
+        borrador no (`InformeSinBorrador`): un informe válido sin borrador es
+        un resultado legítimo del análisis, no un dato a medias, y forzar
+        aquí una `Devolucion` vacía lo confundiría con el caso -distinto- en
+        que no hay nada que redactar.
+
+        `limite_de_observacion` se reenvía tal cual a `validar_textos_
+        acotados` (`backend/persistencia/correccion.py`): por omisión, el
+        límite del motor (`LIMITE_DE_OBSERVACION`); `revisar()`
+        (`backend/api/analisis.py`) llama con `LIMITE_DE_OBSERVACION_
+        DOCENTE`, más holgado, porque el texto que guarda esa llamada puede
+        llevar una observación que ha escrito el docente a mano, no el
+        motor.
+
+        Guardar el análisis son varias escrituras (la corrección, y una
+        valoración con su evidencia por cada dimensión valorada). Si alguna
+        falla a mitad, no debe quedar una corrección sin sus valoraciones ni
+        una fila huérfana: la implementación deshace lo que ya escribió y
+        levanta `ErrorDeAlmacen` -de `backend/persistencia/supabase.py`-, en
+        vez de dejar una corrección a medio guardar que el docente vería
+        como completa.
+        """
+        ...
+
+    def correccion_de(self, entrega_id: str) -> Correccion | None:
+        """La corrección guardada de esta entrega, o `None` si no hay ninguna.
+
+        No hay `motor` a la vista del que decidir un formulario aparte para
+        Supabase y otro para memoria: los dos devuelven exactamente el mismo
+        tipo, `backend.persistencia.correccion.Correccion`, con sus dos
+        salidas ya reconstruidas.
+        """
+        ...
 
 
 # Lo declarado se compara en estos campos para decidir si una huella

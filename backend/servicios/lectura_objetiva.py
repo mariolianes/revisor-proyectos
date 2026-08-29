@@ -131,7 +131,7 @@ def leer(
         return ficha
 
     # Comparar exige texto a los dos lados. Sin él, `comparar` devuelve una
-    # Evolucion con proporcion_conservada 0.0 y proporcion_nueva 0.0 -sus
+    # Evolución con proporcion_conservada 0.0 y proporcion_nueva 0.0 -sus
     # valores por omisión, no una medida-, y la pantalla lo lee como «se
     # conserva el 0 % de lo anterior»: dos cifras inventadas presentadas
     # como medidas. Con la entrega nueva sin texto es peor todavía, porque

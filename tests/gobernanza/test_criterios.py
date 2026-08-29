@@ -12,7 +12,7 @@ from tools.gobernanza.criterios import (
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """Repositorio minimo con un documento maestro y una carpeta de criterios."""
+    """Repositorio mínimo con un documento maestro y una carpeta de criterios."""
     maestro = tmp_path / "docs" / "maestro"
     maestro.mkdir(parents=True)
     (maestro / "01-documento-maestro.md").write_text(
@@ -85,7 +85,7 @@ def test_entradas_de_no_desciende_en_una_lista_anidada_de_una_entrada_ya_identif
 def test_r1_acepta_un_criterio_con_fuente_existente(repo: Path):
     (repo / "criteria" / "v2026-2027" / "dimensiones.yaml").write_text(
         "- codigo: D05\n"
-        "  nombre: Fundamentacion y fuentes\n"
+        "  nombre: Fundamentación y fuentes\n"
         "  fuente: maestro#8-dimensiones\n",
         encoding="utf-8",
     )
@@ -95,7 +95,7 @@ def test_r1_acepta_un_criterio_con_fuente_existente(repo: Path):
 def test_r1_rechaza_un_criterio_sin_campo_fuente(repo: Path):
     (repo / "criteria" / "v2026-2027" / "dimensiones.yaml").write_text(
         "- codigo: D05\n"
-        "  nombre: Fundamentacion y fuentes\n",
+        "  nombre: Fundamentación y fuentes\n",
         encoding="utf-8",
     )
     infracciones = verificar_r1(repo)
@@ -168,7 +168,7 @@ def test_r1_no_avisa_dos_veces_del_mismo_bloque_de_una_lista(repo: Path):
     # entradas: el invariante de primer nivel no debe duplicar el aviso.
     (repo / "criteria" / "v2026-2027" / "dimensiones.yaml").write_text(
         "- codigo: D05\n"
-        "  nombre: Fundamentacion y fuentes\n",
+        "  nombre: Fundamentación y fuentes\n",
         encoding="utf-8",
     )
     assert len(verificar_r1(repo)) == 1

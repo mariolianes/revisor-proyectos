@@ -7,14 +7,14 @@ from tools.gobernanza.cambios import (
     verificar_formato_cambios,
 )
 
-CAMBIO_VALIDO = """# Minimo de paginas de 20 a 25
+CAMBIO_VALIDO = """# Mínimo de paginas de 20 a 25
 
 **Fecha:** 2026-09-15
 **Autor:** Marcos
 
 ## Que cambia
 
-El minimo de contenido pasa de 20 a 25 paginas.
+El mínimo de contenido pasa de 20 a 25 paginas.
 
 ## Por que
 

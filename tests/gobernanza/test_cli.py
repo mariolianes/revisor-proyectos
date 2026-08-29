@@ -62,7 +62,7 @@ def test_congelar_desde_la_cli_crea_el_sello(repo: Path, capsys):
     salida = capsys.readouterr().out
     assert "congelada" in salida
     # El consejo tiene que ser copiar solo los YAML: una copia recursiva
-    # arrastraria el sello y la version nueva naceria cerrada.
+    # arrastraria el sello y la versión nueva naceria cerrada.
     assert "*.yaml" in salida
 
 

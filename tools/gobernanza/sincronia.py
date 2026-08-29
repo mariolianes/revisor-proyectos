@@ -14,10 +14,10 @@ from pathlib import Path
 from tools.gobernanza.criterios import entradas_de
 from tools.gobernanza.resultado import Infraccion
 
-# El registro vive en criteria/, no dentro de una version, porque
+# El registro vive en criteria/, no dentro de una versión, porque
 # '_anclas_referenciadas' recorre criteria/ entero: el alcance del fichero y
 # el alcance del recorrido tienen que ser el mismo. Guardarlo dentro de una
-# version significaba escribir la union de las anclas de todas las versiones
+# versión significaba escribir la union de las anclas de todas las versiones
 # dentro de una sola, y en cuanto exista una segunda -que es justo lo que R4
 # prescribe para cualquier cambio- sellar tocaria una carpeta congelada.
 FICHERO_SINCRONIA = "criteria/.sincronia.json"

@@ -136,4 +136,54 @@ describe("App", () => {
 
     await waitFor(() => expect(api.ficha).toHaveBeenCalledWith("id-nueva"))
   })
+
+  // Task 15: una entrega ya ANALIZADO no dejaba ningún camino de vuelta a
+  // su revisión, salvo analizar otra vez -pagando y mandando el trabajo
+  // del alumno al proveedor por segunda vez-. El uso real es justo ese:
+  // el docente empieza a revisar observación por observación, algo le
+  // interrumpe -el timbre, una clase, cerrar el portátil-, y cuando vuelve
+  // la entrega ya está en ANALIZADO.
+  it("una entrega ya analizada vuelve a abrir la revisión guardada, sin volver a analizar", async () => {
+    const ANALIZADA = { ...REGISTRADA, estado: "ANALIZADO" }
+    const RESULTADO_GUARDADO = {
+      entrega: ANALIZADA,
+      informe: {
+        identificacion: {
+          alumno: "AF023", ciclo: "DAM", fase: "E2", version: "1",
+          archivo: ANALIZADA.nombre_archivo, criterios: "v2026-2027",
+        },
+        control_administrativo: [],
+        resumen: "Resumen guardado de una revisión anterior que no hay que repetir.",
+        valoraciones: [], fortalezas: [], prioridades: [],
+        prioridades_descartadas: [], dudas: [], indicios: [], reparos: [],
+        dimensiones_ausentes: [], semaforo: "GRIS", recomendacion: null,
+        motor: "simulado",
+      },
+      devolucion: null, motor: "simulado", aviso: null,
+    }
+    vi.mocked(api.entregas).mockResolvedValue([ANALIZADA])
+    vi.mocked(api.ficha).mockResolvedValue({
+      entrega: ANALIZADA, medidas: null, comprobaciones: [],
+      evolucion: null, comparada_con: null, aviso: "",
+    })
+    vi.mocked(api.analisis).mockResolvedValue(RESULTADO_GUARDADO)
+
+    render(<App />)
+
+    const enLaLista = await screen.findByRole("button", {
+      name: /AF023 · E2 · versión 1/,
+    })
+    await userEvent.click(enLaLista)
+    await userEvent.click(await screen.findByRole("button", { name: /ver revisión/i }))
+
+    // No basta con que aparezca un botón o se dispare un callback: se
+    // comprueba contenido que solo existe en el resultado guardado -si
+    // esto pasara sin llegar de verdad a la pantalla de Revision, este
+    // texto no estaría-, y que llegar ahí no ha vuelto a analizar nada.
+    expect(
+      await screen.findByText(/resumen guardado de una revisión anterior/i),
+    ).toBeInTheDocument()
+    expect(api.analisis).toHaveBeenCalledWith("id-nueva")
+    expect(api.analizar).not.toHaveBeenCalled()
+  })
 })

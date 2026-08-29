@@ -5,6 +5,7 @@ toca una entrega real de un alumno, y ningún PDF entra en el repositorio.
 """
 
 import re
+import shutil
 from pathlib import Path
 
 import pymupdf
@@ -14,6 +15,11 @@ import pytest
 # será la distancia entre líneas base consecutivas.
 IZQUIERDA = 72.0
 PRIMERA_LINEA = 100.0
+
+# La raíz del repositorio real, para copiar `criteria/` a un directorio
+# temporal. Este fichero vive en <repo>/tests/conftest.py: un nivel por
+# encima de `tests/` está la raíz.
+RAIZ_DEL_REPOSITORIO = Path(__file__).resolve().parents[1]
 
 # Los criterios de formato reales, con el mínimo de páginas rebajado a 4 y la
 # familia puesta en Helvetica, que es la que PyMuPDF incrusta con «helv».
@@ -134,6 +140,33 @@ def criterios_alterados(tmp_path: Path):
 
 
 @pytest.fixture
+def criterios_de_analisis(tmp_path: Path) -> Path:
+    """Una raíz con una copia entera de `criteria/`, lista para leer o alterar.
+
+    A diferencia de `criterios_de_formato`, que solo escribe un fichero
+    suelto, esta copia el árbol real de `criteria/v2026-2027/` completo:
+    dimensiones, prioridades, feedback, ponderaciones... Las pruebas del
+    análisis y de las salidas al alumno leen varios ficheros del mismo
+    directorio de criterios a la vez, y los textos que comprueban -el nombre
+    de D05, el efecto de P4, el límite de la economía pedagógica- son los
+    reales del repositorio: si aquí se inventara una copia con otros
+    valores, la prueba estaría comprobando esa copia y no lo que compone de
+    verdad el código a partir de los criterios reales.
+
+    Es una copia, no la carpeta original, porque varias pruebas modifican un
+    fichero para comprobar que cambiarlo cambia el resultado: hacerlo sobre
+    `criteria/` mutaría el repositorio real.
+
+    Vive en la raíz y no en `tests/analisis/` porque los directorios de
+    prueba no son paquetes -no hay manera de que un módulo de `tests/salidas/`
+    importe una fixture de `tests/analisis/`-, y esta fixture la usan ambos.
+    """
+    destino = tmp_path / "repo"
+    shutil.copytree(RAIZ_DEL_REPOSITORIO / "criteria", destino / "criteria")
+    return destino
+
+
+@pytest.fixture
 def pdf_simple(tmp_path: Path) -> Path:
     """Dos páginas con texto, ninguna vacía."""
     return escribir_pdf(
@@ -245,7 +278,7 @@ def pdf_con_indice(tmp_path: Path) -> Path:
             ["2. Objetivos", "Texto de los objetivos del trabajo."],
             ["Continuacion de los objetivos, que ocupan dos paginas."],
             ["3. Desarrollo", "Texto del desarrollo del trabajo."],
-            ["ANEXOS", "Anexo I. Codigo fuente."],
+            ["ANEXOS", "Anexo I. Código fuente."],
         ],
     )
 
@@ -374,12 +407,19 @@ def pdf_con_imagen_sin_colocacion(tmp_path: Path) -> Path:
 # paridad entre los dos almacenes.
 #
 # No pretende ser PostgREST: implementa lo que AlmacenSupabase le pide -filtros
-# `eq.`, el `select` con el alumno anidado, `order`, `limit`, insertar y
-# actualizar- y las tres restricciones `unique` del esquema que esta parte
-# puede llegar a violar. Todo lo demás responde como respondería el servidor
-# ante una petición que no entiende, para que un cambio en el almacén que se
-# salga de lo previsto se note en vez de pasar en silencio.
+# `eq.`, el `select` con el alumno anidado, `order`, `limit`, insertar,
+# actualizar y borrar (con `on delete cascade` emulado para `correccion` ->
+# `valoracion_dimension` -> `evidencia`)- y las restricciones del esquema que
+# esta parte puede llegar a violar: los `unique` de `alumno`, `proyecto`,
+# `entrega`, `correccion` y `valoracion_dimension`, el CHECK `fragmento_acotado`
+# de `evidencia` (D-001, 1.500 caracteres), y -desde esta tarea- el esquema
+# entero que declara `supabase/migrations/`: los tipos enumerados, las columnas
+# `not null`, las de tipo `uuid` y el CHECK `dimension_conocida`. Todo lo demás
+# responde como respondería el servidor ante una petición que no entiende,
+# para que un cambio en el almacén que se salga de lo previsto se note en vez
+# de pasar en silencio.
 
+import dataclasses
 import json as _json
 import uuid as _uuid
 from datetime import datetime as _datetime
@@ -391,6 +431,8 @@ CLAVES_UNICAS = {
     "alumno": ("codigo",),
     "proyecto": ("alumno_id", "version_criterios"),
     "entrega": ("proyecto_id", "fase", "version"),
+    "correccion": ("entrega_id",),
+    "valoracion_dimension": ("correccion_id", "dimension"),
 }
 
 # Lo que la base de datos rellena sola al insertar una entrega.
@@ -398,15 +440,279 @@ VALORES_POR_OMISION = {
     "entrega": {"estado": "RECIBIDO", "motivo_bloqueo": None},
 }
 
+# El CHECK `fragmento_acotado` de la migración: D-001, 1.500 caracteres.
+# Se emula aquí para que un fragmento de más no pase en el servidor de
+# mentira, igual que no pasaría en Postgres -aunque en la práctica no debería
+# llegar tan lejos nunca: `validar_textos_acotados`
+# (backend/persistencia/correccion.py) ya lo rechaza en código, en los dos
+# almacenes, antes de escribir nada.
+_LIMITES_DE_CAMPO = {("evidencia", "fragmento"): 1500}
+
+# `on delete cascade` de la migración: borrar una fila de la tabla se lleva
+# las de la tabla hija cuya columna de la derecha la señale.
+_CASCADA = {
+    "correccion": [("valoracion_dimension", "correccion_id")],
+    "valoracion_dimension": [("evidencia", "valoracion_id")],
+}
+
 _NO_SON_FILTROS = {"select", "limit", "order", "offset"}
 
 
+# ---------------------------------------------------------------------------
+# El esquema real, leído de supabase/migrations/: lo que Postgres rechazaría
+# ---------------------------------------------------------------------------
+#
+# Hasta esta tarea, lo único que este servidor de mentira imitaba del esquema
+# real eran los `unique` de CLAVES_UNICAS y el CHECK `fragmento_acotado` de
+# arriba -los dos, copiados a mano de la migración-. Ningún tipo enumerado se
+# comprobaba: un valor que Postgres rechaza de plano -«P2» en una columna que
+# solo admite CRITICA, ALTA, MEDIA o BAJA- pasaba por aquí sin protestar, y
+# así fue como el fallo de `AlmacenSupabase.guardar_correccion` llegó a
+# producción sin que ningún test lo viera. `nivel`, `semaforo_propuesto`, el
+# CHECK `dimension_conocida`, las columnas `not null` y las de tipo `uuid`
+# viajaban igual de a ciegas: ninguno tenía nada que los comprobara aquí.
+#
+# Lo que sigue no es una segunda copia de la migración a mano: es un lector,
+# deliberadamente pequeño, de `supabase/migrations/*.sql`. Si el profesor -o
+# quien mantenga esto- añade un valor a un enum, marca una columna `not null`
+# o toca el CHECK `dimension_conocida`, este módulo lo recoge solo la próxima
+# vez que corran los tests, sin que nadie tenga que acordarse de venir a
+# actualizar una lista aquí también. No interpreta SQL en general -no hace
+# falta-: solo `create type ... as enum (...)`, `create table (...)`,
+# `alter table ... add column ...`, `alter table ... alter column ... drop
+# default` y el único tipo de CHECK que esta parte llega a violar, el de la
+# forma `columna ~ 'patrón'` (`dimension_conocida`). El resto de los CHECK de
+# la migración -rangos numéricos, combinaciones con `is null or`, longitudes-
+# no los interpreta, y no hace falta: `fragmento_acotado`, el único de ese
+# tipo que este código puede llegar a violar, ya lo imita `_LIMITES_DE_CAMPO`
+# de arriba, con la misma advertencia de que en la práctica no debería
+# llegar tan lejos nunca.
+
+
+def _profundidad_cero_split(texto: str, separador: str) -> list[str]:
+    """Divide `texto` por `separador`, pero solo fuera de paréntesis y de
+    comillas simples.
+
+    Hace falta porque una definición de columna puede llevar un tipo como
+    `numeric(4,2)` o un CHECK con su propia coma interna: partir por la coma
+    a ciegas, con `texto.split(",")`, rompería esas definiciones por la
+    mitad.
+    """
+    partes: list[str] = []
+    actual: list[str] = []
+    profundidad = 0
+    en_comilla = False
+    for caracter in texto:
+        if caracter == "'":
+            en_comilla = not en_comilla
+        if not en_comilla:
+            if caracter == "(":
+                profundidad += 1
+            elif caracter == ")":
+                profundidad -= 1
+        if caracter == separador and profundidad == 0 and not en_comilla:
+            partes.append("".join(actual))
+            actual = []
+        else:
+            actual.append(caracter)
+    partes.append("".join(actual))
+    return partes
+
+
+def _extraer_bloque(texto: str, inicio: int) -> tuple[str, int]:
+    """El contenido entre el `(` de `texto[inicio]` y el `)` que lo cierra.
+
+    Devuelve ese contenido y la posición justo después del cierre. Hace
+    falta un contador de profundidad y no una expresión regular porque el
+    contenido puede llevar paréntesis anidados -de nuevo, `numeric(4,2)`
+    dentro de una lista de columnas-.
+    """
+    profundidad = 0
+    en_comilla = False
+    for indice in range(inicio, len(texto)):
+        caracter = texto[indice]
+        if caracter == "'":
+            en_comilla = not en_comilla
+        if not en_comilla:
+            if caracter == "(":
+                profundidad += 1
+            elif caracter == ")":
+                profundidad -= 1
+                if profundidad == 0:
+                    return texto[inicio + 1:indice], indice + 1
+    raise ValueError("Paréntesis sin cerrar en la migración.")
+
+
+def _quitar_comentarios_sql(sql: str) -> str:
+    """Quita todo lo que sigue a `--` en cada línea."""
+    lineas = []
+    for linea in sql.splitlines():
+        posicion = linea.find("--")
+        lineas.append(linea if posicion == -1 else linea[:posicion])
+    return "\n".join(lineas)
+
+
+def _sentencias_sql(sql: str) -> list[str]:
+    """El SQL, partido en sentencias por `;`, fuera de paréntesis."""
+    return [s.strip() for s in _profundidad_cero_split(sql, ";") if s.strip()]
+
+
+@dataclasses.dataclass
+class ColumnaEsquema:
+    """Una columna, tal como la declara la migración."""
+
+    tipo: str
+    obligatoria: bool
+    con_valor_por_omision: bool
+
+
+@dataclasses.dataclass
+class ComprobacionDeFormato:
+    """El CHECK `columna ~ 'patrón'` de una tabla -`dimension_conocida`, hoy
+    el único de esta forma en la migración."""
+
+    columna: str
+    patron: str
+
+
+@dataclasses.dataclass
+class TablaEsquema:
+    columnas: dict[str, ColumnaEsquema]
+    comprobaciones: list[ComprobacionDeFormato]
+
+
+@dataclasses.dataclass
+class EsquemaPostgres:
+    enumerados: dict[str, list[str]]
+    tablas: dict[str, TablaEsquema]
+
+
+def _interpretar_check(expresion: str) -> ComprobacionDeFormato | None:
+    """Si `expresion` tiene la forma `columna ~ 'patrón'`, la comprobación
+    que representa. Si no, `None`: es uno de los CHECK que este lector no
+    interpreta, por el motivo que explica el comentario de esta sección.
+    """
+    coincidencia = re.match(r"^\s*(\w+)\s*~\s*'([^']*)'\s*$", expresion.strip())
+    if coincidencia is None:
+        return None
+    return ComprobacionDeFormato(columna=coincidencia.group(1), patron=coincidencia.group(2))
+
+
+_PALABRAS_DE_RESTRICCION = ("constraint", "check", "unique", "primary key", "foreign key")
+
+
+def _procesar_create_table(nombre: str, contenido: str, tablas: dict[str, TablaEsquema]) -> None:
+    columnas: dict[str, ColumnaEsquema] = {}
+    comprobaciones: list[ComprobacionDeFormato] = []
+    for definicion in _profundidad_cero_split(contenido, ","):
+        definicion = definicion.strip()
+        if not definicion:
+            continue
+        if definicion.lower().startswith(_PALABRAS_DE_RESTRICCION):
+            # Una restricción de tabla, no una columna: `unique (...)`,
+            # `constraint ... check (...)`. Solo interesa si lleva un CHECK
+            # con forma de comprobación de formato.
+            posicion_check = re.search(r"check\s*\(", definicion, re.I)
+            if posicion_check is not None:
+                expresion, _ = _extraer_bloque(definicion, posicion_check.end() - 1)
+                comprobacion = _interpretar_check(expresion)
+                if comprobacion is not None:
+                    comprobaciones.append(comprobacion)
+            continue
+        partes = definicion.split(None, 1)
+        if len(partes) < 2:
+            continue
+        nombre_columna, resto = partes
+        coincidencia_tipo = re.match(r"(\S+)", resto)
+        tipo = coincidencia_tipo.group(1) if coincidencia_tipo else ""
+        obligatoria = bool(re.search(r"\bnot\s+null\b", resto, re.I)) or bool(
+            re.search(r"\bprimary\s+key\b", resto, re.I)
+        )
+        con_valor_por_omision = bool(re.search(r"\bdefault\b", resto, re.I))
+        columnas[nombre_columna] = ColumnaEsquema(tipo, obligatoria, con_valor_por_omision)
+    tablas[nombre] = TablaEsquema(columnas, comprobaciones)
+
+
+def _procesar_alter_table(sentencia: str, tablas: dict[str, TablaEsquema]) -> None:
+    """`add column` y `alter column ... drop default`: lo único que las dos
+    migraciones de este repositorio usan para tocar una tabla después de
+    crearla.
+
+    La columna `informe` de `correccion` es justamente una que nace con un
+    valor por omisión y lo pierde en la sentencia siguiente, así que sin
+    esta segunda forma el esquema leído diría que tiene uno y no lo tiene.
+    """
+    coincidencia = re.match(r"alter\s+table\s+(\w+)\s+(.*)", sentencia, re.I | re.S)
+    if coincidencia is None:
+        return
+    tabla, resto = coincidencia.group(1), coincidencia.group(2)
+    if tabla not in tablas:
+        return
+    for clausula in _profundidad_cero_split(resto, ","):
+        clausula = clausula.strip()
+        anadir = re.match(r"add\s+column\s+(\w+)\s+(.*)", clausula, re.I)
+        if anadir is not None:
+            nombre_columna, resto_columna = anadir.group(1), anadir.group(2)
+            coincidencia_tipo = re.match(r"(\S+)", resto_columna)
+            tipo = coincidencia_tipo.group(1) if coincidencia_tipo else ""
+            obligatoria = bool(re.search(r"\bnot\s+null\b", resto_columna, re.I))
+            con_valor_por_omision = bool(re.search(r"\bdefault\b", resto_columna, re.I))
+            tablas[tabla].columnas[nombre_columna] = ColumnaEsquema(
+                tipo, obligatoria, con_valor_por_omision
+            )
+            continue
+        quitar_omision = re.match(r"alter\s+column\s+(\w+)\s+drop\s+default", clausula, re.I)
+        if quitar_omision is not None:
+            columna = tablas[tabla].columnas.get(quitar_omision.group(1))
+            if columna is not None:
+                columna.con_valor_por_omision = False
+
+
+def cargar_esquema_de_migraciones(raiz: Path) -> EsquemaPostgres:
+    """El esquema entero -enumerados, columnas y el CHECK de formato-, leído
+    de `supabase/migrations/*.sql` en orden, el mismo en que Postgres las
+    aplicaría."""
+    enumerados: dict[str, list[str]] = {}
+    tablas: dict[str, TablaEsquema] = {}
+    carpeta = raiz / "supabase" / "migrations"
+    for ruta in sorted(carpeta.glob("*.sql")):
+        sql = _quitar_comentarios_sql(ruta.read_text(encoding="utf-8"))
+        for sentencia in _sentencias_sql(sql):
+            coincidencia_tipo = re.match(
+                r"create\s+type\s+(\w+)\s+as\s+enum\s*\(", sentencia, re.I
+            )
+            if coincidencia_tipo is not None:
+                contenido, _ = _extraer_bloque(sentencia, coincidencia_tipo.end() - 1)
+                enumerados[coincidencia_tipo.group(1)] = re.findall(r"'([^']*)'", contenido)
+                continue
+            coincidencia_tabla = re.match(r"create\s+table\s+(\w+)\s*\(", sentencia, re.I)
+            if coincidencia_tabla is not None:
+                contenido, _ = _extraer_bloque(sentencia, coincidencia_tabla.end() - 1)
+                _procesar_create_table(coincidencia_tabla.group(1), contenido, tablas)
+                continue
+            if re.match(r"alter\s+table\s+\w+\s+", sentencia, re.I):
+                _procesar_alter_table(sentencia, tablas)
+                continue
+    return EsquemaPostgres(enumerados, tablas)
+
+
+# Se carga una sola vez, al importar este módulo: el esquema no cambia
+# durante una sesión de tests, y parsear el SQL en cada test sería trabajo
+# repetido para el mismo resultado.
+ESQUEMA_POSTGRES = cargar_esquema_de_migraciones(RAIZ_DEL_REPOSITORIO)
+
+PATRON_UUID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+)
+
+
 class PostgrestSimulado:
-    """Las tres tablas que esta parte del flujo usa, en memoria."""
+    """Las tablas que esta parte del flujo usa, en memoria."""
 
     def __init__(self) -> None:
         self.tablas: dict[str, list[dict]] = {
             "alumno": [], "proyecto": [], "entrega": [],
+            "correccion": [], "valoracion_dimension": [], "evidencia": [],
         }
         self.peticiones: list[str] = []
 
@@ -477,16 +783,94 @@ class PostgrestSimulado:
 
     # -- escritura ----------------------------------------------------------
 
-    def _choca_con_una_unica(self, tabla: str, nueva: dict) -> bool:
+    def _choca_con_una_unica(self, tabla: str, nueva: dict, otras: list[dict]) -> bool:
+        """Si `nueva` choca con una fila ya guardada, o con otra del mismo
+        lote -un `INSERT` de varias filas en una sola petición es una única
+        sentencia en Postgres, y viola la restricción `unique` igual si el
+        duplicado está dentro del propio lote que si ya estaba en la tabla-.
+
+        Una tabla sin claves declaradas en `CLAVES_UNICAS` -`evidencia`, que
+        no tiene ningún `unique` en la migración- no puede chocar nunca: sin
+        esta guarda, `all()` sobre una tupla de claves vacía es `True` por
+        definición, y cualquier fila de una tabla así -en cuanto hubiera una
+        más en la tabla o en el mismo lote- se habría denunciado como
+        duplicada sin serlo.
+        """
         claves = CLAVES_UNICAS.get(tabla, ())
+        if not claves:
+            return False
         return any(
             all(fila.get(clave) == nueva.get(clave) for clave in claves)
-            for fila in self.tablas[tabla]
+            for fila in (*self.tablas[tabla], *otras)
         )
 
+    def _viola_un_limite_de_campo(self, tabla: str, fila: dict) -> bool:
+        for (t, columna), limite in _LIMITES_DE_CAMPO.items():
+            if tabla == t and len(fila.get(columna) or "") > limite:
+                return True
+        return False
+
+    def _viola_el_esquema(self, tabla: str, fila: dict) -> _httpx.Response | None:
+        """Si `fila` -ya con sus valores por omisión aplicados, tal como
+        quedaría escrita- es algo que Postgres rechazaría: un valor fuera de
+        un tipo enumerado, una columna `not null` sin valor, un `uuid` con
+        otra forma, o el CHECK `dimension_conocida`. `None` si no viola nada.
+
+        En uso normal esto no dispara nunca: es la segunda línea de
+        defensa, la que hasta esta tarea no existía y por la que
+        `AlmacenSupabase.guardar_correccion` mandaba «P2» a una columna que
+        solo admite CRITICA, ALTA, MEDIA o BAJA sin que nada, ni aquí ni en
+        Postgres de mentira, lo notara.
+        """
+        tabla_esquema = ESQUEMA_POSTGRES.tablas.get(tabla)
+        if tabla_esquema is None:
+            return None
+        for nombre, columna in tabla_esquema.columnas.items():
+            presente = nombre in fila
+            valor = fila.get(nombre)
+            if valor is None:
+                # `not null` sin valor: viola tanto si la columna falta del
+                # todo y no tiene valor por omisión -Postgres no tiene con
+                # qué rellenarla- como si se manda `null` explícito -un
+                # valor por omisión solo se aplica cuando la columna se
+                # omite, nunca sobre un `null` explícito-.
+                if columna.obligatoria and (presente or not columna.con_valor_por_omision):
+                    return _httpx.Response(400, json={
+                        "code": "23502",
+                        "message": f'null value in column "{nombre}" of '
+                                   f'relation "{tabla}" violates not-null '
+                                   f'constraint',
+                    })
+                continue
+            valores_del_enumerado = ESQUEMA_POSTGRES.enumerados.get(columna.tipo)
+            if valores_del_enumerado is not None and str(valor) not in valores_del_enumerado:
+                return _httpx.Response(400, json={
+                    "code": "22P02",
+                    "message": f'invalid input value for enum {columna.tipo}: '
+                               f'"{valor}"',
+                })
+            if columna.tipo == "uuid" and not PATRON_UUID.match(str(valor)):
+                return _httpx.Response(400, json={
+                    "code": "22P02",
+                    "message": f'invalid input syntax for type uuid: "{valor}"',
+                })
+        for comprobacion in tabla_esquema.comprobaciones:
+            valor = fila.get(comprobacion.columna)
+            if valor is not None and re.fullmatch(comprobacion.patron, str(valor)) is None:
+                return _httpx.Response(400, json={
+                    "code": "23514",
+                    "message": f'new row for relation "{tabla}" violates '
+                               f'check constraint on column '
+                               f'"{comprobacion.columna}"',
+                })
+        return None
+
     def _insertar(self, tabla: str, cuerpo) -> _httpx.Response:
+        # Un `INSERT` de varias filas es una sola sentencia: si una fila
+        # cualquiera del lote viola una restricción, ninguna se guarda. Por
+        # eso se construyen y comprueban todas antes de tocar `self.tablas`.
         nuevas = cuerpo if isinstance(cuerpo, list) else [cuerpo]
-        creadas = []
+        filas: list[dict] = []
         for datos in nuevas:
             fila = {
                 "id": str(_uuid.uuid4()),
@@ -494,15 +878,34 @@ class PostgrestSimulado:
                 **VALORES_POR_OMISION.get(tabla, {}),
                 **datos,
             }
-            if self._choca_con_una_unica(tabla, fila):
+            error_de_esquema = self._viola_el_esquema(tabla, fila)
+            if error_de_esquema is not None:
+                return error_de_esquema
+            if self._viola_un_limite_de_campo(tabla, fila):
+                return _httpx.Response(400, json={
+                    "code": "23514",
+                    "message": f'new row for relation "{tabla}" violates '
+                               f'check constraint "fragmento_acotado"',
+                })
+            if self._choca_con_una_unica(tabla, fila, filas):
                 return _httpx.Response(409, json={
                     "code": "23505",
                     "message": f'duplicate key value violates unique '
                                f'constraint "{tabla}_unique"',
                 })
-            self.tablas[tabla].append(fila)
-            creadas.append(fila)
-        return _httpx.Response(201, json=creadas)
+            filas.append(fila)
+        self.tablas[tabla].extend(filas)
+        return _httpx.Response(201, json=filas)
+
+    def _borrar_en_cascada(self, tabla: str, ids: set[str]) -> None:
+        """Como `on delete cascade`: se lleva las filas hijas, y las hijas
+        de las hijas, recursivamente."""
+        for hija, columna in _CASCADA.get(tabla, []):
+            ids_hijas = {f["id"] for f in self.tablas[hija] if f.get(columna) in ids}
+            self.tablas[hija] = [
+                f for f in self.tablas[hija] if f.get(columna) not in ids
+            ]
+            self._borrar_en_cascada(hija, ids_hijas)
 
     # -- despacho -----------------------------------------------------------
 
@@ -529,9 +932,21 @@ class PostgrestSimulado:
                 original = next(
                     f for f in self.tablas[tabla] if f["id"] == fila["id"]
                 )
+                error_de_esquema = self._viola_el_esquema(tabla, {**original, **cuerpo})
+                if error_de_esquema is not None:
+                    return error_de_esquema
                 original.update(cuerpo)
                 actualizadas.append(self._anidar(tabla, original, select))
             return _httpx.Response(200, json=actualizadas)
+
+        if peticion.method == "DELETE":
+            ids = {fila["id"] for fila in filas}
+            borradas = [f for f in self.tablas[tabla] if f["id"] in ids]
+            self.tablas[tabla] = [
+                f for f in self.tablas[tabla] if f["id"] not in ids
+            ]
+            self._borrar_en_cascada(tabla, ids)
+            return _httpx.Response(200, json=borradas)
 
         if peticion.method != "GET":
             return _httpx.Response(

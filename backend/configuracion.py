@@ -18,6 +18,8 @@ CARPETA = "REVISOR_CARPETA_ENTREGAS"
 URL = "SUPABASE_URL"
 CLAVE = "SUPABASE_SERVICE_KEY"
 VERSION = "REVISOR_VERSION_CRITERIOS"
+CLAVE_OPENAI = "OPENAI_API_KEY"
+MODELO = "REVISOR_MODELO_ANALISIS"
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,8 @@ class Configuracion(BaseModel):
     url_supabase: str | None = None
     clave_supabase: str | None = None
     version_criterios: str = VERSION_CRITERIOS_POR_OMISION
+    clave_openai: str | None = None
+    modelo_analisis: str | None = None
 
 
 def revisar_carpeta(raiz: Path, carpeta: Path) -> ProblemaDeCarpeta | None:
@@ -113,4 +117,6 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
         url_supabase=valores.get(URL) or None,
         clave_supabase=valores.get(CLAVE) or None,
         version_criterios=valores.get(VERSION) or VERSION_CRITERIOS_POR_OMISION,
+        clave_openai=valores.get(CLAVE_OPENAI) or None,
+        modelo_analisis=valores.get(MODELO) or None,
     )

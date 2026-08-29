@@ -57,7 +57,7 @@ def test_detecta_un_telefono_espanol(repo: Path):
 
 def test_no_confunde_un_codigo_anonimo_con_un_dato_personal(repo: Path):
     (repo / "docs" / "ficha.md").write_text(
-        "Codigo de alumno AF023, ciclo Marketing, fase E2.\n", encoding="utf-8"
+        "Código de alumno AF023, ciclo Marketing, fase E2.\n", encoding="utf-8"
     )
     assert verificar_r6(repo, ["docs/ficha.md"]) == []
 
@@ -76,14 +76,14 @@ def test_no_confunde_un_identificador_largo_con_un_telefono(repo: Path):
 
 def test_no_confunde_una_fecha_con_un_telefono(repo: Path):
     (repo / "docs" / "ficha.md").write_text(
-        "Version 2026-08-26, hash 16 caracteres.\n", encoding="utf-8"
+        "Versión 2026-08-26, hash 16 caracteres.\n", encoding="utf-8"
     )
     assert verificar_r6(repo, ["docs/ficha.md"]) == []
 
 
 def test_no_confunde_un_hash_hexadecimal_con_un_telefono(repo: Path):
     # Hash de 16 caracteres con nueve digitos consecutivos que empiezan por
-    # 6: exactamente el caso que colisionaba antes de excluir tambien
+    # 6: exactamente el caso que colisionaba antes de excluir también
     # letras (no solo digitos y guiones) en los limites del patron.
     (repo / "docs" / "ficha.md").write_text(
         "Hash de seccion: a679312456fbcde1\n", encoding="utf-8"

@@ -12,9 +12,16 @@ cualquiera.
 
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import httpx
+import yaml
 
+from backend.persistencia.correccion import (
+    LIMITE_DE_OBSERVACION,
+    Correccion,
+    validar_textos_acotados,
+)
 from backend.persistencia.modelos import (
     EntregaNueva,
     EntregaRegistrada,
@@ -24,6 +31,8 @@ from backend.persistencia.modelos import (
     validar_estado,
     validar_fase,
 )
+from backend.salidas.borrador import Devolucion
+from backend.salidas.informe import Informe
 
 ESPERA = 15.0
 
@@ -80,12 +89,76 @@ CHOQUE_EN_ENTREGA = (
     "antes, ábrela desde la lista y compruébalo antes de tocar nada."
 )
 
+# La raíz del repositorio, para leer `criteria/`. Este fichero vive en
+# <repo>/backend/persistencia/supabase.py: dos niveles por encima está la
+# raíz, el mismo cómputo que ya hacen `backend/__main__.py` y `backend/app.py`
+# para encontrarse a sí mismos. `AlmacenSupabase` puede recibir una raíz
+# distinta en el constructor -las pruebas la usan para apuntar a una copia
+# de `criteria/` con un valor alterado-, pero en uso normal es esta.
+RAIZ = Path(__file__).resolve().parents[2]
+
+
+def _correspondencia_de_prioridades(raiz: Path, version: str) -> dict[str, str]:
+    """La tabla P1..P4 -> CRITICA..BAJA, leída de `prioridades.yaml`.
+
+    `criteria/<version>/prioridades.yaml` declara, para cada prioridad, su
+    `en_base_de_datos`, y dice literalmente que «la equivalencia vive aquí y
+    en ningún otro sitio»: el criterio habla en el vocabulario del docente
+    -P1 a P4-, y la columna `prioridad` de `valoracion_dimension`
+    (`supabase/migrations/20260827120000_esquema_inicial.sql`) es un tipo
+    enumerado con el vocabulario de la tabla -CRITICA, ALTA, MEDIA, BAJA-.
+    Escribir esa correspondencia a mano aquí la duplicaría, que es
+    justamente lo que el comentario del YAML prohíbe: si el profesor cambia
+    una equivalencia, este código tiene que seguirla sin que nadie edite una
+    línea de Python. Mismo patrón que `backend/analisis/instruccion.py` y
+    `backend/salidas/seleccion.py`, que leen de `criteria/` en vez de
+    codificar el criterio.
+    """
+    fichero = raiz / "criteria" / version / "prioridades.yaml"
+    if not fichero.is_file():
+        raise ErrorDeAlmacen(
+            f"No se ha podido leer criteria/{version}/prioridades.yaml: sin "
+            "ese fichero no hay con qué traducir la prioridad de un hallazgo "
+            "al vocabulario de la base de datos, y guardar la corrección se "
+            "detiene aquí en vez de escribir un valor inventado."
+        )
+    catalogo = yaml.safe_load(fichero.read_text(encoding="utf-8")) or []
+    return {
+        entrada["codigo"]: entrada["en_base_de_datos"]
+        for entrada in catalogo
+        if isinstance(entrada, dict) and entrada.get("codigo") and entrada.get("en_base_de_datos")
+    }
+
+
+def _prioridad_en_base_de_datos(
+    correspondencia: dict[str, str], prioridad: str | None
+) -> str | None:
+    """La prioridad, en el vocabulario que admite la columna, o `None` si no
+    se valoró ninguna -la columna es la única de las cuatro que escribe
+    `guardar_correccion` que admite nulo-.
+    """
+    if prioridad is None:
+        return None
+    if prioridad not in correspondencia:
+        raise ErrorDeAlmacen(
+            f"«{prioridad}» no tiene correspondencia en "
+            "criteria/<version>/prioridades.yaml (campo 'en_base_de_datos'): "
+            "sin ella no hay con qué guardar esta prioridad, y guardar la "
+            "corrección se detiene aquí en vez de escribir un valor que la "
+            "base de datos rechazaría."
+        )
+    return correspondencia[prioridad]
+
 
 class AlmacenSupabase:
     """Las nueve tablas, vistas por las tres que esta parte usa."""
 
     def __init__(
-        self, url: str, clave: str, cliente: httpx.Client | None = None
+        self,
+        url: str,
+        clave: str,
+        cliente: httpx.Client | None = None,
+        raiz: Path | None = None,
     ) -> None:
         self._base = url.rstrip("/") + "/rest/v1"
         self._cliente = cliente or httpx.Client(timeout=ESPERA)
@@ -95,6 +168,11 @@ class AlmacenSupabase:
             "Content-Type": "application/json",
             "Prefer": "return=representation",
         }
+        # La raíz desde la que se lee `criteria/prioridades.yaml` en
+        # `guardar_correccion`. Un parámetro y no siempre `RAIZ` porque las
+        # pruebas necesitan poder apuntar a una copia de `criteria/` con un
+        # valor alterado, sin depender del repositorio real.
+        self._raiz = raiz or RAIZ
 
     @property
     def es_duradero(self) -> bool:
@@ -345,3 +423,133 @@ class AlmacenSupabase:
             json={"estado": estado, "motivo_bloqueo": motivo},
         )
         return self._componer(self._aplanar(filas[0])) if filas else None
+
+    def guardar_correccion(
+        self,
+        entrega_id: str,
+        informe: Informe,
+        devolucion: Devolucion | None,
+        motor: str,
+        aviso: str | None = None,
+        limite_de_observacion: int = LIMITE_DE_OBSERVACION,
+    ) -> str:
+        """Tres escrituras encadenadas: `correccion`, `valoracion_dimension`
+        y `evidencia`. Si la segunda o la tercera fallan, se deshace la
+        primera -y con ella, por `on delete cascade`, cualquier fila que ya
+        hubiera colgado de ella- y se levanta `ErrorDeAlmacen`. Una
+        corrección guardada a medias -un informe sin sus valoraciones, o
+        unas valoraciones sin su evidencia- es peor que ninguna: el docente
+        la vería como completa y no lo es.
+
+        `informe` y `devolucion` se guardan enteros en las columnas `jsonb`
+        que añade la migración de esta tarea -es lo que permite reconstruir
+        las dos salidas completas en `correccion_de`, con fortalezas,
+        indicios de autoría, reparos y dudas incluidos, que no tienen fila
+        propia en ninguna tabla-. `valoracion_dimension` y `evidencia` se
+        escriben además, con los mismos datos: es la parte que un futuro
+        informe por dimensión necesita poder consultar con SQL, y la que
+        impone en la base de datos el límite de D-001 sobre cada cita.
+
+        Una entrega tiene una corrección -`unique (entrega_id)`-: si ya
+        había una, se borra antes de insertar la nueva. Es la misma
+        operación que reanalizar y que guardar una revisión del docente: las
+        dos sustituyen la corrección entera, no la editan campo a campo.
+
+        `valoracion_dimension.prioridad` es del tipo enumerado `prioridad`
+        -CRITICA, ALTA, MEDIA, BAJA-, y `v.prioridad` habla en el vocabulario
+        del docente -P1 a P4-. La correspondencia se lee de
+        `criteria/<version>/prioridades.yaml` antes de escribir nada -si el
+        fichero falta, `ErrorDeAlmacen` se levanta aquí, antes de la primera
+        escritura-. Si el fichero existe pero no cubre alguna prioridad
+        concreta, el fallo llega más tarde, al traducir esa valoración
+        dentro de la escritura de `valoracion_dimension`; lo protege el
+        mismo `try`/`except` que ya deshace la corrección si esa escritura
+        falla por cualquier otro motivo, así que tampoco ahí queda nada a
+        medio guardar. Ver `_correspondencia_de_prioridades`.
+        """
+        validar_textos_acotados(informe, devolucion, limite_de_observacion)
+        correspondencia_de_prioridades = _correspondencia_de_prioridades(
+            self._raiz, informe.identificacion.get("criterios") or ""
+        )
+
+        existente = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
+        if existente is not None:
+            self._pedir(
+                "DELETE", "correccion", parametros={"id": f"eq.{existente['id']}"}
+            )
+
+        filas = self._pedir("POST", "correccion", json={
+            "entrega_id": entrega_id,
+            "version_criterios": informe.identificacion.get("criterios") or "",
+            "resumen_ejecutivo": informe.resumen,
+            "semaforo_propuesto": informe.semaforo,
+            "accion_recomendada": informe.recomendacion,
+            "informe": informe.model_dump(mode="json"),
+            "devolucion": (
+                devolucion.model_dump(mode="json") if devolucion is not None else None
+            ),
+            "aviso": aviso,
+        })
+        correccion_id = filas[0]["id"]
+
+        try:
+            if informe.valoraciones:
+                filas_valoracion = self._pedir("POST", "valoracion_dimension", json=[
+                    {
+                        "correccion_id": correccion_id,
+                        "dimension": v.dimension,
+                        "nivel": v.nivel,
+                        "prioridad": _prioridad_en_base_de_datos(
+                            correspondencia_de_prioridades, v.prioridad
+                        ),
+                        "observacion": v.observacion,
+                    }
+                    for v in informe.valoraciones
+                ])
+                self._pedir("POST", "evidencia", json=[
+                    {
+                        "valoracion_id": fila_v["id"],
+                        "apartado": v.evidencia.apartado,
+                        "fragmento": v.evidencia.cita,
+                    }
+                    for fila_v, v in zip(filas_valoracion, informe.valoraciones)
+                ])
+        except ErrorDeAlmacen as fallo:
+            self._pedir(
+                "DELETE", "correccion", parametros={"id": f"eq.{correccion_id}"}
+            )
+            raise ErrorDeAlmacen(
+                "El análisis no se ha podido guardar del todo, así que no "
+                f"se ha guardado nada: {fallo} La entrega sigue sin análisis "
+                "guardado; puedes repetirlo."
+            ) from fallo
+
+        return correccion_id
+
+    def correccion_de(self, entrega_id: str) -> Correccion | None:
+        # `entrega_id` es de tipo `uuid` en la base de datos: el mismo motivo
+        # que `_es_uuid` protege en `por_id`, aquí sobre la columna de
+        # `correccion` en vez de sobre `entrega.id`.
+        if not _es_uuid(entrega_id):
+            return None
+        fila = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
+        if fila is None:
+            return None
+        # `correccion.informe`/`.devolucion` son la fuente que se relee: la
+        # única con fidelidad completa (fortalezas, indicios de autoría,
+        # reparos, dudas, dimensiones ausentes, dos salidas enteras).
+        # `valoracion_dimension` y `evidencia` no se leen aquí -son la
+        # proyección consultable por SQL y la que impone en la base de datos
+        # el límite de D-001 con un CHECK real, no una segunda copia de la
+        # que reconstruir-. Las dos se escriben juntas en `guardar_correccion`
+        # y `test_paridad.py::test_la_tabla_estructurada_coincide_con_lo_reconstruido`
+        # comprueba que no diverjan.
+        informe = Informe.model_validate(fila["informe"])
+        devolucion = fila.get("devolucion")
+        return Correccion(
+            id=fila["id"],
+            informe=informe,
+            devolucion=Devolucion.model_validate(devolucion) if devolucion else None,
+            motor=informe.motor,
+            aviso=fila.get("aviso"),
+        )

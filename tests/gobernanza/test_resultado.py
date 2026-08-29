@@ -7,7 +7,7 @@ def test_infraccion_es_inmutable():
         inf.regla = "R2"
     except AttributeError:
         return
-    raise AssertionError("Infraccion deberia ser inmutable")
+    raise AssertionError("Infraccion debería ser inmutable")
 
 
 def test_formatear_sin_infracciones_confirma_conformidad():

@@ -137,9 +137,9 @@ def test_si_la_nueva_no_tiene_texto_no_se_acusa_al_alumno(
 ) -> None:
     """El caso peor: sin este arreglo saltaba el aviso mas severo del 5.1.
 
-    Que la entrega nueva sea un escaneado es un hecho tecnico, no una
+    Que la entrega nueva sea un escaneado es un hecho técnico, no una
     entrega incompleta, y ya lo reporta por su cuenta el criterio "archivo"
-    de formato. Acusar ademas de no incluir el trabajo anterior seria un
+    de formato. Acusar además de no incluir el trabajo anterior seria un
     aviso falso, y los avisos falsos llegan al alumno.
     """
     almacen = AlmacenEnMemoria()

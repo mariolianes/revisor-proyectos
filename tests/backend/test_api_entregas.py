@@ -372,9 +372,9 @@ def test_la_version_de_criterios_elige_el_fichero_con_el_que_se_corrige(
     """REVISOR_VERSION_CRITERIOS no es decorativa.
 
     Elige el fichero de criterios con el que se contrasta el trabajo de un
-    alumno. Se monta una segunda version que pide 999 paginas de contenido
+    alumno. Se monta una segunda versión que pide 999 paginas de contenido
     -donde la primera pide 4- y se comprueba que el veredicto cambia con
-    ella, que es la unica forma de ver que la version configurada llega
+    ella, que es la unica forma de ver que la versión configurada llega
     hasta donde se corrige.
     """
     raiz = criterios_de_formato
@@ -427,7 +427,7 @@ def cliente_dos_archivos(
 ):
     """Dos archivos distintos, para poder confirmar dos entregas seguidas.
 
-    El `cliente` de arriba deja dos copias del mismo PDF, asi que tienen la
+    El `cliente` de arriba deja dos copias del mismo PDF, así que tienen la
     misma huella y la segunda choca con el error de atribucion: para probar
     dos entregas del mismo alumno hacen falta dos archivos de verdad
     distintos.
@@ -456,7 +456,7 @@ def test_declarar_otro_ciclo_para_el_mismo_alumno_se_avisa(
     """El ciclo es del alumno y manda el primero. Callarlo seria mentir.
 
     Registrar al mismo alumno con dos ciclos es casi siempre un error del
-    profesor -una errata, o un codigo de alumno reutilizado-. El sistema usa
+    profesor -una errata, o un código de alumno reutilizado-. El sistema usa
     el ciclo guardado, y tiene que decir que lo ha hecho: si es una errata,
     que la vea; y si el alumno ha cambiado de ciclo de verdad, que sepa que
     tiene que corregirlo el.

@@ -48,10 +48,18 @@ un hito intermedio ya superado y se deja como está.
 El análisis académico lo realiza la API de OpenAI. El backend define un puerto
 `ProveedorAnalisis` con implementaciones sustituibles.
 
-Circuito de datos, a efectos de arquitectura: el texto de la entrega, ya
-anonimizado, se transmite al proveedor durante el procesamiento. No se
-almacena allí ni en Supabase. Quien mantenga el sistema debe conocerlo para no
-alterar el circuito por descuido.
+Circuito de datos, a efectos de arquitectura: el texto de la entrega se
+transmite íntegro al proveedor durante el procesamiento. Por parte del
+sistema no se guarda copia: ni en Supabase, ni en el repositorio. Lo que el
+proveedor retenga se rige por sus propias condiciones, sin confirmar. Quien mantenga el sistema debe conocer este
+circuito para no alterarlo por descuido.
+
+**Corregido por D-010 el 2026-08-29:** este párrafo dijo dos cosas que no
+podía sostener: que el texto se anonimizaba antes de enviarse, y que no se
+almacenaba «allí» —en el proveedor—, dando por hecho su comportamiento de
+retención sin haberlo verificado. Queda separado arriba lo que el sistema
+garantiza de lo que depende de las condiciones del proveedor, sin confirmar.
+Ver D-010.
 
 La clave de la API reside únicamente en el backend local, nunca en el frontend.
 
@@ -62,8 +70,9 @@ cumplida la condición que la decisión tenía pendiente.
 
 Sigue en pie lo que exige el §19: **ninguna entrega real de un alumno se envía
 al proveedor** hasta que se confirmen las condiciones de tratamiento. Hasta
-entonces se prueba con documentos propios, y el anonimizado se aplica en el
-backend antes de cualquier envío.
+entonces se prueba con documentos propios (corregido por D-010 el
+2026-08-29: no hay anonimizado en el backend antes del envío, porque no se
+aplica ninguno).
 
 ## D-003 · PyMuPDF para la extracción
 
@@ -192,3 +201,86 @@ aquí se cumple leyendo y nada más. La carpeta vive **fuera del repositorio**,
 porque R6 impide que un PDF entre en el árbol versionado.
 
 **Arrastra:** corrección del §16.1 y del §21.2 de `docs/maestro/`.
+
+## D-010 · El texto se envía íntegro al proveedor de análisis, sin anonimización previa
+
+**Fecha:** 2026-08-29 · **Estado:** Validada · **Responsable:** Marcos
+
+Decisión del docente del 2026-08-29. El §19 del Documento Maestro y D-002
+describían el circuito de análisis dando por supuesta una anonimización
+previa al envío al proveedor. Esa anonimización no se aplica y nunca se ha
+aplicado: el circuito real transmite el texto íntegro de la entrega durante
+el procesamiento. Por parte del sistema no se guarda copia: ni en Supabase,
+ni en el repositorio. Lo que el proveedor retenga se rige por sus propias
+condiciones, que no están confirmadas; confirmarlas sigue siendo, como ya
+fijaba el §19, condición previa a usar entregas reales.
+La clave de la API reside solo en el backend local.
+
+Una fuente superior no puede quedar contradiciendo al código: es el mismo
+criterio que llevó a corregir el §19 y el §21.1 con D-001 al adoptar
+Supabase. Se corrige la prosa del §19 y las dos frases de D-002 que repetían
+la misma inexactitud sobre la anonimización, cada una con su nota de
+remisión a esta decisión.
+
+Una primera redacción de esta misma decisión, el mismo día, daba por buena
+—sin haberla verificado— la retención del proveedor sobre el texto recibido.
+Se corrige aquí, en el §19 y en D-002: R3 no distingue entre un dato que
+nadie ha fijado y un dato que nadie ha verificado, y un apartado normativo
+sobre tratamiento de datos de alumnos no puede dar por hecho el
+comportamiento de retención de un tercero.
+
+**Sigue en pie** que ninguna entrega real de un alumno se envía al proveedor
+hasta que se cierre `proteccion_datos`. Tener la llave de la API no autoriza
+a usarla con el trabajo de un alumno.
+
+**Arrastra:** el §19 del Documento Maestro quedó corregido en este mismo
+cambio, con su documento `docs/changes/2026-08-29-el-texto-se-envia-integro.md`.
+
+## D-011 · El resumen del informe interno es un recuento verificado, no la síntesis del §17.1
+
+**Fecha:** 2026-08-29 · **Estado:** Provisional, a la espera de que Marcos la
+valide · **Propuesta desde la implementación**
+
+> A diferencia de las anteriores, esta decisión no la ha tomado el docente:
+> se propone desde la implementación al corregir un defecto, y se registra
+> aquí para que él la vea y decida. Mientras siga *Provisional*, lo que
+> gobierna es lo que dice el §17.1, no esta entrada.
+
+`backend/salidas/informe.py` componía el «Resumen» del Anexo C con
+`analisis.fortalezas[0].descripcion` -la primera fortaleza que hubiera, sin
+pasar por el filtro de evidencia localizada que sí aplica `_semaforo`-. Una
+fortaleza con la cita inventada podía titular el informe entero, sin cita y
+sin la tinta de señal que sí llevan las dudas, los indicios y las
+observaciones no localizadas.
+
+Se sustituye por `_resumen()`, que compone el campo a partir de piezas ya
+verificadas del mismo informe: el semáforo, cuántas prioridades llegan al
+alumno y de qué gravedad, cuántas quedaron fuera solo por el límite de la
+economía pedagógica, si alguna dimensión activa quedó sin valorar y si la
+verificación dejó reparos. Ninguna de esas piezas es una interpretación
+nueva: cada una se puede contrastar con otro bloque del mismo informe.
+
+Eso deja un hueco que el profesor debe conocer, y esta decisión lo deja
+constar en vez de disimularlo. El §17.1 pide «estado general en cinco o seis
+líneas» y el §11.1 un «resumen ejecutivo del estado del proyecto»: los dos
+piden una síntesis interpretativa -no solo enumerar lo verificado, sino decir
+qué significa en su conjunto-, y eso es una lectura del trabajo que el §13
+reserva al profesor, no un dato que el sistema pueda calcular por sí mismo.
+Pedírselo de nuevo al motor como texto libre reabriría el problema que esta
+misma decisión cierra. Se descarta también inventar aquí una interpretación
+razonable: iría contra R3 tanto como una fortaleza sin cita.
+
+No se ha creado una entrada nueva en `docs/PENDIENTE_OFICIAL.md`: ese catálogo
+recoge datos oficiales que faltan y que llegarán -rúbrica, ponderaciones,
+calendario-, no un límite permanente de diseño. Este hueco no se cierra
+cuando llegue un dato nuevo, se cierra si el docente decide que quiere que el
+sistema interprete, y esa es una decisión de alcance, no un dato pendiente.
+
+**Sigue en pie** que el resumen factual conviva con el semáforo, las
+prioridades, las dimensiones ausentes y los reparos, todos visibles en el
+mismo informe: el profesor tiene delante las mismas piezas con las que
+podría escribir él la síntesis que el §17.1 describe.
+
+**Arrastra:** `backend/salidas/informe.py` (`_resumen`) y
+`frontend/src/paginas/Revision.tsx`, donde el bloque «Resumen» sigue
+mostrando el campo tal cual llega del backend.
