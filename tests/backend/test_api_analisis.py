@@ -11,6 +11,7 @@ from backend.analisis.proveedor import ErrorDelProveedor, ProveedorSimulado
 from backend.app import crear_app
 from backend.configuracion import Configuracion
 from backend.persistencia.memoria import AlmacenEnMemoria
+from backend.persistencia.modelos import EntregaNueva
 from backend.salidas.borrador import Devolucion
 
 CITA = "El presupuesto inicial asciende a 4.500 euros"
@@ -217,12 +218,82 @@ def test_un_informe_sin_borrador_no_se_trata_como_un_fallo(
     assert "borrador" in cuerpo["aviso"].lower()
     assert cuerpo["entrega"]["estado"] == "ANALIZADO"
 
+    # El aviso no puede prometer una acción que esta API no ofrece: no hay
+    # forma de pedir solo el borrador otra vez, así que el texto no puede
+    # sugerirlo -ni con la frase exacta que usa `BorradorNoValido`, ni con
+    # una jerga distinta que diga lo mismo-, y sí tiene que decir cuál es
+    # la acción real: repetir el análisis entero.
+    aviso = cuerpo["aviso"].lower()
+    assert "pide de nuevo la redacción" not in aviso
+    # sin-tilde: variante deliberadamente sin tilde de la comprobación de
+    # arriba, por si alguien reescribe el mensaje sin acentuar y el defecto
+    # se cuela igual: esta línea no describe nada, solo repite la frase
+    # prohibida en su forma sin tilde para que la denuncie también así.
+    assert "pide de nuevo la redaccion" not in aviso
+    assert "análisis completo" in aviso or "análisis entero" in aviso
+    assert "informe es válido" in aviso or "informe" in aviso
+
     # El informe válido queda guardado y se recupera sin volver a pagar el
     # motor: dos llamadas en total, ni una más por el GET posterior.
     r2 = c.get(f"/api/entregas/{ident}/analisis")
     assert r2.status_code == 200
     assert r2.json()["devolucion"] is None
+    assert r2.json()["aviso"] == cuerpo["aviso"]
     assert len(proveedor.llamadas) == 2
+
+
+def test_el_aviso_del_borrador_incompleto_no_reenvia_el_texto_de_dominio(
+) -> None:
+    """Prueba de unidad sobre `_aviso_de_borrador_incompleto`, sin pasar
+    por la API: cubre también la causa `ErrorDelProveedor`, que el flujo
+    completo no puede provocar con `ProveedorSimulado` -sus fallos se
+    consumen en la primera llamada, no en la segunda-.
+    """
+    from backend.api.analisis import _aviso_de_borrador_incompleto
+    from backend.persistencia.modelos import EntregaRegistrada
+    from backend.salidas.borrador import BorradorNoValido
+    from backend.salidas.informe import Informe
+    from backend.servicios.analisis_de_entrega import InformeSinBorrador
+
+    entrega = EntregaRegistrada(
+        id="e1", codigo_alumno="AF023", ciclo="DAM", fase="E2", version=1,
+        nombre_archivo="a.pdf", huella="h", recibida_en="2026-01-15T00:00:00",
+        estado="ANALIZADO", motivo_bloqueo=None, version_criterios="v1",
+    )
+    informe = Informe(
+        identificacion={}, control_administrativo=[], resumen="r",
+        valoraciones=[], fortalezas=[], prioridades=[],
+        prioridades_descartadas=[], dudas=[], indicios=[], reparos=[],
+        dimensiones_ausentes=[], semaforo="GRIS", recomendacion=None,
+        motor="simulado",
+    )
+
+    causa_regla = BorradorNoValido(
+        "El motor ha devuelto un borrador que viola la regla "
+        "«nota_o_calificacion»; no se entrega. Corrígelo a mano o pide de "
+        "nuevo la redacción."
+    )
+    try:
+        raise InformeSinBorrador("mensaje interno", entrega, informe) from causa_regla
+    except InformeSinBorrador as fallo_regla:
+        aviso_regla = _aviso_de_borrador_incompleto(fallo_regla)
+
+    assert "pide de nuevo la redacción" not in aviso_regla
+    assert "«nota_o_calificacion»" not in aviso_regla  # jerga: un slug interno
+    assert "análisis completo" in aviso_regla
+
+    causa_proveedor = ErrorDelProveedor(
+        "No se ha podido obtener el análisis: OpenAI no ha respondido en "
+        "los 120 segundos de espera configurados. Puede ser una entrega "
+        "larga o el servicio estar saturado; se puede reintentar."
+    )
+    try:
+        raise InformeSinBorrador("mensaje interno", entrega, informe) from causa_proveedor
+    except InformeSinBorrador as fallo_proveedor:
+        aviso_proveedor = _aviso_de_borrador_incompleto(fallo_proveedor)
+
+    assert "OpenAI no ha respondido" in aviso_proveedor
+    assert "análisis completo" in aviso_proveedor
 
 
 def test_un_archivo_que_desaparece_no_da_un_error_de_servidor(
@@ -342,3 +413,97 @@ def test_dos_hilos_a_la_vez_solo_uno_analiza(
         h.join()
 
     assert sorted(resultados) == [200, 409]
+
+
+# --- Todo mensaje que llega a un docente, y no a un programador ---------
+
+# Marcadores de una traza de Python o del nombre crudo de una excepción,
+# ninguno de los cuales debería aparecer en ningún texto que lea el
+# docente. No es una lista exhaustiva -no puede serlo-, pero cubre lo que
+# ya se ha colado alguna vez en este tipo de sistema: una traza entera, el
+# nombre de una clase de excepción sin traducir, o la representación en
+# bruto de un objeto de Python.
+_MARCAS_DE_JERGA = (
+    "Traceback",
+    "traceback",
+    "line ",
+    "Error(",
+    "Exception(",
+    " at 0x",
+    "__main__",
+    "self.",
+    "raise ",
+)
+
+
+def _sin_jerga(texto: str) -> bool:
+    return not any(marca in texto for marca in _MARCAS_DE_JERGA)
+
+
+def test_ningun_mensaje_de_error_deja_pasar_jerga_de_programador(
+    cliente, criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """Un barrido por los mensajes que puede devolver esta API: ninguno
+    puede leerse como si viniera de una traza de Python.
+
+    Cubre 404, 409 (sin carpeta, entrega inexistente y candado en uso),
+    503, 400 (archivo desaparecido y decisión inválida) y el 200 con
+    aviso del informe sin borrador.
+    """
+    mensajes: list[str] = []
+
+    mensajes.append(
+        cliente.post("/api/entregas/no-existe/analisis").json()["detail"]
+    )
+    mensajes.append(
+        cliente.get("/api/entregas/no-existe/analisis").json()["detail"]
+    )
+
+    escribir_pdf(entregas / "otra.pdf", [["1. Introduccion", "Texto suficiente."]])
+    sin_carpeta = _crear_cliente(
+        criterios_de_analisis, entregas, ProveedorSimulado()
+    )
+    ident_temporal = sin_carpeta.app.state.almacen.registrar(EntregaNueva(
+        codigo_alumno="AF023", ciclo="DAM", fase="E2", version=1,
+        nombre_archivo="otra.pdf", huella="huella-1",
+        version_criterios="v2026-2027",
+    )).id
+    # Se quita la carpeta después de registrar: registrar la exige.
+    sin_carpeta.app.state.configuracion.carpeta_entregas = None
+    mensajes.append(
+        sin_carpeta.post(f"/api/entregas/{ident_temporal}/analisis").json()["detail"]
+    )
+
+    fallo_motor = _crear_cliente(
+        criterios_de_analisis, entregas,
+        ProveedorSimulado(fallos=[ErrorDelProveedor("sin red")]),
+    )
+    ident_fallo = _confirmar(fallo_motor)
+    mensajes.append(
+        fallo_motor.post(f"/api/entregas/{ident_fallo}/analisis").json()["detail"]
+    )
+
+    ilegible = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
+    ident_ilegible = _confirmar(ilegible)
+    (entregas / "AF023_DAM_E2_20260115_v1.pdf").unlink()
+    mensajes.append(
+        ilegible.post(f"/api/entregas/{ident_ilegible}/analisis").json()["detail"]
+    )
+
+    en_curso = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
+    en_curso.app.state.analisis_en_curso.add("cualquiera")
+    mensajes.append(
+        en_curso.post("/api/entregas/cualquiera/analisis").json()["detail"]
+    )
+
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
+    mensajes.append(
+        cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+            "decisiones": [{"dimension": "D05", "decision": "INVENTADA",
+                            "texto": None}],
+        }).json()["detail"]
+    )
+
+    for mensaje in mensajes:
+        assert isinstance(mensaje, str) and mensaje, mensaje
+        assert _sin_jerga(mensaje), mensaje

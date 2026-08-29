@@ -19,6 +19,13 @@ tienen que llegar al docente sin una traza de Python por en medio:
   `None` y un `aviso` que explica qué falta y por qué. Tratarlo como
   cualquier otro fallo tiraría a la papelera un informe que sí es
   correcto, y es exactamente lo que este endpoint no puede permitirse.
+  Ese `aviso` se compone aquí, no se reenvía `str(fallo)` tal cual: el
+  texto de dominio -de `BorradorNoValido`, en `salidas/borrador.py`- puede
+  terminar en «pide de nuevo la redacción», y eso da a entender que existe
+  una operación que repite solo el borrador. No existe -esta tarea no la
+  construye a propósito-, y la única vía real es `POST /analisis` entero,
+  que repite el análisis completo. Prometer un atajo que no hay es peor
+  que no decir nada. Ver `_aviso_de_borrador_incompleto`.
 - Fallo del proveedor (`ErrorDelProveedor`): sin red, sin clave, cuota
   agotada, una respuesta que no encaja ni al reintento. No se guarda nada,
   la entrega sigue en el estado en que estaba, y el mensaje del adaptador
@@ -46,7 +53,7 @@ from pydantic import BaseModel, ConfigDict
 from backend.analisis.proveedor import ErrorDelProveedor
 from backend.extraccion.lectura import PdfIlegible
 from backend.persistencia.modelos import EntregaRegistrada
-from backend.salidas.borrador import Devolucion
+from backend.salidas.borrador import BorradorNoValido, Devolucion
 from backend.salidas.informe import Informe
 from backend.servicios.analisis_de_entrega import InformeSinBorrador, analizar_entrega
 
@@ -101,6 +108,44 @@ def _candado(peticion: Request) -> Lock:
 
 def _en_curso(peticion: Request) -> set[str]:
     return peticion.app.state.analisis_en_curso
+
+
+def _aviso_de_borrador_incompleto(fallo: InformeSinBorrador) -> str:
+    """El aviso que ve el profesor cuando el informe salió bien pero el
+    borrador no. Se compone en esta capa, no se reenvía el texto de dominio.
+
+    `InformeSinBorrador` guarda la causa original en `__cause__` -así la
+    levanta `analizar_entrega`, con `raise ... from fallo`-, y esa causa
+    puede ser `BorradorNoValido` o `ErrorDelProveedor`. El texto de
+    `BorradorNoValido` combina el motivo con una sugerencia -«Corrígelo a
+    mano o pide de nuevo la redacción»- que aquí no se sostiene: no hay
+    ninguna operación que repita solo la redacción, así que ese fragmento
+    no se reenvía. Los mensajes de `ErrorDelProveedor` -de
+    `backend/analisis/openai.py`- ya están escritos para el docente, sin
+    esa promesa concreta, y esos sí se citan tal cual.
+
+    La acción de verdad disponible -volver a pedir el análisis entero por
+    `POST /analisis`- se dice siempre, la ponga o no la causa original.
+    """
+    causa = fallo.__cause__
+    if isinstance(causa, BorradorNoValido):
+        motivo = (
+            "el texto que ha propuesto el motor incumplía una de las "
+            "reglas que no se negocian sobre lo que puede decirle a un "
+            "alumno."
+        )
+    elif causa is not None:
+        motivo = str(causa)
+    else:  # pragma: no cover - siempre llega con `from fallo`.
+        motivo = "no se ha podido completar."
+    return (
+        "El análisis se ha completado: el informe es válido y ya se puede "
+        "usar para decidir. El borrador de devolución para el alumno no se "
+        f"ha podido generar. Motivo: {motivo} No hay una forma de pedir "
+        "solo el borrador otra vez: para reintentarlo hay que volver a "
+        "pedir el análisis completo, que se repite entero. Mientras tanto, "
+        "el borrador se puede redactar a mano."
+    )
 
 
 @router.get("/motor")
@@ -166,7 +211,8 @@ def analizar(identificador: str, peticion: Request) -> ResultadoAnalisis:
         except InformeSinBorrador as fallo:
             resultado = ResultadoAnalisis(
                 entrega=fallo.entrega, informe=fallo.informe, devolucion=None,
-                motor=proveedor.nombre, aviso=str(fallo),
+                motor=proveedor.nombre,
+                aviso=_aviso_de_borrador_incompleto(fallo),
             )
             peticion.app.state.correcciones[identificador] = resultado
             return resultado
