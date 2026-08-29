@@ -60,17 +60,24 @@ def _fallo_con_estado(clase: type, estado: int, mensaje: str):
     return clase(mensaje, response=respuesta, body=respuesta.json())
 
 
-def _fallo_de_json_cortado() -> pydantic.ValidationError:
+def _fallo_de_json_cortado(marca: str = "") -> pydantic.ValidationError:
     """Un `ValidationError` real, del mismo tipo que lanza `responses.parse`
     dentro del SDK cuando el JSON que ha llegado no se puede interpretar
     como el formulario -el caso típico es una respuesta cortada porque el
-    modelo agotó el límite de tokens de salida-."""
+    modelo agotó el límite de tokens de salida-.
+
+    Si se pasa `marca`, se incrusta dentro del JSON truncado: pydantic
+    repite un fragmento del valor recibido en el propio mensaje de
+    `ValidationError` (comprobado contra la versión instalada), así que sirve
+    para las mismas pruebas de fuga que un mensaje de OpenAI con un
+    fragmento de clave -aquí la «clave» sería, en un caso real, un trozo del
+    trabajo del alumno o del propio JSON del modelo, no menos sensible."""
 
     class _FormularioDePrueba(pydantic.BaseModel):
         campo: str
 
     try:
-        _FormularioDePrueba.model_validate_json('{"campo": "sin cerrar')
+        _FormularioDePrueba.model_validate_json(f'{{"campo": "{marca}sin cerrar')
     except pydantic.ValidationError as fallo:
         return fallo
     raise AssertionError("se esperaba que el JSON incompleto fallara al validar")
@@ -125,15 +132,27 @@ def test_una_respuesta_que_no_encaja_es_reintentable() -> None:
         p.analizar("i", "t", AnalisisDelMotor)
 
 
-def test_un_fallo_de_red_llega_en_castellano() -> None:
-    cliente = _ClienteFalso(error=ConnectionError("connection refused"))
+def test_un_fallo_no_categorizado_llega_en_castellano_sin_repetir_el_original() -> None:
+    """El manejador genérico -`except Exception`- es el que recibe cualquier
+    fallo que no se haya anticipado arriba: un `PermissionDeniedError`, un
+    `BadRequestError`, un `RuntimeError` a secas. Por eso no puede incluir
+    `str(fallo)` en el mensaje: una rama genérica es, por definición, la que
+    recibe lo que no se sabía que iba a pasar, y no hay forma de garantizar
+    que ese texto no traiga un fragmento de la clave -tal y como demuestra
+    `AuthenticationError` con su propio mensaje-. El mensaje tiene que ser
+    comprensible y en castellano igualmente, remitiendo al log del servidor
+    para el detalle, en vez de reenviar el original."""
+    cliente = _ClienteFalso(error=ConnectionError("connection refused, clave=sk-secreta"))
     p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
 
     with pytest.raises(ErrorDelProveedor) as fallo:
         p.analizar("i", "t", AnalisisDelMotor)
 
-    assert "no se ha podido" in str(fallo.value).lower()
-    assert "connection refused" in str(fallo.value)
+    mensaje = str(fallo.value)
+    assert "no se ha podido" in mensaje.lower()
+    assert "log" in mensaje.lower()
+    assert "connection refused" not in mensaje
+    assert "sk-secreta" not in mensaje
 
 
 def test_el_nombre_dice_que_modelo_se_uso() -> None:
@@ -224,25 +243,39 @@ def test_sin_conexion_se_distingue_de_un_timeout() -> None:
 
 
 def test_ningun_mensaje_de_fallo_conocido_repite_la_clave() -> None:
-    """Cinturón y tirantes sobre el test de autenticación: recorre todos los
-    fallos categorizados con una clave de prueba reconocible incrustada en
-    el mensaje y comprueba que ninguno la deja pasar. Si mañana se añade una
-    categoría nueva de fallo que reenvíe `str(fallo)` sin pensarlo, esta
-    prueba no la cubre a menos que se añada a la lista -pero cubre las
-    cuatro que existen hoy."""
+    """Cinturón y tirantes sobre los tests individuales de cada excepción:
+    recorre las cinco que el adaptador clasifica -autenticación, límite de
+    uso, tiempo de espera agotado, sin conexión y JSON truncado- con una
+    marca reconocible incrustada en cada una, y comprueba que ninguna la
+    deja pasar hasta el mensaje final.
+
+    Antes esta prueba decía cubrir «las cuatro que existen hoy» y la lista
+    solo tenía dos: un test que afirma cubrir más de lo que cubre es peor
+    que no tenerlo, porque da una seguridad falsa a quien lo lea. Ahora
+    tiene las cinco reales, no cuatro ni dos.
+
+    `APITimeoutError` no admite un mensaje propio -el SDK lo fija siempre a
+    "Request timed out."-, así que en su caso se comprueba que ese texto
+    fijo tampoco sobrevive, en vez de una marca inyectada."""
     marca = "CLAVE-DE-PRUEBA-QUE-NO-DEBE-APARECER"
-    fallos = [
-        _fallo_con_estado(openai.AuthenticationError, 401, f"clave invalida: {marca}"),
-        _fallo_con_estado(openai.RateLimitError, 429, f"limite alcanzado: {marca}"),
+    casos = [
+        (_fallo_con_estado(openai.AuthenticationError, 401, f"clave invalida: {marca}"), marca),
+        (_fallo_con_estado(openai.RateLimitError, 429, f"limite alcanzado: {marca}"), marca),
+        (openai.APITimeoutError(request=_peticion()), "Request timed out"),
+        (
+            openai.APIConnectionError(message=f"fallo de red: {marca}", request=_peticion()),
+            marca,
+        ),
+        (_fallo_de_json_cortado(marca), marca),
     ]
-    for fallo_programado in fallos:
+    for fallo_programado, texto_que_no_debe_aparecer in casos:
         cliente = _ClienteFalso(error=fallo_programado)
         p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
 
         with pytest.raises(ErrorDelProveedor) as fallo:
             p.analizar("i", "t", AnalisisDelMotor)
 
-        assert marca not in str(fallo.value)
+        assert texto_que_no_debe_aparecer not in str(fallo.value)
 
 
 def test_una_clave_falsa_no_aparece_por_ninguno_de_los_cinco_caminos(caplog) -> None:
@@ -306,6 +339,98 @@ def test_una_clave_falsa_no_aparece_por_ninguno_de_los_cinco_caminos(caplog) -> 
         except ErrorDelProveedor:
             registrador.exception("fallo simulado al conectar con el proveedor")
     assert marca not in caplog.text
+
+
+MARCA_NO_CATEGORIZADA = "sk-CLAVE-FALSA-EN-UN-FALLO-NO-CATEGORIZADO"
+
+
+@pytest.mark.parametrize(
+    "fallo_programado",
+    [
+        pytest.param(
+            _fallo_con_estado(
+                openai.PermissionDeniedError,
+                403,
+                f"You don't have access to this resource: {MARCA_NO_CATEGORIZADA}.",
+            ),
+            id="PermissionDeniedError-403",
+        ),
+        pytest.param(
+            RuntimeError(f"fallo interno inesperado: {MARCA_NO_CATEGORIZADA}"),
+            id="RuntimeError-generico",
+        ),
+    ],
+)
+def test_un_tipo_no_categorizado_no_aparece_por_ninguno_de_los_cinco_caminos(
+    fallo_programado, caplog
+) -> None:
+    """El caso que importa después de cerrar el manejador genérico: un tipo
+    que el adaptador NO clasifica -un `PermissionDeniedError`, con la misma
+    forma que `AuthenticationError` y `RateLimitError`, que sí se protegen;
+    o un `RuntimeError` a secas, sin ninguna forma reconocible- también
+    tiene que superar los cinco caminos de la tabla, no solo el tipo que ya
+    se protegía antes de esta ronda."""
+    cliente = _ClienteFalso(error=fallo_programado)
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(ErrorDelProveedor) as info:
+            p.analizar("i", "t", AnalisisDelMotor)
+    excepcion = info.value
+
+    # 1. str()
+    assert MARCA_NO_CATEGORIZADA not in str(excepcion)
+    # 2. repr()
+    assert MARCA_NO_CATEGORIZADA not in repr(excepcion)
+    # 3. traceback.format_exc()
+    traza = "".join(
+        traceback.format_exception(type(excepcion), excepcion, excepcion.__traceback__)
+    )
+    assert MARCA_NO_CATEGORIZADA not in traza
+    # 4. __cause__ / __context__
+    assert excepcion.__cause__ is None
+    assert excepcion.__context__ is None
+    # 5. logger.exception(...) posterior, simulando que algo más arriba
+    # captura el fallo sin saber qué tipo es.
+    assert MARCA_NO_CATEGORIZADA not in caplog.text
+    registrador = logging.getLogger("prueba_de_fuga_openai_no_categorizado")
+    with caplog.at_level(logging.ERROR, logger="prueba_de_fuga_openai_no_categorizado"):
+        try:
+            raise excepcion
+        except ErrorDelProveedor:
+            registrador.exception("fallo simulado, tipo no categorizado")
+    assert MARCA_NO_CATEGORIZADA not in caplog.text
+
+
+def test_el_diagnostico_registra_tipo_estado_y_peticion(caplog) -> None:
+    """Prueba positiva, no solo negativa. Hasta ahora todo lo que fijaba el
+    comportamiento de `_registrar_diagnostico` eran pruebas de que la clave
+    NO aparece en el log: dejando esa función sin hacer nada, los dieciocho
+    tests anteriores seguían en verde, y nada avisaba de que el mecanismo de
+    diagnóstico se había roto. Esta prueba comprueba que el log SÍ lleva lo
+    que hace falta para depurar un fallo raro -tipo de excepción, código de
+    estado HTTP e identificador de petición-, con un `request_id` real en la
+    respuesta simulada para comprobar que también se recoge cuando existe."""
+    peticion = _peticion()
+    respuesta = httpx.Response(
+        429,
+        request=peticion,
+        headers={"x-request-id": "req_prueba_12345"},
+        json={"error": {"message": "Rate limit reached"}},
+    )
+    fallo_programado = openai.RateLimitError(
+        "Rate limit reached", response=respuesta, body=respuesta.json()
+    )
+    cliente = _ClienteFalso(error=fallo_programado)
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(ErrorDelProveedor):
+            p.analizar("i", "t", AnalisisDelMotor)
+
+    assert "RateLimitError" in caplog.text
+    assert "429" in caplog.text
+    assert "req_prueba_12345" in caplog.text
 
 
 def test_una_respuesta_cortada_se_clasifica_como_reintentable() -> None:

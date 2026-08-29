@@ -53,6 +53,18 @@ suprimir, porque no llegó a fijarse.
 Lo único que sobrevive de `fallo` es lo que registra `_registrar_diagnostico`
 en el log del servidor -tipo de excepción, código de estado, identificador
 de petición-, nunca el mensaje ni el cuerpo del error.
+
+Esa misma regla protege también al `except Exception` genérico, que es el
+que más importa: ahí cae todo lo que no se ha categorizado arriba -un
+`BadRequestError`, un `PermissionDeniedError`, un `NotFoundError`, un
+`InternalServerError`, cualquier fallo nuevo que traiga una versión futura
+del SDK-, y esas excepciones tienen la misma forma que las que sí se
+protegen. Una versión anterior de este módulo metía `str(fallo)` dentro del
+propio mensaje de ese `except`, así que la clave podía viajar por ahí sin
+necesidad de tocar `__cause__` ni `__context__` para nada: bastaba con leer
+el mensaje. El genérico ya no incluye el texto original por la misma razón
+que ninguno de los otros lo incluye: una rama que recibe lo que no se
+anticipó no puede garantizar que ese texto esté limpio.
 """
 
 import logging
@@ -217,10 +229,21 @@ class ProveedorOpenAI:
                 fallo,
             )
         except Exception as fallo:
+            # Genérico a propósito: aquí cae todo lo que no se ha
+            # categorizado arriba -un BadRequestError, un
+            # PermissionDeniedError, un NotFoundError, un InternalServerError,
+            # cualquier fallo nuevo del SDK-, y esas excepciones tienen la
+            # misma forma que las que sí se protegen. Por eso el mensaje NO
+            # incluye `str(fallo)`: una rama genérica es, por definición, la
+            # que recibe lo que no se anticipó, y no hay forma de garantizar
+            # que ese texto esté libre de un fragmento de la clave. El
+            # detalle se queda en el log, vía `_registrar_diagnostico`, nunca
+            # en lo que ve el profesor.
             fallo_a_propagar = _construir_fallo(
                 ErrorDelProveedor,
-                "No se ha podido obtener el análisis del proveedor. "
-                f"Motivo: {fallo}",
+                "No se ha podido obtener el análisis: ha fallado algo no "
+                "previsto al hablar con OpenAI. Revisa el log del servidor "
+                "para más detalle.",
                 fallo,
             )
 
