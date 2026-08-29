@@ -211,7 +211,7 @@ def test_la_recomendacion_acompana_al_semaforo_y_no_es_una_nota(
                          _analisis([_v("D05", "P1")]), "simulado")
 
     assert i.semaforo == "ROJO"
-    assert i.recomendacion == "Revision docente y plan de corrección"
+    assert i.recomendacion == "Revisión docente y plan de corrección"
 
 
 def test_dimensiones_no_valoradas_quedan_a_la_vista(

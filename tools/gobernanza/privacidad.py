@@ -1,6 +1,6 @@
 """R6: nada personal entra en el repositorio.
 
-Es un cedazo, no una garantia. Atrapa el descuido tipico -arrastrar una
+Es un cedazo, no una garantía. Atrapa el descuido tipico -arrastrar una
 entrega, pegar una ficha con datos- y no pretende sustituir el criterio de
 quien commitea.
 """

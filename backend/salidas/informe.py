@@ -2,13 +2,13 @@
 
 Es la salida donde SI aparece todo: los P4, las observaciones cuya evidencia
 no se pudo localizar, los reparos de la verificación, las dudas que el motor
-reserva al docente y los indicios de autoria. Al alumno le llega un resumen
+reserva al docente y los indicios de autoría. Al alumno le llega un resumen
 (Task 8); al docente, el trabajo entero. Esa es la diferencia entre las dos
 salidas, y no es de formato: este documento no llega jamas al alumno, y por
 eso puede ser franco donde el borrador tiene que ser prudente.
 
 No hay campo para la nota. El Anexo C la menciona -"Semaforo, nota y
-recomendacion"- porque el Maestro la preve para cuando exista la rubrica
+recomendacion"- porque el Maestro la preve para cuando exista la rúbrica
 oficial con sus ponderaciones; mientras esas ponderaciones sigan
 PENDIENTE_OFICIAL, R3 impide inventarlas y aquí no existe ni el hueco. El
 semaforo y la recomendacion si tienen hueco: los dos proponen -un estado
@@ -53,7 +53,7 @@ _SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "AMBAR"}
 _RECOMENDACION_POR_OMISION = {
     "VERDE": "Mantener fortalezas y aplicar ajustes menores",
     "AMBAR": "Aplicar cambios antes de cerrar la siguiente fase",
-    "ROJO": "Revision docente y plan de corrección",
+    "ROJO": "Revisión docente y plan de corrección",
     "GRIS": "Resolver incidencia; no emitir juicio académico automático",
 }
 
@@ -63,9 +63,9 @@ class Informe(BaseModel):
 
     Quedan fuera dos bloques de la plantilla del Maestro: "Continuidad"
     -depende del feedback aplicado en la fase anterior, un dato que todavia
-    no le llega a `componer_informe`- y "Revision del profesor" -es el
+    no le llega a `componer_informe`- y "Revisión del profesor" -es el
     resultado de que el docente use este informe, no un dato que el informe
-    pueda llevar sobre si mismo-. Ninguno de los dos se inventa aqui.
+    pueda llevar sobre si mismo-. Ninguno de los dos se inventa aquí.
     """
 
     model_config = ConfigDict(extra="forbid")
