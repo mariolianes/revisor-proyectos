@@ -20,7 +20,15 @@ cumpla sin depender de la memoria de nadie.
 Si dos criterios vigentes chocan, el sistema **detiene ese juicio** y crea una
 alerta. No elige.
 
-## Las siete reglas
+## Las reglas
+
+Cuántas hay no se dice aquí como titular: un número fijo -«las siete», «las
+ocho»- hay que acordarse de tocarlo cada vez que se añade una regla, y ese
+acordarse es justo lo que falló cuando llegó R8: el titular siguió diciendo
+«las siete reglas» con ocho ya escritas debajo. La lista que sigue es la
+fuente; `test_estado_reglas.py` compara sus códigos, uno por uno, con los que
+describe la pantalla de estado, así que un desajuste entre los dos lo dice un
+test que falla, no un recuento en la prosa.
 
 **R1 · Ningún criterio sin origen.** Toda entrada de `criteria/` declara
 `fuente: documento#ancla` apuntando a una sección real de `docs/maestro/`.
@@ -52,9 +60,22 @@ documento en `docs/changes/`. *Verificada.*
 **R6 · Nada personal entra en el repositorio.** Ni entregas, ni nombres, ni
 datos identificativos. *Verificada.*
 
-**R7 · Las reservas del profesor son bloqueos reales.** Las nueve decisiones
-del §13 del Maestro se implementan como estados que el backend no atraviesa
-solo. *Pendiente: se implementa con el backend.*
+**R7 · Las reservas del profesor son bloqueos reales.** El §13 reserva nueve
+decisiones al profesor, y el backend de corrección ya existe para la parte
+del flujo que llega hasta el borrador de devolución:
+`backend/api/entregas.py` no tiene ninguna operación que apruebe una nota ni
+que la comunique al alumno -la reserva se cumple porque esa operación no
+existe, a propósito-, y `backend/salidas/borrador.py` descarta cualquier
+borrador donde el motor haya escrito una nota, un apto o no apto, o un juicio
+de autoría, en vez de dejarlo pasar sin más. La revisión observación por
+observación es la única vía por la que una valoración llega a considerarse
+aceptada. Lo que el §13 reserva fuera de ese tramo -autorizar un cambio de
+tema o modalidad, decidir si una carencia impide avanzar de fase, valorar la
+presentación ante el tribunal- no tiene todavía ningún estado que bloquear,
+porque esa parte del flujo no está construida: no es que el bloqueo falle, es
+que no hay nada que bloquear todavía. *Parcial: verificada donde el backend
+de corrección ya existe; sin implementar donde ese backend todavía no
+existe.*
 
 **R8 · La prosa en castellano lleva sus tildes.** Este sistema produce texto que
 leen un profesor y sus alumnos: la instrucción que se manda al motor, el informe

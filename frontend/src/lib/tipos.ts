@@ -67,7 +67,11 @@ export interface Regla {
   nombre: string
   vigila: string
   limite: string
-  /** 'verificada' si hay código que la comprueba, 'pendiente' si aún no. */
+  /**
+   * 'verificada' si hay código que la comprueba; 'parcial' si protege una
+   * parte real de lo que promete y el resto es un hueco conocido, no un
+   * olvido; 'pendiente' si aún no vigila nada.
+   */
   estado: string
   infracciones: number
   detalles: Infraccion[]
