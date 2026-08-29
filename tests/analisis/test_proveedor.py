@@ -101,6 +101,40 @@ def test_respuesta_no_valida_es_un_error_del_proveedor() -> None:
     assert issubclass(RespuestaNoValida, ErrorDelProveedor)
 
 
+def test_el_mensaje_para_el_profesor_es_el_de_la_excepcion_por_omision() -> None:
+    """El contrato explícito de `ErrorDelProveedor`: por omisión, el texto
+    que ve el docente es el mismo con el que se construyó la excepción.
+
+    Esto es justo lo que ya hacían las dos capas que consumen esta
+    excepción -`servicios/analisis_de_entrega.py` y `api/analisis.py`-
+    cuando hacían `str(fallo)` directamente; declarar la propiedad no
+    cambia ningún mensaje existente, solo deja de ser una convención
+    implícita que dependía de que cada proveedor la respetara sin que
+    nada se lo recordara.
+    """
+    fallo = ErrorDelProveedor("sin conexión con el proveedor")
+
+    assert fallo.mensaje_para_el_profesor == "sin conexión con el proveedor"
+    assert fallo.mensaje_para_el_profesor == str(fallo)
+
+
+def test_una_subclase_puede_dar_un_mensaje_distinto_al_de_str() -> None:
+    """El contrato admite que un proveedor futuro necesite un texto
+    distinto del que lleva la excepción -compuesto a partir de varios
+    datos internos, por ejemplo-, sobrescribiendo la propiedad en su
+    propia subclase sin tocar `__str__`.
+    """
+    class _FalloConMensajePropio(ErrorDelProveedor):
+        @property
+        def mensaje_para_el_profesor(self) -> str:
+            return "texto pensado para el docente"
+
+    fallo = _FalloConMensajePropio("detalle interno, no para el docente")
+
+    assert fallo.mensaje_para_el_profesor == "texto pensado para el docente"
+    assert str(fallo) == "detalle interno, no para el docente"
+
+
 def test_el_puerto_es_generico_en_el_formulario_pedido() -> None:
     """El mismo proveedor sirve para pedir cualquier formulario, no solo el
     análisis: es el punto de diseño que permite reutilizarlo para el

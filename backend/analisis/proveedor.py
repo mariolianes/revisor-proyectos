@@ -38,7 +38,30 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class ErrorDelProveedor(Exception):
-    """No se ha podido obtener un análisis."""
+    """No se ha podido obtener un análisis.
+
+    `mensaje_para_el_profesor` es el contrato explícito de lo que esta
+    excepción puede enseñarle a un docente: por omisión es el mensaje con
+    el que se construyó -que es justo lo que ya hacían las dos capas que
+    la consumen (`servicios/analisis_de_entrega.py`, al componer el aviso
+    de `InformeSinBorrador`, y `api/analisis.py`, al traducirla a un 503)-,
+    así que declarar la propiedad no cambia ningún mensaje existente.
+
+    Lo que sí cambia es que deja de ser una convención implícita que solo
+    cumple el adaptador de OpenAI porque su docstring lo explica: el
+    puerto `ProveedorAnalisis` existe para que se puedan escribir otros
+    proveedores, y un proveedor nuevo que herede de esta clase sin pensar
+    en su mensaje también hereda esta propiedad -no hay que acordarse de
+    nada extra para que siga siendo segura-. Si algún día un proveedor
+    necesita un texto distinto del que lleva la excepción -compuesto a
+    partir de varios datos internos, por ejemplo, sin volcarlos todos en
+    el mensaje-, sobrescribe esta propiedad en su propia subclase; eso no
+    afecta a `str()` ni a nada que ya dependa de él.
+    """
+
+    @property
+    def mensaje_para_el_profesor(self) -> str:
+        return str(self)
 
 
 class RespuestaNoValida(ErrorDelProveedor):
