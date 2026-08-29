@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from backend.analisis.contrato import AnalisisDelMotor, Evidencia, Valoracion
@@ -130,6 +131,28 @@ class _AlmacenQueFallaAlGuardar:
 
     def correccion_de(self, entrega_id):
         return self._interno.correccion_de(entrega_id)
+
+
+class _AlmacenQueFallaConCualquierCosa(_AlmacenQueFallaAlGuardar):
+    """El mismo doble, pero fallando con la excepción que se le indique.
+
+    Existe para fijar que el revertido no depende de acertar una lista de
+    excepciones. `AlmacenSupabase.guardar_correccion` puede fallar de formas
+    que no son `ErrorDeAlmacen`: un `criteria/<version>/prioridades.yaml`
+    malformado -un fichero que el docente edita a mano- levanta un error de
+    YAML; un POST que vuelve sin representación levanta `IndexError`; una
+    respuesta que no es JSON levanta un error de decodificación. Las tres
+    dejaban la entrega diciendo ANALIZADO sin ninguna corrección detrás, que
+    es el mismo callejón sin salida que ya se arregló dos veces enumerando
+    tipos, y que por eso ahora se cierra por construcción.
+    """
+
+    def __init__(self, fallo: Exception) -> None:
+        super().__init__()
+        self._fallo = fallo
+
+    def guardar_correccion(self, *args, **kwargs):
+        raise self._fallo
 
 
 def _devolucion_con_nota():
@@ -1142,5 +1165,56 @@ def test_un_almacen_que_falla_al_guardar_revierte_la_entrega_y_no_da_un_500(
     # ...y la entrega no se ha quedado marcada ANALIZADO sin nada detrás:
     # ha vuelto a RECIBIDO, tal y como estaba antes de este intento, y se
     # puede volver a analizar.
+    entrega = next(e for e in c.get("/api/entregas").json() if e["id"] == ident)
+    assert entrega["estado"] == "RECIBIDO"
+
+
+@pytest.mark.parametrize("fallo", [
+    yaml.YAMLError("prioridades.yaml esta malformado"),
+    IndexError("el POST volvio sin representacion"),
+    ValueError("la respuesta no era JSON"),
+])
+def test_la_entrega_revierte_falle_el_almacen_como_falle(
+    criterios_de_analisis, entregas, escribir_pdf, fallo
+) -> None:
+    """El revertido no puede depender de acertar la lista de excepciones.
+
+    Esta es la tercera vez que aparece el mismo callejón sin salida. Primero
+    solo se capturaba `TextoFueraDeLimite` y `ErrorDeAlmacen` dejaba la
+    entrega diciendo ANALIZADO sin corrección detrás; al añadirla, seguían
+    escapándose estas tres, todas alcanzables desde
+    `AlmacenSupabase.guardar_correccion`: `criteria/<version>/prioridades.yaml`
+    es un fichero que el docente edita a mano y puede quedar malformado, un
+    POST puede volver sin representación, y una respuesta 2xx puede no ser
+    JSON -un proxy, un portal cautivo-.
+
+    Enumerar es justo lo que ha fallado las dos veces, así que la garantía
+    dejó de ser una lista: si la corrección no se ha escrito, la entrega no
+    puede quedarse diciendo que sí, salga lo que salga de `guardar_correccion`.
+    Este test lo fija con tres excepciones que no comparten ninguna clase
+    base útil entre ellas.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    app = crear_app(
+        criterios_de_analisis,
+        configuracion=Configuracion(carpeta_entregas=entregas,
+                                    version_criterios="v2026-2027"),
+        almacen=_AlmacenQueFallaConCualquierCosa(fallo),
+        proveedor=ProveedorSimulado(respuestas=[_analisis(), _devolucion()]),
+    )
+    c = TestClient(app)
+    ident = _confirmar(c)
+
+    with pytest.raises(type(fallo)):
+        c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
+
+    # Lo que importa no es qué error salió -ese lo traduce el manejador
+    # global, o revienta como un 500 si nadie lo reconoce-, sino que la
+    # entrega no se ha quedado mintiendo: vuelve a RECIBIDO y se puede
+    # reintentar desde la pantalla.
     entrega = next(e for e in c.get("/api/entregas").json() if e["id"] == ident)
     assert entrega["estado"] == "RECIBIDO"

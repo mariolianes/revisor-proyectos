@@ -339,8 +339,8 @@ def _guardar_o_fallar(
     -nada de este intento ha quedado guardado, así que nada distingue esta
     entrega de una que todavía no se ha analizado-.
 
-    Hay dos formas de que `guardar_correccion` falle, y las dos revierten
-    igual:
+    Cualquier forma de que `guardar_correccion` falle revierte igual. Las
+    dos que reciben trato propio son:
 
     - `TextoFueraDeLimite`: un texto del motor por encima de
       `LIMITE_DE_OBSERVACION`. Se traduce a un mensaje propio -ver
@@ -367,7 +367,16 @@ def _guardar_o_fallar(
             status_code=503,
             detail=_mensaje_de_desbordamiento_del_motor(fallo),
         ) from fallo
-    except ErrorDeAlmacen:
+    except Exception:
+        # A propósito `Exception` y no una lista de tipos. Enumerar es lo que
+        # ha fallado dos veces aquí: primero solo se capturaba
+        # `TextoFueraDeLimite` y `ErrorDeAlmacen` dejaba la entrega mintiendo;
+        # al añadirla, seguían escapándose un YAML de criterios malformado, un
+        # POST que vuelve sin representación y una respuesta que no es JSON, y
+        # las tres reproducían el mismo callejón. Lo que importa aquí no es qué
+        # salió mal, sino que si la corrección no se ha escrito, la entrega no
+        # puede quedarse diciendo que sí. La excepción se deja subir intacta:
+        # traducirla es cosa del manejador global de `backend/app.py`.
         almacen.cambiar_estado(identificador, "RECIBIDO", None)
         raise
 
