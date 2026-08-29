@@ -1895,7 +1895,9 @@ Si le pidiéramos un párrafo libre, para saber si dice «está todo bien» habr
 - Create: `tests/salidas/test_borrador.py`
 
 **Interfaces:**
-- Consumes: `seleccionar_prioridades` (Task 7); `ProveedorAnalisis` (Task 4); `criteria/<version>/feedback.yaml`.
+- Consumes: `seleccionar_prioridades(raiz, version, analisis) -> SeleccionDePrioridades`
+  con campos `.elegidas` y `.descartadas` (Task 7); `ProveedorAnalisis` (Task 4);
+  `criteria/<version>/feedback.yaml`.
 - Produces:
   - `Devolucion(BaseModel)` con `apertura: str`, `fortalezas: list[str]`, `acciones: list[str]`, `cierre: str`
   - `instruccion_de_devolucion(raiz, version, analisis, elegidas) -> str`
@@ -2136,7 +2138,7 @@ def componer(
     §17.2 aplicado donde se puede aplicar sin interpretar texto. El borrador no
     puede pedirle al alumno nada que no este en el informe.
     """
-    elegidas = seleccionar_prioridades(raiz, version, analisis)
+    elegidas = seleccionar_prioridades(raiz, version, analisis).elegidas
     if not elegidas and not analisis.fortalezas:
         return Devolucion(apertura="", fortalezas=[], acciones=[], cierre="")
 
@@ -2185,7 +2187,23 @@ El Anexo C, compuesto desde el análisis verificado. Es la salida donde **sí** 
 - Create: `tests/salidas/test_informe.py`
 
 **Interfaces:**
-- Consumes: `AnalisisVerificado` (Task 3), `seleccionar_prioridades` (Task 7), `EntregaRegistrada` y `FichaDeLectura` de la Parte A.
+- Consumes: `AnalisisVerificado` (Task 3);
+  `seleccionar_prioridades(raiz, version, analisis) -> SeleccionDePrioridades`
+  con campos `.elegidas` y `.descartadas` (Task 7); `EntregaRegistrada` y
+  `FichaDeLectura` de la Parte A.
+
+> **Por que el informe lleva las descartadas.** El limite de la economia
+> pedagogica es de cuatro prioridades trasladadas al alumno. Cuando hay siete
+> observaciones criticas con evidencia, tres se quedan fuera. El informe interno
+> es del profesor, no del alumno, y **tiene que decirle cuales fueron y por que
+> se quedaron fuera**: si solo ve cuatro, creera que solo hay cuatro problemas,
+> y eso es peor que una lista larga. Por eso `prioridades_descartadas` lleva las
+> observaciones completas y no un recuento.
+>
+> Ahi entra **solo** lo que sobro por el limite. Lo que nunca fue candidato —un
+> P4, o algo sin evidencia localizada— no es una prioridad descartada: es algo
+> que no debia llegar al alumno de ninguna manera. Mezclarlos le daria al
+> profesor una idea falsa de lo que se dejo fuera.
 - Produces:
   - `Informe(BaseModel)` con `identificacion: dict[str, str]`, `control_administrativo: list[str]`, `resumen: str`, `valoraciones: list[ValoracionVerificada]`, `fortalezas: list[str]`, `prioridades: list[ValoracionVerificada]`, `dudas: list[str]`, `indicios: list[str]`, `reparos: list[Reparo]`, `semaforo: str | None`, `motor: str`
   - `componer_informe(raiz, version, entrega, ficha, analisis, motor) -> Informe`
@@ -2369,10 +2387,11 @@ class Informe(BaseModel):
     control_administrativo: list[str]
     resumen: str
     valoraciones: list[ValoracionVerificada]
-    fortalezas: list[str]
+    fortalezas: list[FortalezaVerificada]
     prioridades: list[ValoracionVerificada]
+    prioridades_descartadas: list[ValoracionVerificada]
     dudas: list[str]
-    indicios: list[str]
+    indicios: list[IndicioDeAutoriaVerificado]
     reparos: list[Reparo]
     dimensiones_ausentes: list[str]
     semaforo: str | None
@@ -2415,6 +2434,8 @@ def componer_informe(
             if c.veredicto == "NO_CUMPLE":
                 control.append(f"{c.criterio}: {c.medido}")
 
+    seleccion = seleccionar_prioridades(raiz, version, analisis)
+
     return Informe(
         identificacion={
             "alumno": entrega.codigo_alumno,
@@ -2425,10 +2446,15 @@ def componer_informe(
             "criterios": entrega.version_criterios,
         },
         control_administrativo=control,
-        resumen=" ".join(analisis.fortalezas[:1]) or "Sin resumen del motor.",
+        resumen=(
+            analisis.fortalezas[0].descripcion
+            if analisis.fortalezas
+            else "Sin resumen del motor."
+        ),
         valoraciones=analisis.valoraciones,
         fortalezas=analisis.fortalezas,
-        prioridades=seleccionar_prioridades(raiz, version, analisis),
+        prioridades=seleccion.elegidas,
+        prioridades_descartadas=seleccion.descartadas,
         dudas=analisis.dudas_para_el_docente,
         indicios=analisis.indicios_de_autoria,
         reparos=analisis.reparos,
