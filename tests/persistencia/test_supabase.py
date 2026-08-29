@@ -711,3 +711,41 @@ def test_guardar_correccion_son_tres_peticiones_como_maximo(postgrest) -> None:
     ]
     assert len(postgrest.tablas["valoracion_dimension"]) == 2
     assert len(postgrest.tablas["evidencia"]) == 2
+
+
+def test_la_prioridad_guardada_es_un_valor_que_la_columna_enumerada_admite(
+    postgrest,
+) -> None:
+    """`valoracion_dimension.prioridad` es de tipo `prioridad`
+    (`supabase/migrations/20260827120000_esquema_inicial.sql`), un
+    enumerado con cuatro valores: CRITICA, ALTA, MEDIA, BAJA. El motor -y
+    con él, `ValoracionVerificada.prioridad`- habla en el vocabulario del
+    docente: P1, P2, P3, P4. `criteria/v2026-2027/prioridades.yaml` declara
+    la correspondencia entre los dos -P1 es CRITICA, P2 es ALTA, y así- y
+    dice que esa equivalencia «vive aquí y en ningún otro sitio».
+
+    Antes de esta tarea, `guardar_correccion` no la usaba: escribía
+    `v.prioridad` tal cual -«P2»- directamente en la columna. Contra
+    Postgres de verdad eso es un valor que el tipo enumerado rechaza, y el
+    fallo llegaba después de haber guardado ya la corrección, así que el
+    `rollback` de `guardar_correccion` borraba la corrección entera: la
+    entrega quedaba marcada como analizada -y, con credenciales reales, ya
+    cobrada- pero sin nada que releer.
+
+    Este test no imagina esa columna: el `postgrest` de `tests/conftest.py`
+    ahora valida cada escritura contra el esquema que declara
+    `supabase/migrations/`, tipos enumerados incluidos, así que un «P2» en
+    `valoracion_dimension.prioridad` hace fallar esto exactamente como
+    fallaría contra la base de datos real -con `ErrorDeAlmacen`, que es en
+    lo que `AlmacenSupabase._pedir` traduce cualquier respuesta de error de
+    PostgREST-.
+    """
+    almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())
+    entrega = almacen.registrar(_entrega())
+    informe = _informe_de_prueba([_valoracion("D05")])
+
+    almacen.guardar_correccion(entrega.id, informe, None, "simulado")
+
+    guardadas = postgrest.tablas["valoracion_dimension"]
+    assert len(guardadas) == 1
+    assert guardadas[0]["prioridad"] in ("CRITICA", "ALTA", "MEDIA", "BAJA")
