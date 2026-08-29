@@ -1,5 +1,10 @@
 """Índice, contenido y anexos: dónde empieza y acaba lo que se cuenta."""
 
+# sin-tilde-fichero: este modulo construye PDF de prueba y compara caracter
+# a caracter lo que la lectura extrae de ellos. El texto simulado va sin
+# tildes adrede: ponerselas aqui y no en la asercion, o al reves, rompe la
+# prueba sin arreglar nada.
+
 from pathlib import Path
 
 from backend.extraccion.estructura import medir_estructura
@@ -29,6 +34,7 @@ def test_localiza_el_comienzo_de_los_anexos(pdf_con_indice: Path) -> None:
 
 def test_cuenta_las_paginas_de_contenido(pdf_con_indice: Path) -> None:
     """De la 3 a la 6: cuatro páginas. Portada, índice y anexo fuera."""
+
     with abrir(pdf_con_indice) as documento:
         estructura = medir_estructura(documento)
 

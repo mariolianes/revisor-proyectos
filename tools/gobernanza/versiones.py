@@ -1,7 +1,7 @@
 """R4: los criterios se versionan y se congelan.
 
-Una version que ya se uso en una correccion aprobada no se toca nunca mas.
-Esto es lo que permite reconstruir, un ano despues, con que criterio exacto
+Una versión que ya se uso en una corrección aprobada no se toca nunca mas.
+Esto es lo que permite reconstruir, un ano después, con que criterio exacto
 se corrigio a un alumno concreto. Si hay que cambiar algo, se crea la
 version siguiente.
 """
@@ -24,11 +24,11 @@ def _yaml_de(carpeta: Path) -> dict[str, str]:
 
 
 def congelar(raiz: Path, version: str) -> None:
-    """Sella una version de criterios por primera y unica vez.
+    """Sella una versión de criterios por primera y unica vez.
 
-    Si la version no existe, lanza FileNotFoundError. Si ya esta congelada,
+    Si la versión no existe, lanza FileNotFoundError. Si ya esta congelada,
     no reescribe el sello: lanza RuntimeError, porque volver a sellar
-    borraria sin dejar rastro la prueba de que una version usada en
+    borraria sin dejar rastro la prueba de que una versión usada en
     correcciones aprobadas fue alterada. Ambos son errores de uso del
     programador, no infracciones de gobernanza.
     """
@@ -47,7 +47,7 @@ def congelar(raiz: Path, version: str) -> None:
 
 
 def verificar_r4(raiz: Path) -> list[Infraccion]:
-    """Comprueba que ninguna version congelada ha sido alterada."""
+    """Comprueba que ninguna versión congelada ha sido alterada."""
     infracciones: list[Infraccion] = []
     carpeta_criterios = raiz / "criteria"
     if not carpeta_criterios.is_dir():

@@ -225,7 +225,7 @@ def test_la_consulta_fuerza_el_cruce_interno() -> None:
 def test_un_error_del_servidor_se_traduce() -> None:
     """Y dice que mirar, no solo que algo ha fallado.
 
-    Las tablas tienen RLS activo y ninguna politica, asi que esto solo
+    Las tablas tienen RLS activo y ninguna politica, así que esto solo
     funciona con la clave de servicio: un 401 significa que la clave no vale
     o ha caducado, y el docente tiene que saber donde esta esa clave.
     """
@@ -284,7 +284,7 @@ def test_cambiar_estado_manda_un_patch() -> None:
 def test_cambiar_estado_pide_el_alumno_en_la_representacion() -> None:
     """Sin `select`, PostgREST devuelve la fila de `entrega` a secas.
 
-    Y entonces `_componer` compone una entrega con el codigo de alumno y el
+    Y entonces `_componer` compone una entrega con el código de alumno y el
     ciclo vacios, que es lo que este metodo devolvia -y lo que acababa en la
     ficha y en la respuesta de la API- mientras AlmacenEnMemoria devolvia la
     entrega entera. Lo encontro el test de paridad entre los dos almacenes.

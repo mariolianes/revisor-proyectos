@@ -107,6 +107,8 @@ def test_la_normalizacion_reune_una_palabra_partida_por_guion_de_maquetacion() -
 def test_un_guion_de_palabra_compuesta_no_se_toca() -> None:
     """"coste-beneficio" es una palabra legítima: no lleva un salto de línea detrás."""
     assert normalizar_para_buscar("un análisis coste-beneficio detallado") == (
+        # sin-tilde: es la salida de normalizar_para_buscar, que las quita a
+        # propósito. Escribirla con tildes afirmaría lo contrario de lo que hace.
         "un analisis coste-beneficio detallado"
     )
 

@@ -3,7 +3,7 @@
     python tools/verificar_gobernanza.py              todo el arbol
     python tools/verificar_gobernanza.py --staged     solo lo que se va a commitear
     python tools/verificar_gobernanza.py --sellar     regenera el registro de R2
-    python tools/verificar_gobernanza.py --congelar v2026-2027   cierra una version
+    python tools/verificar_gobernanza.py --congelar v2026-2027   cierra una versión
 
 Codigos de salida: 0 conforme, 1 hay infracciones, 2 no se ha podido ejecutar.
 """
@@ -23,6 +23,7 @@ from tools.gobernanza.cambios import (  # noqa: E402
     verificar_formato_cambios,
 )
 from tools.gobernanza.criterios import verificar_r1, verificar_r3  # noqa: E402
+from tools.gobernanza.ortografia import verificar_r8  # noqa: E402
 from tools.gobernanza.privacidad import verificar_r6  # noqa: E402
 from tools.gobernanza.resultado import Infraccion, formatear  # noqa: E402
 from tools.gobernanza.sincronia import escribir_sincronia, verificar_r2  # noqa: E402
@@ -42,7 +43,7 @@ def ficheros_en_staging(raiz: Path) -> list[str]:
 
 
 def ejecutar(raiz: Path, ficheros: list[str], solo_staged: bool) -> list[Infraccion]:
-    """Ejecuta las seis reglas mecanizables y devuelve todas las infracciones."""
+    """Ejecuta las siete reglas mecanizables y devuelve todas las infracciones."""
     objetivos = ficheros_en_staging(raiz) if solo_staged else list(ficheros)
 
     infracciones: list[Infraccion] = []
@@ -52,6 +53,7 @@ def ejecutar(raiz: Path, ficheros: list[str], solo_staged: bool) -> list[Infracc
     infracciones += verificar_r4(raiz)
     infracciones += verificar_formato_cambios(raiz)
     infracciones += verificar_r6(raiz, objetivos)
+    infracciones += verificar_r8(raiz, objetivos)
 
     # R5 solo tiene sentido sobre un conjunto concreto de ficheros: sin saber
     # que se esta commiteando, no se puede exigir que lo acompane un cambio.
@@ -79,7 +81,7 @@ def _preparar_salida() -> None:
 
 
 def main(argv: list[str] | None = None, raiz: Path | None = None) -> int:
-    """Punto de entrada de la CLI. Devuelve el codigo de salida.
+    """Punto de entrada de la CLI. Devuelve el código de salida.
 
     0 conforme, 1 hay infracciones, 2 no se ha podido ejecutar. El 2 existe
     porque un fallo de la herramienta no es una infraccion de gobernanza: si
@@ -89,7 +91,7 @@ def main(argv: list[str] | None = None, raiz: Path | None = None) -> int:
     _preparar_salida()
     try:
         return _resolver(argv, raiz)
-    except Exception as fallo:  # noqa: BLE001 - se traduce a codigo 2 a proposito
+    except Exception as fallo:  # noqa: BLE001 - se traduce a código 2 a propósito
         print("No se ha podido ejecutar el verificador de gobernanza.")
         print(f"Motivo: {type(fallo).__name__}: {fallo}")
         print("Esto no es una infracción: es que la comprobación no ha llegado "

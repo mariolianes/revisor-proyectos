@@ -278,7 +278,7 @@ def pdf_con_indice(tmp_path: Path) -> Path:
             ["2. Objetivos", "Texto de los objetivos del trabajo."],
             ["Continuacion de los objetivos, que ocupan dos paginas."],
             ["3. Desarrollo", "Texto del desarrollo del trabajo."],
-            ["ANEXOS", "Anexo I. Codigo fuente."],
+            ["ANEXOS", "Anexo I. Código fuente."],
         ],
     )
 

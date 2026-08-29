@@ -205,7 +205,7 @@ def test_cada_parrafo_partido_en_dos_no_dispara_avisos() -> None:
 def test_texto_sin_lineas_en_blanco_entre_parrafos_se_compara_igual_de_bien() -> None:
     """El caso real de nuestra propia extraccion: PyMuPDF no siempre deja
     parrafos separados por una linea en blanco, y el texto llega como un
-    unico bloque. Aun asi, una entrega que progresa de verdad se reconoce:
+    único bloque. Aun así, una entrega que progresa de verdad se reconoce:
     lo anterior sigue contando como conservado y lo añadido cuenta como
     nuevo."""
     anterior_sin_saltos = "\n".join(ANTERIOR.split("\n\n"))

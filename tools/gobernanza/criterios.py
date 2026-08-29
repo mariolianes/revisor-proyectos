@@ -79,7 +79,7 @@ def bloques_raiz(ruta_yaml: Path) -> list[tuple[str, object]]:
 
 def _identificar(entrada: dict) -> str:
     """Nombre con el que referirse a una entrada en el mensaje de error."""
-    return str(entrada.get("codigo") or entrada.get("_clave") or "entrada sin codigo")
+    return str(entrada.get("codigo") or entrada.get("_clave") or "entrada sin código")
 
 
 def _verificar_primer_nivel(ruta_yaml: Path, relativa: str) -> list[Infraccion]:
@@ -87,7 +87,7 @@ def _verificar_primer_nivel(ruta_yaml: Path, relativa: str) -> list[Infraccion]:
 
     'entradas_de' reconoce un criterio por llevar 'fuente' o 'codigo'. En los
     ficheros con forma de mapa -formato, calendario, ponderaciones,
-    matriz-fases- ningun bloque lleva 'codigo', asi que lo unico que los hacia
+    matriz-fases- ningun bloque lleva 'codigo', así que lo único que los hacia
     visibles para R1 era justamente el campo que R1 existe para exigir: un
     bloque sin 'fuente' no era un criterio incompleto, era un bloque invisible.
 

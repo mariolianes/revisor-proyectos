@@ -56,6 +56,20 @@ datos identificativos. *Verificada.*
 del §13 del Maestro se implementan como estados que el backend no atraviesa
 solo. *Pendiente: se implementa con el backend.*
 
+**R8 · La prosa en castellano lleva sus tildes.** Este sistema produce texto que
+leen un profesor y sus alumnos: la instrucción que se manda al motor, el informe
+técnico y el borrador de devolución. Un informe que escribe «Redaccion y
+presentacion» mientras valora la redacción de un trabajo académico se
+desautoriza solo. La regla mira solo prosa —cadenas, comentarios, docstrings y
+el cuerpo de los documentos—, nunca identificadores, claves ni rutas: escribir
+`analisis` como nombre de variable es una convención deliberada del proyecto.
+El vocabulario contiene únicamente palabras cuya forma sin tilde no existe en
+castellano; nada de «mas», «solo» o «limite», que son válidas sin ella. Cuando
+un texto sin tildes sea correcto —la salida de una función que las quita, o el
+contenido simulado de un PDF que se compara carácter a carácter— se marca con
+`sin-tilde:` o `sin-tilde-fichero:` **y su motivo escrito**, para que la
+excepción sea una decisión y no un silenciador. *Verificada.*
+
 ## Cómo se cambia un criterio
 
 ```

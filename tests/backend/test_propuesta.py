@@ -125,7 +125,7 @@ def test_dos_criterios_numericos_cambian_a_la_vez_cada_uno_su_propuesta(repo: Pa
     assert cuerpo.valor_propuesto == "12"
 
 
-# --- Fix round 6: no se pide decision sobre lo que no ha cambiado ---
+# --- Fix round 6: no se pide decisión sobre lo que no ha cambiado ---
 
 
 def test_un_valor_que_sigue_en_el_texto_llega_ya_revisado_sin_cambio(repo: Path):

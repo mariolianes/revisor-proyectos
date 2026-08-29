@@ -20,7 +20,7 @@ CARPETAS_IGNORADAS = {
     # repositorio versionado y contiene copias de planes con ejemplos.
     ".superpowers",
     # Arboles de trabajo aislados de los agentes. Son copias enteras del repo,
-    # asi que sin esto cada fichero del proyecto se inspecciona una vez por
+    # así que sin esto cada fichero del proyecto se inspecciona una vez por
     # copia y los ejemplos sinteticos de tests/gobernanza/ se denuncian a si
     # mismos desde una ruta que no coincide con su excepcion.
     ".claude",
@@ -40,7 +40,7 @@ EXTENSIONES_DE_TEXTO = {
 PATRON_DNI = re.compile(r"\b\d{8}-?[A-HJ-NP-TV-Za-hj-np-tv-z]\b")
 PATRON_CORREO = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b")
 # Movil o fijo espanol: empieza por 6, 7, 8 o 9 y tiene nueve digitos, con
-# prefijo internacional +34 opcional. Los limites excluyen tambien letras y
+# prefijo internacional +34 opcional. Los limites excluyen también letras y
 # guion bajo (no solo digitos y guion), para que una secuencia de nueve
 # digitos embebida en un hash hexadecimal -que tiene letras alrededor- no
 # dispare el patron. Solo se reconocen las agrupaciones reales con las que

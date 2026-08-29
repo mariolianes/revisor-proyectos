@@ -8,7 +8,7 @@ from backend.servicios.transaccion import CambioDeValor, _asunto, guardar
 
 # Copiadas de tests/backend/conftest.py: ni tests/ ni tests/backend/ tienen
 # __init__.py -y no deben tenerlo, colisionaria con el paquete backend real-,
-# asi que "from tests.backend.conftest import ..." no resuelve como modulo.
+# así que "from tests.backend.conftest import ..." no resuelve como modulo.
 # Son ocho lineas y no las usa nadie mas.
 
 
@@ -532,7 +532,7 @@ def test_los_comentarios_del_fichero_de_criterios_sobreviven_al_guardado(repo: P
         "# NO EDITAR sin cambiar antes la prosa. Ver GOVERNANCE.md.\n"
         "\n"
         "extension_extra:\n"
-        "  # El minimo sale del apartado 4.2 de la programacion didactica.\n"
+        "  # El mínimo sale del apartado 4.2 de la programacion didactica.\n"
         "  minimo_paginas_contenido: 20  # sin portada, indice ni anexos\n"
         "\n"
         "  fuente: maestro#6-estandar-academico\n"
@@ -554,7 +554,7 @@ def test_los_comentarios_del_fichero_de_criterios_sobreviven_al_guardado(repo: P
     for comentario in (
         "# Requisitos extra de formato. Derivado de docs/maestro/.",
         "# NO EDITAR sin cambiar antes la prosa. Ver GOVERNANCE.md.",
-        "  # El minimo sale del apartado 4.2 de la programacion didactica.",
+        "  # El mínimo sale del apartado 4.2 de la programacion didactica.",
         "# sin portada, indice ni anexos",
     ):
         assert comentario in texto, f"se ha perdido el comentario: {comentario}"
