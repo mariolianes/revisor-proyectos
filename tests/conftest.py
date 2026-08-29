@@ -407,11 +407,15 @@ def pdf_con_imagen_sin_colocacion(tmp_path: Path) -> Path:
 # paridad entre los dos almacenes.
 #
 # No pretende ser PostgREST: implementa lo que AlmacenSupabase le pide -filtros
-# `eq.`, el `select` con el alumno anidado, `order`, `limit`, insertar y
-# actualizar- y las tres restricciones `unique` del esquema que esta parte
-# puede llegar a violar. Todo lo demás responde como respondería el servidor
-# ante una petición que no entiende, para que un cambio en el almacén que se
-# salga de lo previsto se note en vez de pasar en silencio.
+# `eq.`, el `select` con el alumno anidado, `order`, `limit`, insertar,
+# actualizar y borrar (con `on delete cascade` emulado para `correccion` ->
+# `valoracion_dimension` -> `evidencia`)- y las restricciones del esquema que
+# esta parte puede llegar a violar: los `unique` de `alumno`, `proyecto`,
+# `entrega`, `correccion` y `valoracion_dimension`, y el CHECK
+# `fragmento_acotado` de `evidencia` (D-001, 1.500 caracteres). Todo lo demás
+# responde como respondería el servidor ante una petición que no entiende,
+# para que un cambio en el almacén que se salga de lo previsto se note en vez
+# de pasar en silencio.
 
 import json as _json
 import uuid as _uuid
@@ -424,6 +428,8 @@ CLAVES_UNICAS = {
     "alumno": ("codigo",),
     "proyecto": ("alumno_id", "version_criterios"),
     "entrega": ("proyecto_id", "fase", "version"),
+    "correccion": ("entrega_id",),
+    "valoracion_dimension": ("correccion_id", "dimension"),
 }
 
 # Lo que la base de datos rellena sola al insertar una entrega.
@@ -431,15 +437,31 @@ VALORES_POR_OMISION = {
     "entrega": {"estado": "RECIBIDO", "motivo_bloqueo": None},
 }
 
+# El CHECK `fragmento_acotado` de la migración: D-001, 1.500 caracteres.
+# Se emula aquí para que un fragmento de más no pase en el servidor de
+# mentira, igual que no pasaría en Postgres -aunque en la práctica no debería
+# llegar tan lejos nunca: `validar_citas_acotadas`
+# (backend/persistencia/correccion.py) ya lo rechaza en código, en los dos
+# almacenes, antes de escribir nada.
+_LIMITES_DE_CAMPO = {("evidencia", "fragmento"): 1500}
+
+# `on delete cascade` de la migración: borrar una fila de la tabla se lleva
+# las de la tabla hija cuya columna de la derecha la señale.
+_CASCADA = {
+    "correccion": [("valoracion_dimension", "correccion_id")],
+    "valoracion_dimension": [("evidencia", "valoracion_id")],
+}
+
 _NO_SON_FILTROS = {"select", "limit", "order", "offset"}
 
 
 class PostgrestSimulado:
-    """Las tres tablas que esta parte del flujo usa, en memoria."""
+    """Las tablas que esta parte del flujo usa, en memoria."""
 
     def __init__(self) -> None:
         self.tablas: dict[str, list[dict]] = {
             "alumno": [], "proyecto": [], "entrega": [],
+            "correccion": [], "valoracion_dimension": [], "evidencia": [],
         }
         self.peticiones: list[str] = []
 
@@ -510,16 +532,39 @@ class PostgrestSimulado:
 
     # -- escritura ----------------------------------------------------------
 
-    def _choca_con_una_unica(self, tabla: str, nueva: dict) -> bool:
+    def _choca_con_una_unica(self, tabla: str, nueva: dict, otras: list[dict]) -> bool:
+        """Si `nueva` choca con una fila ya guardada, o con otra del mismo
+        lote -un `INSERT` de varias filas en una sola petición es una única
+        sentencia en Postgres, y viola la restricción `unique` igual si el
+        duplicado está dentro del propio lote que si ya estaba en la tabla-.
+
+        Una tabla sin claves declaradas en `CLAVES_UNICAS` -`evidencia`, que
+        no tiene ningún `unique` en la migración- no puede chocar nunca: sin
+        esta guarda, `all()` sobre una tupla de claves vacía es `True` por
+        definición, y cualquier fila de una tabla así -en cuanto hubiera una
+        más en la tabla o en el mismo lote- se habría denunciado como
+        duplicada sin serlo.
+        """
         claves = CLAVES_UNICAS.get(tabla, ())
+        if not claves:
+            return False
         return any(
             all(fila.get(clave) == nueva.get(clave) for clave in claves)
-            for fila in self.tablas[tabla]
+            for fila in (*self.tablas[tabla], *otras)
         )
 
+    def _viola_un_limite_de_campo(self, tabla: str, fila: dict) -> bool:
+        for (t, columna), limite in _LIMITES_DE_CAMPO.items():
+            if tabla == t and len(fila.get(columna) or "") > limite:
+                return True
+        return False
+
     def _insertar(self, tabla: str, cuerpo) -> _httpx.Response:
+        # Un `INSERT` de varias filas es una sola sentencia: si una fila
+        # cualquiera del lote viola una restricción, ninguna se guarda. Por
+        # eso se construyen y comprueban todas antes de tocar `self.tablas`.
         nuevas = cuerpo if isinstance(cuerpo, list) else [cuerpo]
-        creadas = []
+        filas: list[dict] = []
         for datos in nuevas:
             fila = {
                 "id": str(_uuid.uuid4()),
@@ -527,15 +572,31 @@ class PostgrestSimulado:
                 **VALORES_POR_OMISION.get(tabla, {}),
                 **datos,
             }
-            if self._choca_con_una_unica(tabla, fila):
+            if self._viola_un_limite_de_campo(tabla, fila):
+                return _httpx.Response(400, json={
+                    "code": "23514",
+                    "message": f'new row for relation "{tabla}" violates '
+                               f'check constraint "fragmento_acotado"',
+                })
+            if self._choca_con_una_unica(tabla, fila, filas):
                 return _httpx.Response(409, json={
                     "code": "23505",
                     "message": f'duplicate key value violates unique '
                                f'constraint "{tabla}_unique"',
                 })
-            self.tablas[tabla].append(fila)
-            creadas.append(fila)
-        return _httpx.Response(201, json=creadas)
+            filas.append(fila)
+        self.tablas[tabla].extend(filas)
+        return _httpx.Response(201, json=filas)
+
+    def _borrar_en_cascada(self, tabla: str, ids: set[str]) -> None:
+        """Como `on delete cascade`: se lleva las filas hijas, y las hijas
+        de las hijas, recursivamente."""
+        for hija, columna in _CASCADA.get(tabla, []):
+            ids_hijas = {f["id"] for f in self.tablas[hija] if f.get(columna) in ids}
+            self.tablas[hija] = [
+                f for f in self.tablas[hija] if f.get(columna) not in ids
+            ]
+            self._borrar_en_cascada(hija, ids_hijas)
 
     # -- despacho -----------------------------------------------------------
 
@@ -565,6 +626,15 @@ class PostgrestSimulado:
                 original.update(cuerpo)
                 actualizadas.append(self._anidar(tabla, original, select))
             return _httpx.Response(200, json=actualizadas)
+
+        if peticion.method == "DELETE":
+            ids = {fila["id"] for fila in filas}
+            borradas = [f for f in self.tablas[tabla] if f["id"] in ids]
+            self.tablas[tabla] = [
+                f for f in self.tablas[tabla] if f["id"] not in ids
+            ]
+            self._borrar_en_cascada(tabla, ids)
+            return _httpx.Response(200, json=borradas)
 
         if peticion.method != "GET":
             return _httpx.Response(

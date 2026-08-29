@@ -3,10 +3,19 @@
 Ninguno aprueba, califica ni comunica. El §13 reserva eso al profesor y la
 forma de respetarlo sigue siendo que las operaciones no existan.
 
-El análisis se guarda al hacerse y se devuelve tal cual después. Pedir la
-ficha no puede volver a llamar al motor: cuesta dinero y, sobre todo, daría
-otra cosa, y el docente vería cambiar bajo sus pies un juicio que estaba
-revisando.
+El análisis se guarda al hacerse -en el almacén, `Almacen.guardar_correccion`
+de `backend/persistencia/modelos.py`- y se devuelve tal cual después. Pedir
+la ficha no puede volver a llamar al motor: cuesta dinero y, sobre todo,
+daría otra cosa, y el docente vería cambiar bajo sus pies un juicio que
+estaba revisando.
+
+Guardar una revisión del docente (`POST .../revision`) usa el mismo método
+que guardar un análisis: una entrega tiene una corrección -`unique
+(entrega_id)` en la migración-, y aplicar una revisión sustituye la
+corrección entera por la que resulta de aplicarla, igual que reanalizar
+sustituye la de un intento anterior. No hay un tercer método para «editar
+en el sitio»: sería otra forma de decir lo mismo con más superficie que
+mantener.
 
 Un intento de análisis puede acabar de tres formas distintas, y las tres
 tienen que llegar al docente sin una traza de Python por en medio:
@@ -220,12 +229,14 @@ def analizar(identificador: str, peticion: Request) -> ResultadoAnalisis:
                 configuracion.version_criterios, almacen, proveedor, entrega,
             )
         except InformeSinBorrador as fallo:
+            aviso = _aviso_de_borrador_incompleto(fallo)
             resultado = ResultadoAnalisis(
                 entrega=fallo.entrega, informe=fallo.informe, devolucion=None,
-                motor=proveedor.nombre,
-                aviso=_aviso_de_borrador_incompleto(fallo),
+                motor=proveedor.nombre, aviso=aviso,
             )
-            peticion.app.state.correcciones[identificador] = resultado
+            almacen.guardar_correccion(
+                identificador, resultado.informe, None, resultado.motor, aviso
+            )
             return resultado
         except ErrorDelProveedor as fallo:
             raise HTTPException(
@@ -241,19 +252,41 @@ def analizar(identificador: str, peticion: Request) -> ResultadoAnalisis:
         entrega=correccion.entrega, informe=correccion.informe,
         devolucion=correccion.devolucion, motor=correccion.motor, aviso=None,
     )
-    peticion.app.state.correcciones[identificador] = resultado
+    almacen.guardar_correccion(
+        identificador, resultado.informe, resultado.devolucion, resultado.motor
+    )
     return resultado
+
+
+def _correccion_guardada(almacen, identificador: str):
+    """La corrección guardada de esta entrega, o `None` si no hay ninguna.
+
+    `obtener_analisis` y `revisar` la necesitan igual: la primera para
+    devolverla tal cual, la segunda para partir de ella antes de aplicar las
+    decisiones del docente.
+    """
+    return almacen.correccion_de(identificador)
 
 
 @router.get("/entregas/{identificador}/analisis")
 def obtener_analisis(identificador: str, peticion: Request) -> ResultadoAnalisis:
-    resultado = peticion.app.state.correcciones.get(identificador)
-    if resultado is None:
+    almacen = peticion.app.state.almacen
+    guardada = _correccion_guardada(almacen, identificador)
+    if guardada is None:
         raise HTTPException(
             status_code=404,
             detail="Esta entrega no se ha analizado todavía.",
         )
-    return resultado
+    entrega = almacen.por_id(identificador)
+    if entrega is None:
+        # No debería pasar -toda corrección cuelga de una entrega real-,
+        # pero si la entrega hubiera desaparecido, un 404 explícito dice más
+        # que un 500 con el campo `entrega` vacío.
+        raise HTTPException(status_code=404, detail="No existe esa entrega.")
+    return ResultadoAnalisis(
+        entrega=entrega, informe=guardada.informe, devolucion=guardada.devolucion,
+        motor=guardada.motor, aviso=guardada.aviso,
+    )
 
 
 @router.post("/entregas/{identificador}/revision")
@@ -265,11 +298,15 @@ def revisar(
     Solo lo aprobado se conserva. Es lo que el §13 llama revisión docente, y
     es la única vía por la que una observación llega a considerarse válida.
     """
-    resultado = peticion.app.state.correcciones.get(identificador)
-    if resultado is None:
+    almacen = peticion.app.state.almacen
+    guardada = _correccion_guardada(almacen, identificador)
+    if guardada is None:
         raise HTTPException(
             status_code=404, detail="Esta entrega no se ha analizado todavía."
         )
+    entrega = almacen.por_id(identificador)
+    if entrega is None:
+        raise HTTPException(status_code=404, detail="No existe esa entrega.")
 
     por_dimension = {d.dimension: d for d in cuerpo.decisiones}
     for d in cuerpo.decisiones:
@@ -281,7 +318,7 @@ def revisar(
             )
 
     conservadas = []
-    for v in resultado.informe.valoraciones:
+    for v in guardada.informe.valoraciones:
         decision = por_dimension.get(v.dimension)
         if decision is None or decision.decision == "ACEPTADA":
             conservadas.append(v)
@@ -291,11 +328,20 @@ def revisar(
             ))
         # DESCARTADA: no se conserva.
 
-    informe = resultado.informe.model_copy(update={
+    informe = guardada.informe.model_copy(update={
         "valoraciones": conservadas,
-        "prioridades": [p for p in resultado.informe.prioridades
+        "prioridades": [p for p in guardada.informe.prioridades
                         if any(c.dimension == p.dimension for c in conservadas)],
     })
-    revisado = resultado.model_copy(update={"informe": informe})
-    peticion.app.state.correcciones[identificador] = revisado
-    return revisado
+    # Sustituye la corrección entera: mismo método que guarda un análisis,
+    # mismo criterio de «la segunda sustituye a la primera». La devolución y
+    # el aviso no cambian con la revisión -el docente decide sobre el
+    # informe, no vuelve a pedir la redacción-, así que se conservan tal
+    # cual estaban.
+    almacen.guardar_correccion(
+        identificador, informe, guardada.devolucion, guardada.motor, guardada.aviso
+    )
+    return ResultadoAnalisis(
+        entrega=entrega, informe=informe, devolucion=guardada.devolucion,
+        motor=guardada.motor, aviso=guardada.aviso,
+    )

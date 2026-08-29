@@ -15,6 +15,7 @@ from datetime import datetime
 
 import httpx
 
+from backend.persistencia.correccion import Correccion, validar_citas_acotadas
 from backend.persistencia.modelos import (
     EntregaNueva,
     EntregaRegistrada,
@@ -24,6 +25,8 @@ from backend.persistencia.modelos import (
     validar_estado,
     validar_fase,
 )
+from backend.salidas.borrador import Devolucion
+from backend.salidas.informe import Informe
 
 ESPERA = 15.0
 
@@ -345,3 +348,106 @@ class AlmacenSupabase:
             json={"estado": estado, "motivo_bloqueo": motivo},
         )
         return self._componer(self._aplanar(filas[0])) if filas else None
+
+    def guardar_correccion(
+        self,
+        entrega_id: str,
+        informe: Informe,
+        devolucion: Devolucion | None,
+        motor: str,
+        aviso: str | None = None,
+    ) -> str:
+        """Tres escrituras encadenadas: `correccion`, `valoracion_dimension`
+        y `evidencia`. Si la segunda o la tercera fallan, se deshace la
+        primera -y con ella, por `on delete cascade`, cualquier fila que ya
+        hubiera colgado de ella- y se levanta `ErrorDeAlmacen`. Una
+        corrección guardada a medias -un informe sin sus valoraciones, o
+        unas valoraciones sin su evidencia- es peor que ninguna: el docente
+        la vería como completa y no lo es.
+
+        `informe` y `devolucion` se guardan enteros en las columnas `jsonb`
+        que añade la migración de esta tarea -es lo que permite reconstruir
+        las dos salidas completas en `correccion_de`, con fortalezas,
+        indicios de autoría, reparos y dudas incluidos, que no tienen fila
+        propia en ninguna tabla-. `valoracion_dimension` y `evidencia` se
+        escriben además, con los mismos datos: es la parte que un futuro
+        informe por dimensión necesita poder consultar con SQL, y la que
+        impone en la base de datos el límite de D-001 sobre cada cita.
+
+        Una entrega tiene una corrección -`unique (entrega_id)`-: si ya
+        había una, se borra antes de insertar la nueva. Es la misma
+        operación que reanalizar y que guardar una revisión del docente: las
+        dos sustituyen la corrección entera, no la editan campo a campo.
+        """
+        validar_citas_acotadas(informe)
+
+        existente = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
+        if existente is not None:
+            self._pedir(
+                "DELETE", "correccion", parametros={"id": f"eq.{existente['id']}"}
+            )
+
+        filas = self._pedir("POST", "correccion", json={
+            "entrega_id": entrega_id,
+            "version_criterios": informe.identificacion.get("criterios") or "",
+            "resumen_ejecutivo": informe.resumen,
+            "semaforo_propuesto": informe.semaforo,
+            "accion_recomendada": informe.recomendacion,
+            "informe": informe.model_dump(mode="json"),
+            "devolucion": (
+                devolucion.model_dump(mode="json") if devolucion is not None else None
+            ),
+            "aviso": aviso,
+        })
+        correccion_id = filas[0]["id"]
+
+        try:
+            if informe.valoraciones:
+                filas_valoracion = self._pedir("POST", "valoracion_dimension", json=[
+                    {
+                        "correccion_id": correccion_id,
+                        "dimension": v.dimension,
+                        "nivel": v.nivel,
+                        "prioridad": v.prioridad,
+                        "observacion": v.observacion,
+                    }
+                    for v in informe.valoraciones
+                ])
+                self._pedir("POST", "evidencia", json=[
+                    {
+                        "valoracion_id": fila_v["id"],
+                        "apartado": v.evidencia.apartado,
+                        "fragmento": v.evidencia.cita,
+                    }
+                    for fila_v, v in zip(filas_valoracion, informe.valoraciones)
+                ])
+        except ErrorDeAlmacen as fallo:
+            self._pedir(
+                "DELETE", "correccion", parametros={"id": f"eq.{correccion_id}"}
+            )
+            raise ErrorDeAlmacen(
+                "El análisis no se ha podido guardar del todo, así que no "
+                f"se ha guardado nada: {fallo} La entrega sigue sin análisis "
+                "guardado; puedes repetirlo."
+            ) from fallo
+
+        return correccion_id
+
+    def correccion_de(self, entrega_id: str) -> Correccion | None:
+        # `entrega_id` es de tipo `uuid` en la base de datos: el mismo motivo
+        # que `_es_uuid` protege en `por_id`, aquí sobre la columna de
+        # `correccion` en vez de sobre `entrega.id`.
+        if not _es_uuid(entrega_id):
+            return None
+        fila = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
+        if fila is None:
+            return None
+        informe = Informe.model_validate(fila["informe"])
+        devolucion = fila.get("devolucion")
+        return Correccion(
+            id=fila["id"],
+            informe=informe,
+            devolucion=Devolucion.model_validate(devolucion) if devolucion else None,
+            motor=informe.motor,
+            aviso=fila.get("aviso"),
+        )
