@@ -442,6 +442,15 @@ class AlmacenSupabase:
         fila = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
         if fila is None:
             return None
+        # `correccion.informe`/`.devolucion` son la fuente que se relee: la
+        # única con fidelidad completa (fortalezas, indicios de autoría,
+        # reparos, dudas, dimensiones ausentes, dos salidas enteras).
+        # `valoracion_dimension` y `evidencia` no se leen aquí -son la
+        # proyección consultable por SQL y la que impone en la base de datos
+        # el límite de D-001 con un CHECK real, no una segunda copia de la
+        # que reconstruir-. Las dos se escriben juntas en `guardar_correccion`
+        # y `test_paridad.py::test_la_tabla_estructurada_coincide_con_lo_reconstruido`
+        # comprueba que no diverjan.
         informe = Informe.model_validate(fila["informe"])
         devolucion = fila.get("devolucion")
         return Correccion(

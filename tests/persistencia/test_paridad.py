@@ -628,3 +628,74 @@ def test_una_cita_de_mas_de_1500_caracteres_falla_igual_en_los_dos(
     # Nada queda a medio guardar: ni la corrección ni sus hijas.
     assert memoria.correccion_de(memoria.listar()[0].id) is None
     assert supabase.correccion_de(supabase.listar()[0].id) is None
+
+
+def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
+    dos_almacenes, postgrest,
+) -> None:
+    """Guardar una corrección escribe la información dos veces en Supabase:
+    el `jsonb` que se relee (`correccion.informe`, ver
+    `AlmacenSupabase.correccion_de`) y las filas de
+    `valoracion_dimension`/`evidencia`, que son la proyección consultable
+    por SQL y la que aplica el límite de D-001 con un `CHECK` real. Las dos
+    representaciones tienen que decir lo mismo: si un cambio futuro tocara
+    una y no la otra, el docente vería un informe que no cuadra con lo que
+    la base de datos dice tener, y nada lo avisaría sin este test.
+
+    Se ejecuta en los dos almacenes -memoria no tiene una segunda
+    representación con la que discrepar, solo guarda el objeto que se le
+    da-, para que la comparación de siempre (memoria == supabase) también
+    alcance a lo que aquí se reconstruye, y no solo a Supabase por su cuenta.
+    """
+    informe = _informe(valoraciones=[
+        _valoracion(
+            dimension="D05",
+            cita="El presupuesto asciende a 4.500 euros en total",
+        ),
+        _valoracion(
+            dimension="D06",
+            cita="La memoria describe el reparto de tareas del equipo",
+        ),
+    ])
+
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(entrega.id, informe, _devolucion(), "simulado")
+        guardada = almacen.correccion_de(entrega.id)
+        assert guardada is not None
+        return {
+            v.dimension: (v.nivel, v.evidencia.cita)
+            for v in guardada.informe.valoraciones
+        }
+
+    memoria, supabase = dos_almacenes
+    reconstruido_memoria = guion(memoria)
+    reconstruido_supabase = guion(supabase)
+
+    esperado = {
+        "D05": ("EN_DESARROLLO", "El presupuesto asciende a 4.500 euros en total"),
+        "D06": ("EN_DESARROLLO", "La memoria describe el reparto de tareas del equipo"),
+    }
+    assert reconstruido_memoria == esperado
+    assert reconstruido_supabase == esperado
+
+    # Lo que de verdad quedó en la tabla estructurada tras la escritura
+    # sobre `supabase` -no el jsonb, que es lo que acaba de comparar
+    # `reconstruido_supabase`-.
+    correccion_id = postgrest.tablas["correccion"][0]["id"]
+    filas_valoracion = {
+        fila["id"]: fila for fila in postgrest.tablas["valoracion_dimension"]
+        if fila["correccion_id"] == correccion_id
+    }
+    assert {f["dimension"] for f in filas_valoracion.values()} == {"D05", "D06"}
+
+    estructurado = {}
+    for fila in postgrest.tablas["evidencia"]:
+        valoracion = filas_valoracion.get(fila["valoracion_id"])
+        if valoracion is None:
+            continue
+        estructurado[valoracion["dimension"]] = (
+            valoracion["nivel"], fila["fragmento"],
+        )
+
+    assert estructurado == reconstruido_supabase
