@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 
 import { TablaComprobaciones } from "../componentes/TablaComprobaciones"
 import { api } from "../lib/api"
-import type { FichaDeLectura } from "../lib/tipos"
+import type { FichaDeLectura, ResultadoAnalisis } from "../lib/tipos"
 
 interface Props {
   id: string
@@ -20,6 +20,12 @@ interface Props {
    */
   inicial?: FichaDeLectura | null
   alVolver: () => void
+  /**
+   * Analizar llama al motor y tarda; hecho, se abre la revisión con el
+   * resultado que ya trae la respuesta, igual que confirmar abre la ficha
+   * con lo que devuelve `POST /api/entregas` sin volver a pedirla.
+   */
+  alAnalizar: (id: string, resultado: ResultadoAnalisis) => void
 }
 
 /**
@@ -42,9 +48,11 @@ interface Props {
  * de su trabajo, y pintarlo igual que un incumplimiento le daría un peso
  * que no tiene.
  */
-export function Ficha({ id, inicial, alVolver }: Props) {
+export function Ficha({ id, inicial, alVolver, alAnalizar }: Props) {
   const [ficha, setFicha] = useState<FichaDeLectura | null>(inicial ?? null)
   const [error, setError] = useState("")
+  const [analizando, setAnalizando] = useState(false)
+  const [errorAnalisis, setErrorAnalisis] = useState("")
 
   useEffect(() => {
     // Con la ficha ya leída no se pide nada: la del POST está recién medida
@@ -78,6 +86,29 @@ export function Ficha({ id, inicial, alVolver }: Props) {
 
   const { entrega, medidas, evolucion } = ficha
 
+  // Solo con la entrega RECIBIDO y sin bloquear: RECIBIDO ya excluye
+  // BLOQUEADO -son valores del mismo campo `estado`-, pero se comprueban
+  // las dos cosas por separado porque son dos preguntas distintas y no hay
+  // que fiarse de que una las implique siempre a la otra si el backend
+  // cambiara. Una entrega ANALIZADO no vuelve a ofrecerlo: pedirlo dos
+  // veces vuelve a llamar al motor y a costar dinero, y esta pantalla no
+  // abre un camino para eso.
+  const puedeAnalizar = entrega.estado === "RECIBIDO" && !entrega.motivo_bloqueo
+
+  async function analizar() {
+    if (analizando) return
+    setErrorAnalisis("")
+    setAnalizando(true)
+    try {
+      const resultado = await api.analizar(id)
+      alAnalizar(id, resultado)
+    } catch (fallo) {
+      setErrorAnalisis(fallo instanceof Error ? fallo.message : String(fallo))
+    } finally {
+      setAnalizando(false)
+    }
+  }
+
   return (
     <div className="max-w-3xl">
       <button onClick={alVolver} className="text-[13px] text-gris mb-8">
@@ -88,9 +119,26 @@ export function Ficha({ id, inicial, alVolver }: Props) {
         {entrega.codigo_alumno} · {entrega.ciclo} · {entrega.fase} · versión{" "}
         {entrega.version}
       </h2>
-      <p className="font-mono text-[12px] text-gris mb-10">
+      <p className="font-mono text-[12px] text-gris mb-6">
         {entrega.nombre_archivo}
       </p>
+
+      {puedeAnalizar && (
+        <div className="mb-10">
+          <button
+            onClick={analizar}
+            disabled={analizando}
+            className="px-4 py-2 text-[13px] bg-tinta text-papel disabled:opacity-30"
+          >
+            {analizando ? "Analizando…" : "Analizar"}
+          </button>
+          {errorAnalisis && (
+            <p className="mt-3 max-w-lectura text-[13px] text-tinta">
+              {errorAnalisis}
+            </p>
+          )}
+        </div>
+      )}
 
       {entrega.estado === "BLOQUEADO" && entrega.motivo_bloqueo && (
         <p className="mb-10 max-w-lectura text-[13px] senal">

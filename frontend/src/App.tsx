@@ -6,7 +6,8 @@ import { Entregas } from "./paginas/Entregas"
 import { Estado } from "./paginas/Estado"
 import { Ficha } from "./paginas/Ficha"
 import { Pendientes } from "./paginas/Pendientes"
-import type { FichaDeLectura } from "./lib/tipos"
+import { Revision } from "./paginas/Revision"
+import type { FichaDeLectura, ResultadoAnalisis } from "./lib/tipos"
 
 type Vista = "entregas" | "documentos" | "estado" | "pendientes"
 
@@ -25,6 +26,13 @@ export default function App() {
   // trozo de estado, así que ponerla a null cierra la ficha igual que antes.
   const [fichaAbierta, setFichaAbierta] = useState<
     { id: string; leida: FichaDeLectura | null } | null
+  >(null)
+  // La revisión abierta, con el resultado que trajo el análisis. Se cierra
+  // igual que la ficha -al cambiar de pestaña o al volver-, y volver de la
+  // revisión deja la ficha detrás sin volver a pedirla: es la misma que
+  // estaba abierta antes de analizar.
+  const [revisionAbierta, setRevisionAbierta] = useState<
+    { id: string; resultado: ResultadoAnalisis } | null
   >(null)
 
   const pestanas: { clave: Vista; texto: string }[] = [
@@ -48,9 +56,10 @@ export default function App() {
                 setVista(pestana.clave)
                 setAnclaEditando(null)
                 setFichaAbierta(null)
+                setRevisionAbierta(null)
               }}
               className={
-                vista === pestana.clave && !anclaEditando && !fichaAbierta
+                vista === pestana.clave && !anclaEditando && !fichaAbierta && !revisionAbierta
                   ? "text-[13px] border-b-2 border-tinta pb-1"
                   : "text-[13px] text-gris pb-1"
               }
@@ -62,11 +71,18 @@ export default function App() {
       </header>
 
       <main>
-        {fichaAbierta ? (
+        {revisionAbierta ? (
+          <Revision
+            id={revisionAbierta.id}
+            inicial={revisionAbierta.resultado}
+            alVolver={() => setRevisionAbierta(null)}
+          />
+        ) : fichaAbierta ? (
           <Ficha
             id={fichaAbierta.id}
             inicial={fichaAbierta.leida}
             alVolver={() => setFichaAbierta(null)}
+            alAnalizar={(id, resultado) => setRevisionAbierta({ id, resultado })}
           />
         ) : anclaEditando ? (
           <Editor ancla={anclaEditando} alVolver={() => setAnclaEditando(null)} />

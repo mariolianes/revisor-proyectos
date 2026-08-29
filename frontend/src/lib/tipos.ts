@@ -232,3 +232,105 @@ export interface Confirmacion {
 }
 
 export const FASES = ["TEMA", "E1", "E2", "E3", "FINAL", "DEFENSA"] as const
+
+// --- El análisis y la revisión docente -------------------------------------
+//
+// Las formas siguen a `backend/api/analisis.py`, `backend/analisis/
+// verificacion.py` y `backend/salidas/{informe,borrador}.py`, no al brief de
+// la Task 13. `Revision` es el nombre del componente de esta misma tarea
+// (`frontend/src/paginas/Revision.tsx`); el cuerpo que ese componente envía
+// a `POST /entregas/{id}/revision` se llama aquí `PeticionRevision`, no
+// `Revision`, por la misma razón que `PropuestaArchivo` no se llama
+// `Propuesta`: para no chocar con el nombre con el que ya se necesita este
+// fichero en otro sitio.
+
+export interface Evidencia {
+  cita: string
+  apartado: string
+}
+
+export interface ValoracionVerificada {
+  dimension: string
+  nivel: string
+  prioridad: string | null
+  evidencia: Evidencia
+  observacion: string
+  /**
+   * Si la cita se ha encontrado, literal, en el texto del trabajo. En falso
+   * quiere decir que el docente puede verla y decidir, pero que tal como
+   * está no pasará a la devolución del alumno.
+   */
+  evidencia_localizada: boolean
+}
+
+export interface FortalezaVerificada {
+  descripcion: string
+  evidencia: Evidencia
+  evidencia_localizada: boolean
+}
+
+export interface IndicioDeAutoriaVerificado {
+  descripcion: string
+  evidencia: Evidencia
+  evidencia_localizada: boolean
+}
+
+export interface Reparo {
+  regla: string
+  detalle: string
+}
+
+export interface Informe {
+  identificacion: Record<string, string>
+  control_administrativo: string[]
+  resumen: string
+  valoraciones: ValoracionVerificada[]
+  fortalezas: FortalezaVerificada[]
+  /** Como mucho las que fija la economía pedagógica (hoy, cuatro). */
+  prioridades: ValoracionVerificada[]
+  /** Tenían prioridad y evidencia, pero no cupieron en el límite. */
+  prioridades_descartadas: ValoracionVerificada[]
+  dudas: string[]
+  indicios: IndicioDeAutoriaVerificado[]
+  reparos: Reparo[]
+  dimensiones_ausentes: string[]
+  semaforo: string
+  recomendacion: string | null
+  motor: string
+}
+
+export interface Devolucion {
+  apertura: string
+  fortalezas: string[]
+  acciones: string[]
+  cierre: string
+}
+
+export interface ResultadoAnalisis {
+  entrega: EntregaRegistrada
+  informe: Informe
+  /**
+   * `null` cuando el informe salió bien y solo falló la redacción del
+   * borrador (`aviso` explica por qué). No es un error: el informe sigue
+   * siendo válido y usable.
+   */
+  devolucion: Devolucion | null
+  motor: string
+  /** Presente solo en el caso de arriba. */
+  aviso: string | null
+}
+
+export const DECISIONES = ["ACEPTADA", "EDITADA", "DESCARTADA"] as const
+export type CodigoDeDecision = (typeof DECISIONES)[number]
+
+export interface Decision {
+  dimension: string
+  decision: CodigoDeDecision
+  /** Solo se usa -y solo se manda- cuando `decision` es `EDITADA`. */
+  texto?: string | null
+}
+
+/** El cuerpo de `POST /entregas/{id}/revision`. */
+export interface PeticionRevision {
+  decisiones: Decision[]
+}
