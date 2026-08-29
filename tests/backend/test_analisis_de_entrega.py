@@ -232,17 +232,25 @@ def test_si_el_borrador_no_es_valido_el_informe_no_se_pierde(
     assert almacen.por_id(entrega.id).estado == "ANALIZADO"
 
 
-class _ProveedorQueFallaSoloEnLaDevolucion:
-    """El análisis sale bien a la primera; cualquier llamada posterior -la
-    de la devolución, y su reintento- falla sin red.
+class _ProveedorQueFallaEnLaDevolucion:
+    """El análisis sale bien a la primera. La segunda llamada -la de la
+    devolución- falla con `fallo`; si se da `respuesta_final`, el reintento
+    -la tercera llamada- la devuelve; si no, el reintento vuelve a fallar
+    con el mismo `fallo` y ahí se detiene.
 
-    No se puede montar con `ProveedorSimulado`: esa clase consume siempre
-    primero la cola de fallos, y aquí hace falta lo contrario, que la
-    primera llamada tenga éxito y las siguientes no.
+    Sirve para las dos formas en que puede fallar la devolución: un fallo
+    persistente que no se reintenta (`ErrorDelProveedor`, sin
+    `respuesta_final`: la segunda y la tercera llamada fallan igual) o un
+    único tropiezo que el reintento resuelve (`RespuestaNoValida`, con
+    `respuesta_final`). No se puede montar ninguno de los dos con
+    `ProveedorSimulado`: esa clase consume siempre antes la cola de fallos,
+    y aquí hace falta lo contrario, que la primera llamada tenga éxito.
     """
 
-    def __init__(self, primera_respuesta) -> None:
+    def __init__(self, primera_respuesta, fallo, respuesta_final=None) -> None:
         self._primera_respuesta = primera_respuesta
+        self._fallo = fallo
+        self._respuesta_final = respuesta_final
         self.llamadas: list[tuple[str, str]] = []
 
     @property
@@ -253,7 +261,9 @@ class _ProveedorQueFallaSoloEnLaDevolucion:
         self.llamadas.append((instruccion, texto))
         if len(self.llamadas) == 1:
             return self._primera_respuesta
-        raise ErrorDelProveedor("sin red")
+        if len(self.llamadas) >= 3 and self._respuesta_final is not None:
+            return self._respuesta_final
+        raise self._fallo
 
 
 def test_si_el_motor_falla_en_el_borrador_el_informe_no_se_pierde(
@@ -264,8 +274,9 @@ def test_si_el_motor_falla_en_el_borrador_el_informe_no_se_pierde(
     """
     almacen = AlmacenEnMemoria()
     entrega = _registrar(almacen, entregas_con_pdf)
-    proveedor = _ProveedorQueFallaSoloEnLaDevolucion(
-        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros")
+    proveedor = _ProveedorQueFallaEnLaDevolucion(
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        ErrorDelProveedor("sin red"),
     )
 
     with pytest.raises(InformeSinBorrador) as excepcion:
@@ -278,6 +289,37 @@ def test_si_el_motor_falla_en_el_borrador_el_informe_no_se_pierde(
     # `ErrorDelProveedor` -sin red- no es `RespuestaNoValida`, así que no se
     # reintenta: solo el formulario mal rellenado merece un segundo intento.
     assert len(proveedor.llamadas) == 2
+
+
+def test_la_devolucion_tambien_se_reintenta_una_vez(
+    criterios_de_analisis, entregas_con_pdf
+) -> None:
+    """El reintento único no protege solo la llamada del análisis: la
+    llamada que pide la redacción del borrador -dentro de `componer()`,
+    Task 8- también puede volver un formulario que no encaja, y también
+    merece un reintento.
+
+    Sin esta prueba, quitar el envoltorio de reintento alrededor de esa
+    segunda llamada no lo detecta ningún test: el que prueba la retentiva
+    programa el `RespuestaNoValida` en la primera llamada -la del
+    análisis-, y los que tocan el borrador usan `ErrorDelProveedor` y
+    `BorradorNoValido`, que precisamente no son reintentables.
+    """
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf)
+    proveedor = _ProveedorQueFallaEnLaDevolucion(
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        RespuestaNoValida("no encaja"),
+        respuesta_final=_devolucion(),
+    )
+
+    c = analizar_entrega(criterios_de_analisis, entregas_con_pdf, "v2026-2027",
+                         almacen, proveedor, entrega)
+
+    assert c.devolucion.acciones == ["Justifica las cifras con fuentes."]
+    # Tres llamadas: el análisis, la devolución que falla, y su reintento,
+    # que sale bien.
+    assert len(proveedor.llamadas) == 3
 
 
 def test_el_texto_del_alumno_no_viaja_en_la_correccion(
