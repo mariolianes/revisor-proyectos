@@ -60,37 +60,41 @@ const COMPLETA: FichaDeLectura = {
 
 describe("Ficha", () => {
   beforeEach(() => {
+    // Sin esto, `mock.calls` se acumula de un test al siguiente y
+    // `expect(api.analizar).not.toHaveBeenCalled()` (más abajo) podría
+    // fallar por una llamada de OTRO test, no por esta pantalla.
+    vi.clearAllMocks()
     vi.mocked(api.ficha).mockResolvedValue(COMPLETA)
   })
 
   it("enseña de quién es la entrega", async () => {
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText(/AF023 · DAM · E2/)).toBeInTheDocument()
   })
 
   it("enseña lo medido", async () => {
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText("24")).toBeInTheDocument()
     expect(screen.getByText(/Arial/)).toBeInTheDocument()
   })
 
   it("enseña las comprobaciones", async () => {
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText(/maestro#6-estandar-academico/)).toBeInTheDocument()
   })
 
   it("enseña con qué entrega se ha comparado", async () => {
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText(/AF023_DAM_E1_20251201_v1.pdf/)).toBeInTheDocument()
     expect(screen.getByText(/Han desaparecido 2 párrafos/)).toBeInTheDocument()
   })
 
   it("no ofrece nota ni aprobar", async () => {
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
     await screen.findByText(/AF023 · DAM · E2/)
 
     expect(screen.queryByRole("button", { name: /nota/i })).not.toBeInTheDocument()
@@ -99,7 +103,7 @@ describe("Ficha", () => {
   })
 
   it("dice por qué no hay nota, para que no parezca un olvido", async () => {
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText(/ponderaciones/i)).toBeInTheDocument()
   })
@@ -114,7 +118,7 @@ describe("Ficha", () => {
       medidas: null, comprobaciones: [], evolucion: null, comparada_con: null,
     })
 
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText(/protegido con contraseña/)).toBeInTheDocument()
   })
@@ -128,7 +132,7 @@ describe("Ficha", () => {
     vi.mocked(api.ficha).mockRejectedValueOnce(
       new Error("No se ha podido contactar con el servidor."),
     )
-    const fallo = render(<Ficha id="id-error" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    const fallo = render(<Ficha id="id-error" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
     await screen.findByText(/No se ha podido contactar con el servidor/)
     expect(fallo.container.querySelectorAll(".senal")).toHaveLength(0)
     fallo.unmount()
@@ -141,7 +145,7 @@ describe("Ficha", () => {
       },
       medidas: null, comprobaciones: [], evolucion: null, comparada_con: null,
     })
-    const bloqueada = render(<Ficha id="id-bloqueada" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    const bloqueada = render(<Ficha id="id-bloqueada" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
     await screen.findByText(/protegido con contraseña/)
     expect(bloqueada.container.querySelectorAll(".senal").length).toBeGreaterThan(0)
   })
@@ -162,7 +166,7 @@ describe("Ficha", () => {
       },
     })
 
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText("sin texto extraíble")).toBeInTheDocument()
     expect(screen.queryByText(/ 0$/)).not.toBeInTheDocument()
@@ -174,7 +178,7 @@ describe("Ficha", () => {
       aviso: "El archivo anterior ya no está en la carpeta.",
     })
 
-    render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
     expect(await screen.findByText(/ya no está en la carpeta/)).toBeInTheDocument()
   })
@@ -182,7 +186,7 @@ describe("Ficha", () => {
   it("vuelve a la bandeja", async () => {
     const alVolver = vi.fn()
     const usuario = (await import("@testing-library/user-event")).default
-    render(<Ficha id="id-1" alVolver={alVolver} alAnalizar={vi.fn()} />)
+    render(<Ficha id="id-1" alVolver={alVolver} alAbrirRevision={vi.fn()} />)
 
     await usuario.click(await screen.findByRole("button", { name: /volver/i }))
 
@@ -191,7 +195,7 @@ describe("Ficha", () => {
 
   describe("el botón de analizar", () => {
     it("aparece cuando la entrega está en RECIBIDO", async () => {
-      render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
 
       expect(await screen.findByRole("button", { name: /^analizar$/i })).toBeInTheDocument()
     })
@@ -206,7 +210,7 @@ describe("Ficha", () => {
         medidas: null, comprobaciones: [], evolucion: null, comparada_con: null,
       })
 
-      render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
       await screen.findByText(/protegido con contraseña/)
 
       expect(screen.queryByRole("button", { name: /^analizar$/i })).not.toBeInTheDocument()
@@ -218,7 +222,7 @@ describe("Ficha", () => {
         entrega: { ...COMPLETA.entrega, estado: "ANALIZADO" },
       })
 
-      render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
       await screen.findByText(/AF023 · DAM · E2/)
 
       expect(screen.queryByRole("button", { name: /^analizar$/i })).not.toBeInTheDocument()
@@ -240,7 +244,7 @@ describe("Ficha", () => {
       }
       vi.mocked(api.analizar).mockResolvedValue(RESULTADO)
 
-      render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={alAnalizar} />)
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={alAnalizar} />)
       await usuario.click(await screen.findByRole("button", { name: /^analizar$/i }))
 
       await waitFor(() => expect(alAnalizar).toHaveBeenCalledWith("id-1", RESULTADO))
@@ -252,10 +256,102 @@ describe("Ficha", () => {
         new Error("El motor no ha podido completar el análisis: sin cuota disponible."),
       )
 
-      render(<Ficha id="id-1" alVolver={vi.fn()} alAnalizar={vi.fn()} />)
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
       await usuario.click(await screen.findByRole("button", { name: /^analizar$/i }))
 
       const mensaje = await screen.findByText(/sin cuota disponible/i)
+      expect(mensaje).toBeInTheDocument()
+      expect(mensaje).not.toHaveClass("senal")
+    })
+  })
+
+  describe("el botón de ver revisión", () => {
+    // Una entrega interrumpida a media revisión -el timbre, una clase, el
+    // portátil cerrado- vuelve a ANALIZADO, no a RECIBIDO. Sin este botón
+    // no había ningún camino de vuelta salvo analizar otra vez: pagar de
+    // nuevo y volver a mandar el trabajo del alumno al proveedor por algo
+    // que ya estaba guardado.
+    const RESULTADO_GUARDADO = {
+      entrega: { ...COMPLETA.entrega, estado: "ANALIZADO" },
+      informe: {
+        identificacion: {
+          alumno: "AF023", ciclo: "DAM", fase: "E2", version: "1",
+          archivo: COMPLETA.entrega.nombre_archivo, criterios: "v2026-2027",
+        },
+        control_administrativo: [], resumen: "Un resumen que solo existe en la revisión guardada.",
+        valoraciones: [], fortalezas: [], prioridades: [],
+        prioridades_descartadas: [], dudas: [], indicios: [], reparos: [],
+        dimensiones_ausentes: [], semaforo: "GRIS", recomendacion: null,
+        motor: "simulado",
+      },
+      devolucion: null, motor: "simulado", aviso: null,
+    }
+
+    it("aparece con una entrega ya analizada", async () => {
+      vi.mocked(api.ficha).mockResolvedValue({
+        ...COMPLETA,
+        entrega: { ...COMPLETA.entrega, estado: "ANALIZADO" },
+      })
+
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+
+      expect(await screen.findByRole("button", { name: /ver revisión/i })).toBeInTheDocument()
+    })
+
+    it("no aparece con una entrega RECIBIDO ni con una bloqueada", async () => {
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+      await screen.findByText(/AF023 · DAM · E2/)
+      expect(screen.queryByRole("button", { name: /ver revisión/i })).not.toBeInTheDocument()
+
+      vi.mocked(api.ficha).mockResolvedValue({
+        ...COMPLETA,
+        entrega: {
+          ...COMPLETA.entrega, estado: "BLOQUEADO",
+          motivo_bloqueo: "El archivo está protegido con contraseña.",
+        },
+        medidas: null, comprobaciones: [], evolucion: null, comparada_con: null,
+      })
+      const bloqueada = render(<Ficha id="id-2" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+      await screen.findByText(/protegido con contraseña/)
+      expect(
+        bloqueada.queryByRole("button", { name: /ver revisión/i }),
+      ).not.toBeInTheDocument()
+    })
+
+    it("al pulsarlo, pide lo ya guardado -no vuelve a analizar- y abre la revisión con esos datos", async () => {
+      const usuario = (await import("@testing-library/user-event")).default
+      const alAbrirRevision = vi.fn()
+      vi.mocked(api.ficha).mockResolvedValue({
+        ...COMPLETA,
+        entrega: { ...COMPLETA.entrega, estado: "ANALIZADO" },
+      })
+      vi.mocked(api.analisis).mockResolvedValue(RESULTADO_GUARDADO)
+
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={alAbrirRevision} />)
+      await usuario.click(await screen.findByRole("button", { name: /ver revisión/i }))
+
+      // No es solo que aparezca un botón: se comprueba que de verdad se
+      // pidió lo guardado (GET) y que la revisión se abre con ese
+      // resultado -y no que se disparó, sin más, algún análisis nuevo.
+      await waitFor(() => expect(api.analisis).toHaveBeenCalledWith("id-1"))
+      expect(api.analizar).not.toHaveBeenCalled()
+      expect(alAbrirRevision).toHaveBeenCalledWith("id-1", RESULTADO_GUARDADO)
+    })
+
+    it("un fallo al pedir la revisión guardada se enseña con su mensaje, sin la tinta de señal", async () => {
+      const usuario = (await import("@testing-library/user-event")).default
+      vi.mocked(api.ficha).mockResolvedValue({
+        ...COMPLETA,
+        entrega: { ...COMPLETA.entrega, estado: "ANALIZADO" },
+      })
+      vi.mocked(api.analisis).mockRejectedValue(
+        new Error("No se ha podido contactar con el servidor."),
+      )
+
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+      await usuario.click(await screen.findByRole("button", { name: /ver revisión/i }))
+
+      const mensaje = await screen.findByText(/no se ha podido contactar con el servidor/i)
       expect(mensaje).toBeInTheDocument()
       expect(mensaje).not.toHaveClass("senal")
     })

@@ -97,6 +97,13 @@ export const api = {
       method: "POST",
     }),
 
+  // Recupera un análisis ya guardado, sin volver a llamar al motor: es lo
+  // que abre la revisión de una entrega ANALIZADO cuando el docente vuelve
+  // a ella -tras interrumpirse a media revisión, por ejemplo- en vez de
+  // dejarle sin más camino que analizar otra vez y pagarlo dos veces.
+  analisis: (id: string) =>
+    pedir<ResultadoAnalisis>(`/entregas/${encodeURIComponent(id)}/analisis`),
+
   // Lo que el docente decide, observación por observación. Devuelve el
   // resultado ya con las decisiones aplicadas: solo lo aceptado o editado
   // se conserva.

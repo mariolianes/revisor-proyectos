@@ -82,7 +82,7 @@ export default function App() {
             id={fichaAbierta.id}
             inicial={fichaAbierta.leida}
             alVolver={() => setFichaAbierta(null)}
-            alAnalizar={(id, resultado) => setRevisionAbierta({ id, resultado })}
+            alAbrirRevision={(id, resultado) => setRevisionAbierta({ id, resultado })}
           />
         ) : anclaEditando ? (
           <Editor ancla={anclaEditando} alVolver={() => setAnclaEditando(null)} />
