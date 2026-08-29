@@ -23,9 +23,14 @@
 -- Ninguna columna nueva lleva el texto del trabajo del alumno ni el PDF
 -- (§19): `informe` y `devolucion` son lo que el motor compuso sobre ese
 -- texto -juicios, citas breves, prosa para el alumno-, nunca el texto en
--- sí. El límite de las citas se comprueba en código antes de escribir
--- (backend/persistencia/correccion.py:validar_citas_acotadas), por igual en
--- los dos almacenes, precisamente porque un `jsonb` no lleva ese CHECK.
+-- sí. El límite de las citas, y el de la prosa que las acompaña -el
+-- resumen, cada observación, las dudas, los reparos, y si la hay, la
+-- devolución entera-, se comprueban en código antes de escribir
+-- (backend/persistencia/correccion.py:validar_textos_acotados), por igual
+-- en los dos almacenes, precisamente porque un `jsonb` no lleva ningún
+-- CHECK. Sin el límite de la prosa, el de la cita se rodearía con
+-- verbosidad: una observación sin tope podría llevar lo que la cita no
+-- puede.
 
 alter table correccion
   add column informe jsonb not null default '{}'::jsonb,

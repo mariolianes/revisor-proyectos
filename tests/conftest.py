@@ -440,7 +440,7 @@ VALORES_POR_OMISION = {
 # El CHECK `fragmento_acotado` de la migración: D-001, 1.500 caracteres.
 # Se emula aquí para que un fragmento de más no pase en el servidor de
 # mentira, igual que no pasaría en Postgres -aunque en la práctica no debería
-# llegar tan lejos nunca: `validar_citas_acotadas`
+# llegar tan lejos nunca: `validar_textos_acotados`
 # (backend/persistencia/correccion.py) ya lo rechaza en código, en los dos
 # almacenes, antes de escribir nada.
 _LIMITES_DE_CAMPO = {("evidencia", "fragmento"): 1500}
