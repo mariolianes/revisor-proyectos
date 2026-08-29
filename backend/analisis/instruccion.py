@@ -30,6 +30,23 @@ cuando haya evidencia en el documento.
 Cita siempre de forma literal. Un fragmento copiado del trabajo, no un
 resumen: el profesor tiene que poder ir a esa página y leer eso mismo. Una
 paráfrasis no vale como evidencia.
+
+Copia un tramo seguido, tal cual está escrito. No unas dos partes distintas
+con puntos suspensivos, no recortes por el medio y no arregles la redacción
+del alumno al copiarla: el sistema busca esa cadena exacta en el documento y
+descarta como no verificada cualquier cita que no encuentre entera.
+
+Si de verdad no hay ningún fragmento que sostenga una observación, no la
+hagas. Una cita vacía o inventada no es una observación con poca evidencia:
+es una observación que el profesor no puede comprobar, y vale menos que el
+silencio.
+
+Eso vale también para una dimensión entera. Si no puedes valorar una porque
+el trabajo no contiene nada que citar al respecto, déjala fuera en lugar de
+describir su ausencia dentro de la cita: el sistema registra por su cuenta
+qué dimensiones se quedaron sin valorar y se lo dice al profesor. Escribir
+«no se localizan referencias a...» en el hueco de la cita convierte un dato
+útil -esto no está- en una evidencia falsa.
 """.strip()
 
 

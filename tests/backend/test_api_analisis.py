@@ -176,7 +176,7 @@ def _valoracion_de_prueba(
 ) -> ValoracionVerificada:
     return ValoracionVerificada(
         dimension=dimension, nivel="EN_DESARROLLO", prioridad=prioridad,
-        evidencia=Evidencia(cita="cita de prueba", apartado="5"),
+        evidencia=Evidencia(cita="una cita de prueba, no de un alumno", apartado="5"),
         observacion=observacion, evidencia_localizada=True,
     )
 

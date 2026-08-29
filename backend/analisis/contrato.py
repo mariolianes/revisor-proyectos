@@ -18,7 +18,7 @@ alguien pueda olvidar.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # Escala del §8.1 del Documento Maestro.
 NIVELES: tuple[str, ...] = (
@@ -48,11 +48,20 @@ class Evidencia(BaseModel):
 
     `cita` es un fragmento literal del trabajo. Literal de verdad: la
     verificación lo busca en el texto, y una paráfrasis no se da por buena.
+
+    El mínimo de longitud sale de la calibración del 2026-08-29 con los nueve
+    casos del banco: el motor devolvía a veces la cita vacía, y una cadena
+    vacía no es una evidencia corta, es la ausencia de evidencia. Rechazarla
+    aquí -donde el formulario se valida, antes de que nadie la mire- ahorra
+    tener que distinguirla después de una cita que simplemente no se localizó.
+    El valor coincide con `CITA_MINIMA` de la verificación y se repite en vez
+    de importarse para no acoplar el contrato a las defensas: si algún día
+    dejaran de coincidir, la verificación seguiría mandando.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    cita: str
+    cita: str = Field(min_length=20)
     apartado: str
 
 
