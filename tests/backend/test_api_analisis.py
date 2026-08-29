@@ -70,12 +70,16 @@ def _crear_cliente(criterios_de_analisis, entregas, proveedor):
     return TestClient(app)
 
 
-def _confirmar(cliente: TestClient) -> str:
+def _confirmar(
+    cliente: TestClient, nombre_archivo: str = "AF023_DAM_E2_20260115_v1.pdf"
+) -> str:
     cliente.post("/api/entregas", json={
-        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "nombre_archivo": nombre_archivo,
         "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
     })
-    return cliente.get("/api/entregas").json()[0]["id"]
+    entregas_registradas = cliente.get("/api/entregas").json()
+    return next(e["id"] for e in entregas_registradas
+                if e["nombre_archivo"] == nombre_archivo)
 
 
 @pytest.fixture
@@ -148,6 +152,7 @@ def test_el_motor_se_declara(cliente) -> None:
     """Un análisis simulado no es un análisis y el docente debe saberlo."""
     r = cliente.get("/api/motor")
 
+    assert r.status_code == 200
     assert r.json()["es_simulado"] is True
     assert r.json()["avisos"]
 
@@ -171,6 +176,7 @@ def test_la_revision_admite_editar_el_texto(cliente) -> None:
                         "texto": "Justifica las cifras con una fuente."}],
     })
 
+    assert r.status_code == 200
     valorada = r.json()["informe"]["valoraciones"][0]
     assert valorada["observacion"] == "Justifica las cifras con una fuente."
 
@@ -443,21 +449,26 @@ def _sin_jerga(texto: str) -> bool:
 def test_ningun_mensaje_de_error_deja_pasar_jerga_de_programador(
     cliente, criterios_de_analisis, entregas, escribir_pdf
 ) -> None:
-    """Un barrido por los mensajes que puede devolver esta API: ninguno
-    puede leerse como si viniera de una traza de Python.
+    """Un barrido por los caminos de error de esta API: el código de
+    estado de cada uno, además del mensaje.
 
-    Cubre 404, 409 (sin carpeta, entrega inexistente y candado en uso),
-    503, 400 (archivo desaparecido y decisión inválida) y el 200 con
-    aviso del informe sin borrador.
+    Un mensaje limpio en el código equivocado también engaña al docente
+    -un 409 le dice «falta configurar algo», un 500 le diría «esto se ha
+    roto», y son dos pantallas distintas en el frontend-, así que este
+    barrido no se conforma con mirar `detail`: fija también el código
+    esperado de cada camino. Es, además, el único sitio que toca alguno de
+    estos caminos -«sin carpeta configurada» y «decisión inválida en la
+    revisión» no tienen test propio-, así que sin esta aserción un cambio
+    de código en cualquiera de los dos pasaría inadvertido.
+
+    Cubre 404 (entrega inexistente, en `POST` y en `GET`), 409 (sin
+    carpeta, y candado en uso), 503 (fallo del proveedor), 400 (archivo
+    desaparecido, y decisión inválida en la revisión).
     """
-    mensajes: list[str] = []
+    respuestas: list[tuple[int, object]] = []  # (codigo_esperado, respuesta)
 
-    mensajes.append(
-        cliente.post("/api/entregas/no-existe/analisis").json()["detail"]
-    )
-    mensajes.append(
-        cliente.get("/api/entregas/no-existe/analisis").json()["detail"]
-    )
+    respuestas.append((404, cliente.post("/api/entregas/no-existe/analisis")))
+    respuestas.append((404, cliente.get("/api/entregas/no-existe/analisis")))
 
     escribir_pdf(entregas / "otra.pdf", [["1. Introduccion", "Texto suficiente."]])
     sin_carpeta = _crear_cliente(
@@ -470,8 +481,8 @@ def test_ningun_mensaje_de_error_deja_pasar_jerga_de_programador(
     )).id
     # Se quita la carpeta después de registrar: registrar la exige.
     sin_carpeta.app.state.configuracion.carpeta_entregas = None
-    mensajes.append(
-        sin_carpeta.post(f"/api/entregas/{ident_temporal}/analisis").json()["detail"]
+    respuestas.append(
+        (409, sin_carpeta.post(f"/api/entregas/{ident_temporal}/analisis"))
     )
 
     fallo_motor = _crear_cliente(
@@ -479,31 +490,88 @@ def test_ningun_mensaje_de_error_deja_pasar_jerga_de_programador(
         ProveedorSimulado(fallos=[ErrorDelProveedor("sin red")]),
     )
     ident_fallo = _confirmar(fallo_motor)
-    mensajes.append(
-        fallo_motor.post(f"/api/entregas/{ident_fallo}/analisis").json()["detail"]
+    respuestas.append(
+        (503, fallo_motor.post(f"/api/entregas/{ident_fallo}/analisis"))
     )
 
+    # Su propio archivo, no el que ya usan `cliente` y `fallo_motor`: al
+    # final de este test se vuelve a usar `cliente` para la revisión, y
+    # borrar el archivo compartido lo habría dejado también sin poder
+    # analizarse a él.
+    escribir_pdf(entregas / "ilegible.pdf", [["1. Introduccion", "Texto suficiente."]])
     ilegible = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
-    ident_ilegible = _confirmar(ilegible)
-    (entregas / "AF023_DAM_E2_20260115_v1.pdf").unlink()
-    mensajes.append(
-        ilegible.post(f"/api/entregas/{ident_ilegible}/analisis").json()["detail"]
+    ident_ilegible = _confirmar(ilegible, "ilegible.pdf")
+    (entregas / "ilegible.pdf").unlink()
+    respuestas.append(
+        (400, ilegible.post(f"/api/entregas/{ident_ilegible}/analisis"))
     )
 
+    # El candado necesita una entrega real -y su propio archivo, distinto
+    # del que el paso anterior acaba de borrar de la carpeta compartida-:
+    # si se apunta a una entrega inexistente, el 404 de «no existe esa
+    # entrega» se dispara antes de llegar a mirar el candado, y esta rama
+    # dejaría de probar lo que dice probar.
+    escribir_pdf(entregas / "candado.pdf", [["1. Introduccion", "Texto suficiente."]])
     en_curso = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
-    en_curso.app.state.analisis_en_curso.add("cualquiera")
-    mensajes.append(
-        en_curso.post("/api/entregas/cualquiera/analisis").json()["detail"]
+    ident_en_curso = _confirmar(en_curso, "candado.pdf")
+    en_curso.app.state.analisis_en_curso.add(ident_en_curso)
+    respuestas.append(
+        (409, en_curso.post(f"/api/entregas/{ident_en_curso}/analisis"))
     )
 
     cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
-    mensajes.append(
-        cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+    respuestas.append((400, cliente.post(
+        f"/api/entregas/{cliente.identificador}/revision", json={
             "decisiones": [{"dimension": "D05", "decision": "INVENTADA",
                             "texto": None}],
-        }).json()["detail"]
-    )
+        },
+    )))
 
-    for mensaje in mensajes:
+    for codigo_esperado, respuesta in respuestas:
+        assert respuesta.status_code == codigo_esperado, respuesta.json()
+        mensaje = respuesta.json()["detail"]
         assert isinstance(mensaje, str) and mensaje, mensaje
         assert _sin_jerga(mensaje), mensaje
+
+
+def test_el_fallo_del_motor_usa_el_contrato_del_tipo_no_str_crudo(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """La capa de API no puede confiar en que `str(fallo)` esté limpio por
+    pura coincidencia con lo que hoy escribe el adaptador de OpenAI: tiene
+    que pasar por `mensaje_para_el_profesor`, el contrato explícito de
+    `ErrorDelProveedor`. Aquí se construye un proveedor de prueba cuya
+    `str()` lleva algo que nunca debería llegar a la pantalla, y cuyo
+    `mensaje_para_el_profesor` sí es el texto correcto, para comprobar
+    cuál de los dos usa la API.
+
+    Si `analizar()` volviera a hacer `detail=str(fallo)`, este test
+    fallaría: el texto sucio aparecería en la respuesta.
+    """
+
+    class _FalloConMensajeSucio(ErrorDelProveedor):
+        def __str__(self) -> str:
+            return "fuga-de-prueba-sk-nunca-deberia-salir"
+
+        @property
+        def mensaje_para_el_profesor(self) -> str:
+            return "No se ha podido completar el análisis: fallo del proveedor de prueba."
+
+    class _ProveedorConMensajeSucio:
+        nombre = "sucio-de-prueba"
+
+        def analizar(self, instruccion, texto, formato):
+            raise _FalloConMensajeSucio("fuga-de-prueba-sk-nunca-deberia-salir")
+
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
+                 [["1. Introduccion", "Texto suficiente del trabajo."]])
+    c = _crear_cliente(criterios_de_analisis, entregas, _ProveedorConMensajeSucio())
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis")
+
+    assert r.status_code == 503
+    assert "fuga-de-prueba" not in r.json()["detail"]
+    assert r.json()["detail"] == (
+        "No se ha podido completar el análisis: fallo del proveedor de prueba."
+    )

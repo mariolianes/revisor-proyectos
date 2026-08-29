@@ -28,9 +28,15 @@ tienen que llegar al docente sin una traza de Python por en medio:
   que no decir nada. Ver `_aviso_de_borrador_incompleto`.
 - Fallo del proveedor (`ErrorDelProveedor`): sin red, sin clave, cuota
   agotada, una respuesta que no encaja ni al reintento. No se guarda nada,
-  la entrega sigue en el estado en que estaba, y el mensaje del adaptador
-  -ya redactado en castellano y ya limpio de cualquier fragmento de la
-  clave, ver `backend/analisis/openai.py`- llega tal cual en un 503.
+  la entrega sigue en el estado en que estaba, y lo que llega en el 503 es
+  `fallo.mensaje_para_el_profesor` -el contrato explícito de
+  `ErrorDelProveedor` (`backend/analisis/proveedor.py`), no `str(fallo)`
+  directo-. Hoy coinciden: el adaptador de OpenAI ya redacta ese mensaje
+  en castellano y limpio de cualquier fragmento de la clave (ver
+  `backend/analisis/openai.py`), y por omisión la propiedad devuelve
+  justo ese texto. Pero esta capa no confía en esa coincidencia sin
+  nombrarla: pasar por la propiedad, no por `str()`, es lo que obliga a
+  cualquier proveedor futuro a decidir qué le enseña al docente.
 
 Un archivo que ha dejado de estar donde estaba (`PdfIlegible`) tampoco es un
 fallo del servidor: es la parada del §18.2, y llega como 400 con el motivo.
@@ -120,9 +126,10 @@ def _aviso_de_borrador_incompleto(fallo: InformeSinBorrador) -> str:
     `BorradorNoValido` combina el motivo con una sugerencia -«Corrígelo a
     mano o pide de nuevo la redacción»- que aquí no se sostiene: no hay
     ninguna operación que repita solo la redacción, así que ese fragmento
-    no se reenvía. Los mensajes de `ErrorDelProveedor` -de
-    `backend/analisis/openai.py`- ya están escritos para el docente, sin
-    esa promesa concreta, y esos sí se citan tal cual.
+    no se reenvía. El de `ErrorDelProveedor` se toma de
+    `mensaje_para_el_profesor` -el contrato explícito de ese tipo, no
+    `str(fallo)`-, y ese sí se cita tal cual: ya está escrito para el
+    docente y no trae esa promesa concreta.
 
     La acción de verdad disponible -volver a pedir el análisis entero por
     `POST /analisis`- se dice siempre, la ponga o no la causa original.
@@ -134,7 +141,11 @@ def _aviso_de_borrador_incompleto(fallo: InformeSinBorrador) -> str:
             "reglas que no se negocian sobre lo que puede decirle a un "
             "alumno."
         )
-    elif causa is not None:
+    elif isinstance(causa, ErrorDelProveedor):
+        motivo = causa.mensaje_para_el_profesor
+    elif causa is not None:  # pragma: no cover - `analizar_entrega` no
+        # levanta InformeSinBorrador con ninguna otra causa; se cubre por
+        # si acaso, sin asumir que eso vaya a seguir siendo cierto siempre.
         motivo = str(causa)
     else:  # pragma: no cover - siempre llega con `from fallo`.
         motivo = "no se ha podido completar."
@@ -217,7 +228,9 @@ def analizar(identificador: str, peticion: Request) -> ResultadoAnalisis:
             peticion.app.state.correcciones[identificador] = resultado
             return resultado
         except ErrorDelProveedor as fallo:
-            raise HTTPException(status_code=503, detail=str(fallo)) from fallo
+            raise HTTPException(
+                status_code=503, detail=fallo.mensaje_para_el_profesor
+            ) from fallo
         except PdfIlegible as fallo:
             raise HTTPException(status_code=400, detail=str(fallo)) from fallo
     finally:
