@@ -7,8 +7,12 @@ este fichero necesita red ni una clave real -los objetos `httpx.Request` y
 sin abrir ninguna conexión.
 """
 
+import logging
+import traceback
+
 import httpx
 import openai
+import pydantic
 import pytest
 
 from backend.analisis.contrato import AnalisisDelMotor
@@ -54,6 +58,22 @@ def _fallo_con_estado(clase: type, estado: int, mensaje: str):
     API real en el cuerpo del error."""
     respuesta = httpx.Response(estado, request=_peticion(), json={"error": {"message": mensaje}})
     return clase(mensaje, response=respuesta, body=respuesta.json())
+
+
+def _fallo_de_json_cortado() -> pydantic.ValidationError:
+    """Un `ValidationError` real, del mismo tipo que lanza `responses.parse`
+    dentro del SDK cuando el JSON que ha llegado no se puede interpretar
+    como el formulario -el caso típico es una respuesta cortada porque el
+    modelo agotó el límite de tokens de salida-."""
+
+    class _FormularioDePrueba(pydantic.BaseModel):
+        campo: str
+
+    try:
+        _FormularioDePrueba.model_validate_json('{"campo": "sin cerrar')
+    except pydantic.ValidationError as fallo:
+        return fallo
+    raise AssertionError("se esperaba que el JSON incompleto fallara al validar")
 
 
 def test_devuelve_el_analisis_ya_validado() -> None:
@@ -223,3 +243,101 @@ def test_ningun_mensaje_de_fallo_conocido_repite_la_clave() -> None:
             p.analizar("i", "t", AnalisisDelMotor)
 
         assert marca not in str(fallo.value)
+
+
+def test_una_clave_falsa_no_aparece_por_ninguno_de_los_cinco_caminos(caplog) -> None:
+    """El hallazgo crítico de la ronda de revisión: no basta con que la
+    clave no aparezca en el mensaje. `raise ... from fallo` la dejaba
+    enganchada en `__cause__`, y de ahí la recorren `repr()`,
+    `traceback.format_exc()` y cualquier `logger.exception(...)` que
+    capture el fallo más adelante -que es justo lo que hace FastAPI, o
+    cualquier framework, ante un error que no esperaba-.
+
+    Se prueban los cinco caminos exactos de la tabla de la revisión, con una
+    clave falsa reconocible incrustada en el mensaje que devolvería la API
+    real. Se comprueba también `__context__`, no solo `__cause__`: incluso
+    con `from None`, un `raise` dentro de un `except` activo deja el
+    `__context__` apuntando al fallo original -Python lo hace solo, sin que
+    el código lo pida-, y una herramienta que lea esa referencia sin pasar
+    por el formateo estándar de `traceback` la recuperaría igual. El
+    adaptador evita el problema de raíz: construye la excepción de
+    sustitución dentro del `except`, pero la lanza fuera de él, cuando ya no
+    hay ninguna excepción en curso a la que Python pueda engancharla."""
+    marca = "sk-CLAVE-FALSA-RECONOCIBLE-0000000000"
+    mensaje_de_la_api = (
+        f"Incorrect API key provided: {marca}. You can find your API key "
+        "at https://platform.openai.com/account/api-keys."
+    )
+    cliente = _ClienteFalso(
+        error=_fallo_con_estado(openai.AuthenticationError, 401, mensaje_de_la_api)
+    )
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(ErrorDelProveedor) as info:
+            p.analizar("i", "t", AnalisisDelMotor)
+    excepcion = info.value
+
+    # 1. str()
+    assert marca not in str(excepcion)
+    # 2. repr()
+    assert marca not in repr(excepcion)
+    # 3. traceback.format_exc() -equivalente aquí, sobre la excepción capturada-
+    traza = "".join(
+        traceback.format_exception(type(excepcion), excepcion, excepcion.__traceback__)
+    )
+    assert marca not in traza
+    # 4. excepcion.__cause__ y excepcion.__context__: ninguno de los dos
+    # debe conservar una referencia al fallo original.
+    assert excepcion.__cause__ is None
+    assert excepcion.__context__ is None
+    # 5. logger.exception(...): lo que ya ha quedado escrito en el log del
+    # servidor durante la llamada -incluye lo que registra
+    # `_registrar_diagnostico`- tampoco puede contener la clave.
+    assert marca not in caplog.text
+
+    # Y, aparte, un logger.exception() posterior sobre esta misma excepción
+    # -el caso real: algo más arriba la captura sin saber qué es y la
+    # registra entera- tampoco puede recuperar la clave.
+    registrador = logging.getLogger("prueba_de_fuga_openai")
+    with caplog.at_level(logging.ERROR, logger="prueba_de_fuga_openai"):
+        try:
+            raise excepcion
+        except ErrorDelProveedor:
+            registrador.exception("fallo simulado al conectar con el proveedor")
+    assert marca not in caplog.text
+
+
+def test_una_respuesta_cortada_se_clasifica_como_reintentable() -> None:
+    """El caso más probable con un formulario tan grande como el nuestro: el
+    modelo agota el límite de tokens de salida y el JSON llega a medias. El
+    SDK lo detecta dentro de la propia llamada a `.parse()`, antes de que
+    exista `output_parsed`, así que la comprobación de `output_parsed is
+    None` no llega a ejecutarse -hay que capturar el `ValidationError` del
+    parseo interno y clasificarlo igual que esa comprobación."""
+    cliente = _ClienteFalso(error=_fallo_de_json_cortado())
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    with pytest.raises(RespuestaNoValida) as fallo:
+        p.analizar("i", "t", AnalisisDelMotor)
+
+    assert "reintentar" in str(fallo.value).lower()
+
+
+def test_el_cliente_real_no_reintenta_por_su_cuenta(monkeypatch) -> None:
+    """El SDK trae `max_retries=2` por omisión, con espera exponencial. Cada
+    reintento reenvía el trabajo íntegro del alumno al proveedor otra vez, y
+    eso es una decisión de alcance que no se puede colar por la puerta de
+    atrás del valor por omisión del cliente: tiene que pedirse a propósito,
+    y aquí se pide que no la haya."""
+    recibido = {}
+
+    class _OpenAIFalso:
+        def __init__(self, **kwargs) -> None:
+            recibido.update(kwargs)
+
+    monkeypatch.setattr("openai.OpenAI", _OpenAIFalso)
+
+    ProveedorOpenAI("clave", "un-modelo")  # sin cliente inyectado: construye el real
+
+    assert recibido["max_retries"] == 0
