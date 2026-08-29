@@ -60,29 +60,35 @@ def test_guardar_sin_motivo_devuelve_error_legible(cliente: TestClient):
     assert "motivo" in respuesta.json()["mensaje"]
 
 
-def test_estado_enumera_las_siete_reglas_con_sus_limites(cliente: TestClient):
+def test_estado_enumera_las_ocho_reglas_con_sus_limites(cliente: TestClient):
     datos = cliente.get("/api/estado").json()
     assert [r["codigo"] for r in datos["reglas"]] == [
-        "R1", "R2", "R3", "R4", "R5", "R6", "R7",
+        "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8",
     ]
     r2 = next(r for r in datos["reglas"] if r["codigo"] == "R2")
     assert r2["limite"]
     assert datos["conforme"] is True
 
 
-def test_estado_dice_que_r7_todavia_no_vigila_nada(cliente: TestClient):
-    """La regla que protege las reservas del §13 está escrita, no hecha.
+def test_estado_dice_que_r7_es_parcial(cliente: TestClient):
+    """La regla que protege las reservas del §13 ya protege una parte.
 
-    Omitirla dejaba la pantalla diciendo «el repositorio está conforme»
-    sobre seis reglas cuando GOVERNANCE.md tiene siete, que es justo el
-    defecto -prometer más de lo que se cumple- contra el que se hizo.
+    R7 no está ni completa ni pendiente: el backend de corrección existe y
+    bloquea de verdad la nota, el apto/no apto y la autoría dentro del
+    análisis y el borrador, pero el resto de las nueve decisiones del §13
+    -cambio de tema, avance de fase, defensa- no tiene ningún estado que
+    bloquear porque esa parte del flujo no está construida. Decir
+    «verificada» sería prometer más de lo que se cumple; decir «pendiente»
+    negaría lo que sí protege ya. Ambas mentiras son el defecto contra el
+    que se hizo esta pantalla.
     """
     datos = cliente.get("/api/estado").json()
     r7 = next(r for r in datos["reglas"] if r["codigo"] == "R7")
-    assert r7["estado"] == "pendiente"
+    assert r7["estado"] == "parcial"
     assert r7["limite"]
+    assert r7["vigila"]
     assert all(r["estado"] == "verificada" for r in datos["reglas"]
-               if r["codigo"] != "R7")
+               if r["codigo"] not in ("R7",))
 
 
 def test_estado_devuelve_las_infracciones_enteras(cliente: TestClient, repo: Path):

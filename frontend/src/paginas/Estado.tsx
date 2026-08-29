@@ -14,7 +14,8 @@ export function Estado() {
   if (error) return <p className="text-tinta">{error}</p>
   if (!estado) return <p className="text-gris">Cargando…</p>
 
-  const pendientes = estado.reglas.filter((regla) => regla.estado !== "verificada")
+  const pendientes = estado.reglas.filter((regla) => regla.estado === "pendiente")
+  const parciales = estado.reglas.filter((regla) => regla.estado === "parcial")
 
   return (
     <div className="max-w-lectura">
@@ -27,10 +28,17 @@ export function Estado() {
           : "Hay infracciones sin resolver."}
       </p>
       {pendientes.length > 0 && (
-        <p className="text-[13px] text-gris mb-8">
+        <p className="text-[13px] text-gris mb-2">
           {pendientes.map((regla) => regla.codigo).join(", ")} está escrita en
           GOVERNANCE.md pero todavía no comprueba nada, así que lo que protege
           no lo vigila nadie por ahora.
+        </p>
+      )}
+      {parciales.length > 0 && (
+        <p className="text-[13px] text-gris mb-8">
+          {parciales.map((regla) => regla.codigo).join(", ")} protege una
+          parte real de lo que promete; su ficha dice qué cubre ya y qué no
+          cubre todavía.
         </p>
       )}
 
@@ -42,7 +50,7 @@ export function Estado() {
               <h3 className="text-[15px]">{regla.nombre}</h3>
               {regla.estado !== "verificada" && (
                 <span className="text-[12px] text-gris uppercase tracking-[0.08em]">
-                  pendiente
+                  {regla.estado}
                 </span>
               )}
               {regla.infracciones > 0 && (
@@ -52,7 +60,7 @@ export function Estado() {
               )}
             </div>
             <p className="text-[13px] mt-2">
-              {regla.estado === "verificada" ? "" : "Protegerá: "}
+              {regla.estado === "pendiente" ? "Protegerá: " : ""}
               {regla.vigila}
             </p>
 

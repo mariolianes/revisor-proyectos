@@ -1,6 +1,16 @@
-"""Las siete reglas, lo que vigilan y lo que no, y lo que falta oficialmente."""
+"""Las reglas de GOVERNANCE.md, lo que vigilan y lo que no, y lo que falta
+oficialmente.
+
+Cuántas son no se cuenta aquí ni en ningún comentario: se cuenta solo. Un
+comentario que dijera «las siete» habría que acordarse de tocarlo cada vez
+que GOVERNANCE.md gana una regla, y ese acordarse es exactamente lo que
+falló cuando llegó R8. `test_estado_reglas.py` compara este módulo con
+GOVERNANCE.md y con lo que de verdad usa el verificador, así que un olvido
+no depende de que alguien se acuerde de leer un comentario.
+"""
 
 import re
+from collections import defaultdict
 from pathlib import Path
 from typing import NamedTuple
 
@@ -19,14 +29,16 @@ class Descripcion(NamedTuple):
     nombre: str
     vigila: str
     limite: str
-    # 'verificada' si hay código que la comprueba; 'pendiente' si la regla
-    # está escrita en GOVERNANCE.md pero todavía no vigila nada.
+    # 'verificada' si hay código que la comprueba; 'parcial' si protege una
+    # parte real de lo que promete y dejar el resto sin cubrir es un hecho
+    # conocido, no un olvido; 'pendiente' si la regla está escrita en
+    # GOVERNANCE.md pero todavía no vigila nada.
     estado: str
 
 
 # Lo que cada regla NO cubre. Sale en pantalla porque una regla que promete
-# más de lo que hace es peor que una regla que no existe. Por eso están las
-# siete de GOVERNANCE.md y no solo las que ya funcionan: callarse la que
+# más de lo que hace es peor que una regla que no existe. Por eso está cada
+# regla de GOVERNANCE.md y no solo las que ya funcionan: callarse la que
 # falta sería exactamente el defecto contra el que se hizo esta pantalla.
 REGLAS = [
     Descripcion(
@@ -70,14 +82,39 @@ REGLAS = [
         "verificada"),
     Descripcion(
         "R7", "Las reservas del profesor son bloqueos reales",
-        "Las nueve decisiones del §13 del Documento Maestro -aprobar una nota, "
-        "valorar la autoría, autorizar un cambio de tema...- serán estados que "
-        "el sistema no puede atravesar solo: propone y se detiene.",
-        "Hoy no vigila nada. Se implementa con el backend de corrección, que "
-        "todavía no existe, así que ningún automatismo impide ahora mismo "
-        "saltarse una de esas nueve decisiones: lo único que las sostiene es "
-        "que ese backend aún no está escrito.",
-        "pendiente"),
+        "Dentro del análisis y el borrador de devolución -la parte del flujo "
+        "de corrección que ya existe- la reserva es real por dos vías: "
+        "`backend/api/entregas.py` no tiene ninguna operación que fije "
+        "APROBADO ni COMUNICADO, así que el backend no puede aprobar una nota "
+        "ni comunicarla al alumno aunque quisiera; y `backend/salidas/"
+        "borrador.py` descarta cualquier borrador donde el motor haya escrito "
+        "una nota, un apto o no apto, o un juicio de autoría, en vez de "
+        "dejarlo pasar. La revisión observación por observación "
+        "(`POST /entregas/{identificador}/revision`) es la única vía por la "
+        "que una valoración pasa a considerarse aceptada.",
+        "El resto de las nueve decisiones del §13 no tiene todavía ningún "
+        "estado que bloquear, porque esa parte del flujo no está construida: "
+        "no hay operación para autorizar un cambio de tema o modalidad, para "
+        "decidir si una carencia impide avanzar de fase, ni para valorar la "
+        "presentación ante el tribunal. Interpretar una situación ambigua o "
+        "excepcional tampoco es un estado del sistema: sigue siendo, como "
+        "todo lo demás aquí, algo que decide el profesor fuera de esta "
+        "pantalla.",
+        "parcial"),
+    Descripcion(
+        "R8", "La prosa en castellano lleva sus tildes",
+        "La instrucción que se manda al motor, el informe técnico, el "
+        "borrador de devolución y los textos de la interfaz llevan sus "
+        "tildes. Mira solo prosa -cadenas, comentarios, docstrings y el "
+        "cuerpo de los documentos-, nunca identificadores, claves ni rutas.",
+        "El vocabulario es una lista corta de palabras cuya forma sin tilde "
+        "no es válida en castellano por sí sola: una palabra fuera de esa "
+        "lista puede llevar una falta y pasar sin protesta. Un texto sin "
+        "tildes correcto -la salida de una función que las quita, o un PDF "
+        "simulado que se compara carácter a carácter- necesita su "
+        "`sin-tilde:` o `sin-tilde-fichero:` con motivo, o la regla lo "
+        "denuncia igual.",
+        "verificada"),
 ]
 
 PATRON_PENDIENTE = re.compile(r"^- \*\*([a-z0-9_]+)\*\* — (.+)$", re.M)
@@ -112,33 +149,82 @@ class EstadoGobernanza(BaseModel):
     reglas: list[Regla]
 
 
+def _agrupar_por_regla(infracciones: list) -> dict[str, list[Infraccion]]:
+    """Reparte las infracciones por código de regla, sin perder ninguna.
+
+    Antes esto se hacía con un diccionario que solo conocía los códigos de
+    `REGLAS`: una infracción que llegara con un código sin describir aquí
+    -R8 antes de esta corrección, o mañana una R9 recién añadida al
+    verificador y todavía sin su `Descripcion`- se filtraba con un
+    `if infraccion.regla in por_regla`, y el docente veía «conforme» y «0
+    infracciones» sobre un repositorio que no lo estaba. `defaultdict` no
+    descarta nada: cualquier código que aparezca queda agrupado, lo describa
+    `REGLAS` o no, y `construir_reglas` decide después qué hacer con lo que
+    sobra.
+    """
+    por_regla: dict[str, list[Infraccion]] = defaultdict(list)
+    for infraccion in infracciones:
+        por_regla[infraccion.regla].append(Infraccion(
+            regla=infraccion.regla,
+            fichero=infraccion.fichero,
+            detalle=infraccion.detalle,
+        ))
+    return por_regla
+
+
+def construir_reglas(infracciones: list) -> list[Regla]:
+    """La lista de reglas que ve el profesor, a partir de `REGLAS` y de lo
+    que ha encontrado el verificador.
+
+    Ninguna infracción se pierde: una que llegue con un código que `REGLAS`
+    no describe sale igual, agrupada bajo una entrada genérica que dice
+    exactamente eso -que a `backend/api/estado.py` le falta describirla-, en
+    vez de desaparecer de la pantalla. Es la misma garantía que
+    `test_estado_reglas.py` comprueba de forma estática antes de que el
+    código llegue a ejecutarse: aquí es la red que queda si, aun así, algo se
+    escapa.
+    """
+    por_regla = _agrupar_por_regla(infracciones)
+    codigos_descritos = {regla.codigo for regla in REGLAS}
+
+    reglas = [
+        Regla(
+            codigo=regla.codigo,
+            nombre=regla.nombre,
+            vigila=regla.vigila,
+            limite=regla.limite,
+            estado=regla.estado,
+            infracciones=len(por_regla[regla.codigo]),
+            detalles=por_regla[regla.codigo],
+        )
+        for regla in REGLAS
+    ]
+
+    for codigo in sorted(set(por_regla) - codigos_descritos):
+        reglas.append(Regla(
+            codigo=codigo,
+            nombre="Regla sin describir en esta pantalla",
+            vigila="",
+            limite=(
+                f"El verificador ha encontrado infracciones de «{codigo}», "
+                "pero backend/api/estado.py todavía no la describe. Añade "
+                "una Descripcion para este código en REGLAS."
+            ),
+            estado="sin_describir",
+            infracciones=len(por_regla[codigo]),
+            detalles=por_regla[codigo],
+        ))
+
+    return reglas
+
+
 @router.get("/estado")
 def obtener_estado(peticion: Request) -> EstadoGobernanza:
     raiz: Path = peticion.app.state.raiz
     infracciones = ejecutar(raiz, [], False)
-    por_regla: dict[str, list[Infraccion]] = {regla.codigo: [] for regla in REGLAS}
-    for infraccion in infracciones:
-        if infraccion.regla in por_regla:
-            por_regla[infraccion.regla].append(Infraccion(
-                regla=infraccion.regla,
-                fichero=infraccion.fichero,
-                detalle=infraccion.detalle,
-            ))
-
     return EstadoGobernanza(
         conforme=not infracciones,
-        reglas=[
-            Regla(
-                codigo=regla.codigo,
-                nombre=regla.nombre,
-                vigila=regla.vigila,
-                limite=regla.limite,
-                estado=regla.estado,
-                infracciones=len(por_regla[regla.codigo]),
-                detalles=por_regla[regla.codigo],
-            )
-            for regla in REGLAS
-        ],
+        reglas=construir_reglas(infracciones),
     )
 
 
