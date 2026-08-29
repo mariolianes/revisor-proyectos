@@ -1061,3 +1061,58 @@ def test_un_ctrl_c_a_mitad_de_la_tanda_no_borra_lo_ya_completado(
     assert registrado["codigo"] == "UNO"
     assert registrado["saltado"] is False
     assert registrado["semaforo_obtenido"] is not None
+
+
+def test_la_espera_entre_casos_se_respeta(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf
+) -> None:
+    """Un proyecto largo puede acercarse solo al límite de tokens por minuto
+    de la cuenta, y dos seguidos lo superan: en la primera calibración real
+    -límite de 30.000 por minuto- fallaron justo los dos trabajos más largos,
+    de 19.418 y 13.116 tokens. `--espera` existe para eso, y no para el saldo.
+
+    El temporizador se inyecta en vez de esperar de verdad: un test que
+    duerme siete segundos para comprobar que duerme siete segundos no prueba
+    nada mejor y hace la suite inservible.
+    """
+    carpeta = tmp_path / "calibracion"
+    carpeta.mkdir()
+    casos = []
+    respuestas = []
+    for numero in (1, 2, 3):
+        texto = f"Contenido inventado del caso {numero} de calibracion."
+        _pdf_de_caso(carpeta, escribir_pdf, f"x0{numero}.pdf", texto)
+        casos.append(_caso(codigo=f"X0{numero}", archivo=f"x0{numero}.pdf"))
+        respuestas += [_analisis_simulado(texto[:40]), _devolucion_simulada()]
+
+    esperas: list[float] = []
+    ejecutar(
+        criterios_de_analisis, casos, carpeta,
+        ProveedorSimulado(respuestas=respuestas),
+        espera=7.5, dormir=esperas.append,
+    )
+
+    # Tres casos, dos pausas: el primero no espera a nadie.
+    assert esperas == [7.5, 7.5]
+
+
+def test_sin_espera_no_se_duerme(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf
+) -> None:
+    """Por omisión no espera: quien no tenga el problema no paga el precio de
+    una pasada más lenta."""
+    carpeta = tmp_path / "calibracion"
+    carpeta.mkdir()
+    texto = "Contenido inventado de un único caso de calibración."
+    _pdf_de_caso(carpeta, escribir_pdf, "x01.pdf", texto)
+
+    esperas: list[float] = []
+    ejecutar(
+        criterios_de_analisis, [_caso(codigo="X01", archivo="x01.pdf")], carpeta,
+        ProveedorSimulado(
+            respuestas=[_analisis_simulado(texto[:40]), _devolucion_simulada()]
+        ),
+        dormir=esperas.append,
+    )
+
+    assert esperas == []

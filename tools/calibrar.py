@@ -47,6 +47,7 @@ un proceso que puede morir antes del final.
 
 import argparse
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -549,6 +550,8 @@ def ejecutar(
     casos: list[CasoDeCalibracion],
     carpeta: Path,
     proveedor: ProveedorAnalisis,
+    espera: float = 0.0,
+    dormir=time.sleep,
 ) -> InformeDeCalibracion:
     """Recorre los casos del banco contra `proveedor` y compara con el
     docente.
@@ -568,11 +571,27 @@ def ejecutar(
     completaron, se vuelve a lanzar entera. Es, únicamente, que el trabajo
     ya pagado quede en disco y no solo en la memoria de un proceso que
     puede morir antes de llegar al final.
+
+    `espera` son los segundos que se aguardan entre un caso y el siguiente.
+    Existe porque la cuenta del docente tiene un límite de tokens por minuto,
+    y un proyecto entero puede acercarse a ese límite él solo: en la primera
+    calibración real -2026-08-29, límite de 30.000 tokens por minuto- los dos
+    trabajos que fallaron fueron precisamente los dos más largos, 19.418 y
+    13.116 tokens, que juntos lo superaban. No es un problema de saldo, y por
+    eso no se arregla esperando a mañana: se arregla no mandándolos seguidos.
+    El valor va en la línea de órdenes porque el límite depende de la cuenta y
+    de la hora, y el arnés no tiene forma de conocerlo.
+
+    `dormir` se inyecta para que los tests no esperen de verdad.
     """
     almacen = AlmacenEnMemoria()
     fichero_de_progreso = _progreso_por_omision(carpeta)
     resultados: list[ResultadoDeCaso] = []
-    for caso in casos:
+    for numero, caso in enumerate(casos):
+        # Antes del caso y no después: así el último no hace esperar de balde
+        # a quien mira la pantalla.
+        if numero and espera:
+            dormir(espera)
         resultado = _ejecutar_caso(
             raiz, carpeta, VERSION_CRITERIOS_POR_OMISION, almacen, proveedor, caso
         )
@@ -737,6 +756,16 @@ def _configurar_argumentos() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--espera", type=float, default=0.0, metavar="SEGUNDOS",
+        help=(
+            "Segundos de espera entre un caso y el siguiente. Sirve para no "
+            "chocar con el limite de tokens por minuto de la cuenta: un "
+            "proyecto largo puede acercarse el solo a ese limite, y dos "
+            "seguidos lo superan. No es un problema de saldo; no se arregla "
+            "esperando a manana, se arregla no mandandolos seguidos."
+        ),
+    )
+    parser.add_argument(
         "--confirmo", action="store_true",
         help=(
             "Confirma que se puede enviar el contenido de la carpeta de "
@@ -817,7 +846,7 @@ def _resolver(argv: list[str] | None, raiz: Path | None) -> int:
             "comprueba que el arnés funciona."
         )
 
-    informe = ejecutar(raiz, casos, carpeta, proveedor)
+    informe = ejecutar(raiz, casos, carpeta, proveedor, args.espera)
     texto = _formatear(informe)
     print()
     print(texto)
