@@ -204,3 +204,65 @@ def test_una_version_de_criterios_vacia_no_deja_al_sistema_sin_version(
     configuracion = cargar(tmp_path, entorno={"REVISOR_VERSION_CRITERIOS": ""})
 
     assert configuracion.version_criterios == "v2026-2027"
+
+
+def test_cargar_sin_entorno_deja_el_analisis_sin_configurar(tmp_path: Path) -> None:
+    """Sin clave ni modelo, `crear_proveedor` debe caer en el simulado."""
+    configuracion = cargar(tmp_path, entorno={})
+
+    assert configuracion.clave_openai is None
+    assert configuracion.modelo_analisis is None
+
+
+def test_cargar_lee_la_clave_de_openai_del_entorno(tmp_path: Path) -> None:
+    configuracion = cargar(tmp_path, entorno={"OPENAI_API_KEY": "sk-de-prueba"})
+
+    assert configuracion.clave_openai == "sk-de-prueba"
+
+
+def test_cargar_lee_el_modelo_de_analisis_del_entorno(tmp_path: Path) -> None:
+    configuracion = cargar(
+        tmp_path, entorno={"REVISOR_MODELO_ANALISIS": "el-modelo-elegido"}
+    )
+
+    assert configuracion.modelo_analisis == "el-modelo-elegido"
+
+
+def test_cargar_lee_la_clave_de_openai_del_fichero_env(tmp_path: Path) -> None:
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    (raiz / ".env").write_text("OPENAI_API_KEY=sk-del-fichero\n", encoding="utf-8")
+
+    assert cargar(raiz, entorno={}).clave_openai == "sk-del-fichero"
+
+
+def test_cargar_lee_el_modelo_de_analisis_del_fichero_env(tmp_path: Path) -> None:
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    (raiz / ".env").write_text(
+        "REVISOR_MODELO_ANALISIS=modelo-del-fichero\n", encoding="utf-8"
+    )
+
+    assert cargar(raiz, entorno={}).modelo_analisis == "modelo-del-fichero"
+
+
+def test_el_entorno_manda_sobre_el_fichero_para_la_clave_de_openai(
+    tmp_path: Path,
+) -> None:
+    raiz = tmp_path / "repo"
+    raiz.mkdir()
+    (raiz / ".env").write_text("OPENAI_API_KEY=sk-del-fichero\n", encoding="utf-8")
+
+    configuracion = cargar(raiz, entorno={"OPENAI_API_KEY": "sk-del-entorno"})
+
+    assert configuracion.clave_openai == "sk-del-entorno"
+
+
+def test_un_modelo_de_analisis_vacio_no_cuenta_como_configurado(
+    tmp_path: Path,
+) -> None:
+    """Una línea `REVISOR_MODELO_ANALISIS=` sin valor no debe colar un
+    modelo vacío que luego rompa `ProveedorOpenAI`."""
+    configuracion = cargar(tmp_path, entorno={"REVISOR_MODELO_ANALISIS": ""})
+
+    assert configuracion.modelo_analisis is None
