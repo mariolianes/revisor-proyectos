@@ -32,7 +32,11 @@ const estadoDeSalida = (v: ValoracionVerificada): EstadoDeLaDecision => (
  * 1. Qué está verificado y qué no. `Observacion` marca con `senal` la que
  *    tiene la cita sin localizar; aquí se hace lo mismo con las dudas del
  *    motor y los indicios de autoría (§13: son un indicio, no un veredicto,
- *    la decisión es del docente).
+ *    la decisión es del docente). Las fortalezas siguen la misma regla que
+ *    las observaciones: llevan su cita y, si no se localizó, la señal -al
+ *    alumno no le llega ninguna fortaleza sin localizar (`componer()` la
+ *    filtra en `backend/salidas/borrador.py`), pero aquí el docente ve el
+ *    análisis entero, y es él quien tiene que poder distinguirlas.
  * 2. El borrador es texto libre. Se ha comprobado que no viola ninguna
  *    regla dura -nada de notas, nada de autoría, nada sin evidencia-, pero
  *    no que cada frase corresponda exactamente a una prioridad: quien lo
@@ -267,10 +271,22 @@ export function Revision({ id, inicial, alVolver }: Props) {
           <h3 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-3">
             Fortalezas
           </h3>
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {informe.fortalezas.map((f, i) => (
-              <li key={i} className="max-w-lectura text-[13px]">
+              <li
+                key={i}
+                className={`max-w-lectura text-[13px] ${f.evidencia_localizada ? "" : "senal"}`}
+              >
                 {f.descripcion}
+                <span className="block mt-1 font-mono text-[12px] text-gris">
+                  «{f.evidencia.cita}»
+                </span>
+                {!f.evidencia_localizada && (
+                  <span className="block mt-1 text-[12px]">
+                    La cita no se ha localizado en el documento: al alumno no
+                    le llegará.
+                  </span>
+                )}
               </li>
             ))}
           </ul>

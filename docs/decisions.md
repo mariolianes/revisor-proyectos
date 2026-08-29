@@ -235,3 +235,46 @@ a usarla con el trabajo de un alumno.
 
 **Arrastra:** el §19 del Documento Maestro quedó corregido en este mismo
 cambio, con su documento `docs/changes/2026-08-29-el-texto-se-envia-integro.md`.
+
+## D-011 · El resumen del informe interno es un recuento verificado, no la síntesis del §17.1
+
+**Fecha:** 2026-08-29 · **Estado:** Provisional · **Responsable:** Marcos
+
+`backend/salidas/informe.py` componía el «Resumen» del Anexo C con
+`analisis.fortalezas[0].descripcion` -la primera fortaleza que hubiera, sin
+pasar por el filtro de evidencia localizada que sí aplica `_semaforo`-. Una
+fortaleza con la cita inventada podía titular el informe entero, sin cita y
+sin la tinta de señal que sí llevan las dudas, los indicios y las
+observaciones no localizadas.
+
+Se sustituye por `_resumen()`, que compone el campo a partir de piezas ya
+verificadas del mismo informe: el semáforo, cuántas prioridades llegan al
+alumno y de qué gravedad, cuántas quedaron fuera solo por el límite de la
+economía pedagógica, si alguna dimensión activa quedó sin valorar y si la
+verificación dejó reparos. Ninguna de esas piezas es una interpretación
+nueva: cada una se puede contrastar con otro bloque del mismo informe.
+
+Eso deja un hueco que el profesor debe conocer, y esta decisión lo deja
+constar en vez de disimularlo. El §17.1 pide «estado general en cinco o seis
+líneas» y el §11.1 un «resumen ejecutivo del estado del proyecto»: los dos
+piden una síntesis interpretativa -no solo enumerar lo verificado, sino decir
+qué significa en su conjunto-, y eso es una lectura del trabajo que el §13
+reserva al profesor, no un dato que el sistema pueda calcular por sí mismo.
+Pedírselo de nuevo al motor como texto libre reabriría el problema que esta
+misma decisión cierra. Se descarta también inventar aquí una interpretación
+razonable: iría contra R3 tanto como una fortaleza sin cita.
+
+No se ha creado una entrada nueva en `docs/PENDIENTE_OFICIAL.md`: ese catálogo
+recoge datos oficiales que faltan y que llegarán -rúbrica, ponderaciones,
+calendario-, no un límite permanente de diseño. Este hueco no se cierra
+cuando llegue un dato nuevo, se cierra si el docente decide que quiere que el
+sistema interprete, y esa es una decisión de alcance, no un dato pendiente.
+
+**Sigue en pie** que el resumen factual conviva con el semáforo, las
+prioridades, las dimensiones ausentes y los reparos, todos visibles en el
+mismo informe: el profesor tiene delante las mismas piezas con las que
+podría escribir él la síntesis que el §17.1 describe.
+
+**Arrastra:** `backend/salidas/informe.py` (`_resumen`) y
+`frontend/src/paginas/Revision.tsx`, donde el bloque «Resumen» sigue
+mostrando el campo tal cual llega del backend.

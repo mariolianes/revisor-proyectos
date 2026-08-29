@@ -266,6 +266,11 @@ export interface ValoracionVerificada {
 export interface FortalezaVerificada {
   descripcion: string
   evidencia: Evidencia
+  /**
+   * Igual que en `ValoracionVerificada`: si es falso, al alumno no le llega
+   * -el borrador la filtra-, pero el informe interno la trae de todos
+   * modos para que el docente la vea y decida.
+   */
   evidencia_localizada: boolean
 }
 
