@@ -5,6 +5,7 @@ toca una entrega real de un alumno, y ningún PDF entra en el repositorio.
 """
 
 import re
+import shutil
 from pathlib import Path
 
 import pymupdf
@@ -14,6 +15,11 @@ import pytest
 # será la distancia entre líneas base consecutivas.
 IZQUIERDA = 72.0
 PRIMERA_LINEA = 100.0
+
+# La raíz del repositorio real, para copiar `criteria/` a un directorio
+# temporal. Este fichero vive en <repo>/tests/conftest.py: un nivel por
+# encima de `tests/` está la raíz.
+RAIZ_DEL_REPOSITORIO = Path(__file__).resolve().parents[1]
 
 # Los criterios de formato reales, con el mínimo de páginas rebajado a 4 y la
 # familia puesta en Helvetica, que es la que PyMuPDF incrusta con «helv».
@@ -131,6 +137,33 @@ def criterios_alterados(tmp_path: Path):
         return raiz
 
     return alterar
+
+
+@pytest.fixture
+def criterios_de_analisis(tmp_path: Path) -> Path:
+    """Una raíz con una copia entera de `criteria/`, lista para leer o alterar.
+
+    A diferencia de `criterios_de_formato`, que solo escribe un fichero
+    suelto, esta copia el árbol real de `criteria/v2026-2027/` completo:
+    dimensiones, prioridades, feedback, ponderaciones... Las pruebas del
+    análisis y de las salidas al alumno leen varios ficheros del mismo
+    directorio de criterios a la vez, y los textos que comprueban -el nombre
+    de D05, el efecto de P4, el límite de la economía pedagógica- son los
+    reales del repositorio: si aquí se inventara una copia con otros
+    valores, la prueba estaría comprobando esa copia y no lo que compone de
+    verdad el código a partir de los criterios reales.
+
+    Es una copia, no la carpeta original, porque varias pruebas modifican un
+    fichero para comprobar que cambiarlo cambia el resultado: hacerlo sobre
+    `criteria/` mutaría el repositorio real.
+
+    Vive en la raíz y no en `tests/analisis/` porque los directorios de
+    prueba no son paquetes -no hay manera de que un módulo de `tests/salidas/`
+    importe una fixture de `tests/analisis/`-, y esta fixture la usan ambos.
+    """
+    destino = tmp_path / "repo"
+    shutil.copytree(RAIZ_DEL_REPOSITORIO / "criteria", destino / "criteria")
+    return destino
 
 
 @pytest.fixture

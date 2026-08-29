@@ -6,6 +6,16 @@ motor hostil en vez de contra uno que colabora.
 
 La primera es la que sostiene las demás: un modelo puede inventarse una frase,
 pero no puede hacer que exista en el documento del alumno.
+
+Los cuatro modelos que representan un juicio ya verificado -`ValoracionVerificada`,
+`PatronVerificado`, `FortalezaVerificada` e `IndicioDeAutoriaVerificado`- son
+inmutables (`frozen=True`). No es una preferencia defensiva: son la constancia de
+un juicio ya emitido y comprobado, no un borrador que alguien deba poder retocar
+después. La Task 8 (el borrador) y la Task 9 (el informe) construyen sus dos
+salidas a partir del mismo `AnalisisVerificado`, compartiendo instancia -no una
+copia- de cada valoración, patrón, fortaleza e indicio: si una de las dos pudiera
+modificar un campo en el sitio, corrompería en silencio lo que la otra le enseña
+al profesor. La inmutabilidad cierra esa vía sin tener que copiar nada.
 """
 
 import re
@@ -151,9 +161,13 @@ class Reparo(BaseModel):
 
 
 class ValoracionVerificada(BaseModel):
-    """Una valoración que ya ha pasado por las comprobaciones."""
+    """Una valoración que ya ha pasado por las comprobaciones.
 
-    model_config = ConfigDict(extra="forbid")
+    Inmutable: es la constancia de un juicio ya verificado, no un borrador que
+    un consumidor posterior pueda retocar en el sitio.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     dimension: str
     nivel: str
@@ -164,9 +178,12 @@ class ValoracionVerificada(BaseModel):
 
 
 class PatronVerificado(BaseModel):
-    """Un patrón del §5 del calibrador, ya con su cita comprobada."""
+    """Un patrón del §5 del calibrador, ya con su cita comprobada.
 
-    model_config = ConfigDict(extra="forbid")
+    Inmutable, por la misma razón que `ValoracionVerificada`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     nombre: str
     descripcion: str
@@ -180,9 +197,11 @@ class FortalezaVerificada(BaseModel):
     Llega al alumno a través del borrador de devolución, y una fortaleza
     inventada es tan falsa como una carencia inventada: por eso pasa por la
     misma comprobación que una valoración.
+
+    Inmutable, por la misma razón que `ValoracionVerificada`.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     descripcion: str
     evidencia: Evidencia
@@ -195,9 +214,11 @@ class IndicioDeAutoriaVerificado(BaseModel):
     Que la cita se localice no dice nada sobre si el indicio es acertado:
     solo dice que el docente puede ir al documento y ver de dónde sale. La
     decisión sobre la autoría sigue siendo suya.
+
+    Inmutable, por la misma razón que `ValoracionVerificada`.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     descripcion: str
     evidencia: Evidencia
