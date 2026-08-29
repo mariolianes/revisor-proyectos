@@ -238,7 +238,13 @@ cambio, con su documento `docs/changes/2026-08-29-el-texto-se-envia-integro.md`.
 
 ## D-011 · El resumen del informe interno es un recuento verificado, no la síntesis del §17.1
 
-**Fecha:** 2026-08-29 · **Estado:** Provisional · **Responsable:** Marcos
+**Fecha:** 2026-08-29 · **Estado:** Provisional, a la espera de que Marcos la
+valide · **Propuesta desde la implementación**
+
+> A diferencia de las anteriores, esta decisión no la ha tomado el docente:
+> se propone desde la implementación al corregir un defecto, y se registra
+> aquí para que él la vea y decida. Mientras siga *Provisional*, lo que
+> gobierna es lo que dice el §17.1, no esta entrada.
 
 `backend/salidas/informe.py` componía el «Resumen» del Anexo C con
 `analisis.fortalezas[0].descripcion` -la primera fortaleza que hubiera, sin
