@@ -149,3 +149,35 @@ def test_el_repositorio_esta_conforme() -> None:
     """La regla se cumple hoy: si alguien introduce una falta, este test cae."""
     raiz = Path(__file__).resolve().parents[2]
     assert verificar_r8(raiz, []) == []
+
+
+def test_las_carpetas_se_ignoran_por_ruta_relativa(tmp_path: Path) -> None:
+    """Un repositorio que vive dentro de una carpeta ignorada sigue mirándose.
+
+    Los árboles de trabajo de los agentes cuelgan de `.claude/worktrees/`. Si
+    el filtro se aplicara a la ruta absoluta, `.claude` aparecería en la raíz
+    misma del repositorio y **ningún** fichero se inspeccionaría: la
+    herramienta respondería «conforme» sin haber mirado nada, que es la peor
+    forma de fallar que puede tener un verificador.
+    """
+    raiz = tmp_path / ".claude" / "worktrees" / "agente"
+    (raiz / "backend").mkdir(parents=True)
+    (raiz / "backend" / "modulo.py").write_text(
+        "# el analisis va aqui\n", encoding="utf-8"
+    )
+    infracciones = verificar_r8(raiz, [])
+    assert [i.fichero for i in infracciones] == [
+        "backend/modulo.py",
+        "backend/modulo.py",
+    ]
+
+
+def test_dentro_del_repositorio_las_carpetas_ignoradas_siguen_ignorandose(
+    tmp_path: Path,
+) -> None:
+    """Lo de arriba no debe romper el filtro para lo que sí cuelga dentro."""
+    (tmp_path / ".claude" / "worktrees").mkdir(parents=True)
+    (tmp_path / ".claude" / "worktrees" / "copia.py").write_text(
+        "# el analisis va aqui\n", encoding="utf-8"
+    )
+    assert verificar_r8(tmp_path, []) == []
