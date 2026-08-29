@@ -312,6 +312,112 @@ def test_las_fortalezas_llegan_con_su_evidencia_no_solo_el_texto(
     assert i.fortalezas[0].evidencia_localizada is True
 
 
+def test_el_resumen_no_es_una_fortaleza_suelta(criterios_de_analisis: Path) -> None:
+    """El fallo que se corrige: el resumen ya no puede ser el texto de la
+    primera fortaleza, localizada o no. Es la regresión que este cambio
+    cierra, así que se comprueba de forma literal."""
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()], fortalezas=[_fortaleza("La estructura es clara.")]),
+        "simulado",
+    )
+
+    assert i.resumen != "La estructura es clara."
+    assert "La estructura es clara." not in i.resumen
+
+
+def test_el_resumen_no_lleva_una_fortaleza_con_la_cita_inventada(
+    criterios_de_analisis: Path,
+) -> None:
+    """El caso peligroso de verdad: una fortaleza cuya evidencia NO se ha
+    localizado -la cita pudo inventarla el motor- no puede titular el
+    informe. Si `_resumen` dejara de filtrar por `evidencia_localizada` en
+    algún punto de su composición, este test tiene que fallar: es la
+    protección explícita que el brief pidió para el filtro de evidencia
+    localizada del resumen."""
+    fortaleza_inventada = _fortaleza(
+        "Esta fortaleza tiene la cita inventada por el motor.", localizada=False,
+    )
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()], fortalezas=[fortaleza_inventada]),
+        "simulado",
+    )
+
+    assert "Esta fortaleza tiene la cita inventada por el motor." not in i.resumen
+    assert "inventada" not in i.resumen
+
+
+def test_el_resumen_dice_el_semaforo(criterios_de_analisis: Path) -> None:
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
+                         _analisis([_v("D05", "P1")]), "simulado")
+
+    assert "ROJO" in i.resumen
+
+
+def test_el_resumen_cuenta_las_prioridades_elegidas_por_gravedad(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v("D05", "P1"), _v("D06", "P1"), _v("D07", "P2")]),
+        "simulado",
+    )
+
+    assert "2 P1" in i.resumen
+    assert "1 P2" in i.resumen
+    assert "3 prioridades verificadas" in i.resumen
+
+
+def test_el_resumen_dice_si_no_hay_ninguna_prioridad(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
+                         _analisis([_v("D05", None)]), "simulado")
+
+    assert "Ninguna prioridad verificada" in i.resumen
+
+
+def test_el_resumen_cuenta_las_descartadas_por_el_limite(
+    criterios_de_analisis: Path,
+) -> None:
+    siete_p1 = [_v(f"D0{i}", "P1") for i in range(1, 8)]
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis(siete_p1), "simulado",
+    )
+
+    assert "3 más quedaron fuera solo por el límite" in i.resumen
+
+
+def test_el_resumen_dice_las_dimensiones_sin_valorar(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v("D05", None)], dimensiones_ausentes=["D01", "D02"]),
+        "simulado",
+    )
+
+    assert "2 dimensiones de la fase sin valorar: D01, D02" in i.resumen
+
+
+def test_el_resumen_cuenta_los_reparos(criterios_de_analisis: Path) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis(
+            [_v()],
+            reparos=[
+                Reparo(regla="x", detalle="Algo."),
+                Reparo(regla="y", detalle="Otra cosa."),
+            ],
+        ),
+        "simulado",
+    )
+
+    assert "2 reparos de verificación registrados" in i.resumen
+
+
 def test_los_indicios_llegan_con_su_evidencia_y_su_aviso(
     criterios_de_analisis: Path,
 ) -> None:

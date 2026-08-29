@@ -35,7 +35,7 @@ from backend.analisis.verificacion import (
     ValoracionVerificada,
 )
 from backend.persistencia.modelos import EntregaRegistrada
-from backend.salidas.seleccion import seleccionar_prioridades
+from backend.salidas.seleccion import SeleccionDePrioridades, seleccionar_prioridades
 from backend.servicios.lectura_objetiva import FichaDeLectura
 
 # El §9 del calibrador, calibrado en `criteria/<version>/semaforo.yaml`: un
@@ -85,6 +85,10 @@ class Informe(BaseModel):
 
     identificacion: dict[str, str]
     control_administrativo: list[str]
+    # Un recuento de lo ya verificado -semáforo, prioridades, dimensiones
+    # ausentes y reparos-, no la síntesis interpretativa que el §17.1 y el
+    # §11.1 describen. Ver `_resumen` para por qué, y D-011 en
+    # `docs/decisions.md` para el hueco que eso deja.
     resumen: str
     valoraciones: list[ValoracionVerificada]
     fortalezas: list[FortalezaVerificada]
@@ -132,6 +136,87 @@ def _semaforo(analisis: AnalisisVerificado) -> str:
         if any(v.prioridad == codigo for v in fiables):
             return _SEMAFORO_POR_PRIORIDAD[codigo]
     return "VERDE"
+
+
+def _resumen(
+    color: str,
+    seleccion: SeleccionDePrioridades,
+    dimensiones_ausentes: list[str],
+    reparos: list[Reparo],
+) -> str:
+    """El «Resumen» del §17.1, compuesto solo con lo que ya está verificado.
+
+    El §17.1 pide «estado general en cinco o seis líneas» y el §11.1 un
+    «resumen ejecutivo del estado del proyecto»: los dos piden una síntesis
+    interpretativa. Antes esta función no existía y el campo se rellenaba
+    con `analisis.fortalezas[0].descripcion` -la primera fortaleza que
+    hubiera, o "Sin resumen del motor." si no había ninguna-, sin pasar por
+    el filtro de evidencia localizada que sí aplica `_semaforo`. Una
+    fortaleza con la cita inventada podía así titular el informe entero,
+    sin cita y sin la tinta de señal que sí llevan las dudas, los indicios
+    y las observaciones no localizadas: el único texto de la pantalla que
+    afirmaba algo sobre el trabajo del alumno sin ninguna forma de
+    comprobarlo.
+
+    Esta función no le pide al motor un resumen nuevo -eso volvería a
+    dejar un campo de texto libre sin cita, que es justo el problema que se
+    cierra aquí-. Compone el resumen a partir de piezas que este módulo ya
+    tiene verificadas: el semáforo (que ya filtra por
+    `evidencia_localizada`, ver `_semaforo`), cuántas prioridades llegan al
+    alumno y de qué gravedad, cuántas quedaron fuera solo por el límite de
+    la economía pedagógica, si alguna dimensión activa se quedó sin
+    valorar, y si la verificación dejó reparos. Son hechos comprobables
+    -cada uno se puede contrastar con otro bloque del mismo informe-, no
+    una interpretación nueva.
+
+    Y por eso mismo NO es la síntesis interpretativa que el Maestro
+    describe: es un recuento, no una lectura del conjunto. Interpretar el
+    «estado general» de un proyecto -no solo enumerar lo verificado, sino
+    decir qué significa en su conjunto- es del tipo de juicio que el §13
+    reserva al profesor. Un sistema que se detiene antes de interpretar no
+    puede dar esas cinco o seis líneas sin, o bien inventar una lectura que
+    nadie ha verificado, o bien pedírsela de nuevo al motor y reabrir el
+    hueco de origen. Ese hueco entre lo que pide la plantilla del Anexo C y
+    lo que da esta función consta en D-011 de `docs/decisions.md`, no se
+    rellena aquí con una frase que sonara a síntesis sin serlo.
+    """
+    partes: list[str] = [f"Semáforo propuesto: {color}."]
+
+    elegidas = seleccion.elegidas
+    if elegidas:
+        conteo: dict[str, int] = {}
+        for v in elegidas:
+            conteo[v.prioridad] = conteo.get(v.prioridad, 0) + 1
+        desglose = ", ".join(
+            f"{cantidad} {codigo}" for codigo, cantidad in sorted(conteo.items())
+        )
+        etiqueta = "prioridad verificada" if len(elegidas) == 1 else "prioridades verificadas"
+        partes.append(f"{len(elegidas)} {etiqueta} para la devolución ({desglose}).")
+    else:
+        partes.append("Ninguna prioridad verificada para la devolución.")
+
+    if seleccion.descartadas:
+        n = len(seleccion.descartadas)
+        verbo = "quedó" if n == 1 else "quedaron"
+        partes.append(
+            f"{n} más {verbo} fuera solo por el límite de la devolución."
+        )
+
+    if dimensiones_ausentes:
+        n = len(dimensiones_ausentes)
+        etiqueta = "dimensión" if n == 1 else "dimensiones"
+        partes.append(
+            f"{n} {etiqueta} de la fase sin valorar: "
+            + ", ".join(dimensiones_ausentes) + "."
+        )
+
+    if reparos:
+        n = len(reparos)
+        etiqueta = "reparo" if n == 1 else "reparos"
+        participio = "registrado" if n == 1 else "registrados"
+        partes.append(f"{n} {etiqueta} de verificación {participio}.")
+
+    return " ".join(partes)
 
 
 def _recomendaciones_por_color(raiz: Path, version: str) -> dict[str, str]:
@@ -194,11 +279,7 @@ def componer_informe(
             "criterios": entrega.version_criterios,
         },
         control_administrativo=control,
-        resumen=(
-            analisis.fortalezas[0].descripcion
-            if analisis.fortalezas
-            else "Sin resumen del motor."
-        ),
+        resumen=_resumen(color, seleccion, analisis.dimensiones_ausentes, analisis.reparos),
         valoraciones=analisis.valoraciones,
         fortalezas=analisis.fortalezas,
         prioridades=seleccion.elegidas,

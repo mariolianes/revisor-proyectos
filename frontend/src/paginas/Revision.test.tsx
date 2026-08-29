@@ -154,6 +154,44 @@ describe("Revision", () => {
     expect(screen.getByText(/no es un veredicto/i)).toBeInTheDocument()
   })
 
+  it("muestra la cita de una fortaleza, igual que un indicio", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    // La misma descripción aparece también en el borrador de devolución
+    // (`devolucion.fortalezas`), así que hace falta acotar la búsqueda a la
+    // sección "Fortalezas" del informe interno.
+    const seccion = screen.getByRole("heading", { name: /^fortalezas$/i }).closest("section")!
+    const fortaleza = within(seccion).getByText(/histórico de commits ordenado/i)
+    expect(fortaleza).toBeInTheDocument()
+    expect(within(seccion).getByText("«git log»")).toBeInTheDocument()
+    // Localizada: sin la tinta de señal.
+    expect(fortaleza).not.toHaveClass("senal")
+  })
+
+  it("una fortaleza sin la cita localizada lleva la tinta de señal", () => {
+    const SIN_LOCALIZAR = {
+      descripcion: "El diseño sigue un patrón de capas bien definido.",
+      evidencia: { cita: "cita que no se ha encontrado en el documento", apartado: "3" },
+      evidencia_localizada: false,
+    }
+    render(
+      <Revision
+        id="id-1"
+        inicial={{
+          ...RESULTADO,
+          informe: { ...RESULTADO.informe, fortalezas: [SIN_LOCALIZAR] },
+        }}
+        alVolver={vi.fn()}
+      />,
+    )
+
+    const fortaleza = screen.getByText(/patrón de capas bien definido/i)
+    expect(fortaleza).toHaveClass("senal")
+    expect(
+      screen.getByText(/la cita no se ha localizado en el documento/i),
+    ).toBeInTheDocument()
+  })
+
   it("sin indicios de autoría, no se enseña la sección entera", () => {
     render(
       <Revision
