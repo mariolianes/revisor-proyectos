@@ -53,16 +53,26 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from backend.analisis.proveedor import ErrorDelProveedor, ProveedorAnalisis
-from backend.analisis.verificacion import normalizar_para_buscar
-from backend.configuracion import VERSION_CRITERIOS_POR_OMISION
-from backend.extraccion import medir
-from backend.extraccion.lectura import PdfIlegible
-from backend.persistencia.memoria import AlmacenEnMemoria
-from backend.persistencia.modelos import Almacen, EntregaNueva
-from backend.salidas.informe import Informe
-from backend.servicios.analisis_de_entrega import InformeSinBorrador, analizar_entrega
-from backend.servicios.lectura_objetiva import localizar
+# Este fichero se invoca como script ("python tools/calibrar.py"), y en ese
+# caso Python solo pone tools/ en la ruta de busqueda, no la raiz del
+# repositorio: sin esta linea no encontraria el paquete backend y la
+# herramienta no arranca. Mismo motivo y misma solucion que en
+# tools/verificar_gobernanza.py.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from backend.analisis.proveedor import (  # noqa: E402
+    ErrorDelProveedor,
+    ProveedorAnalisis,
+)
+from backend.analisis.verificacion import normalizar_para_buscar  # noqa: E402
+from backend.configuracion import VERSION_CRITERIOS_POR_OMISION  # noqa: E402
+from backend.extraccion import medir  # noqa: E402
+from backend.extraccion.lectura import PdfIlegible  # noqa: E402
+from backend.persistencia.memoria import AlmacenEnMemoria  # noqa: E402
+from backend.persistencia.modelos import Almacen, EntregaNueva  # noqa: E402
+from backend.salidas.informe import Informe  # noqa: E402
+from backend.servicios.analisis_de_entrega import InformeSinBorrador, analizar_entrega  # noqa: E402
+from backend.servicios.lectura_objetiva import localizar  # noqa: E402
 
 ADVERTENCIA = (
     "ADVERTENCIA: esto no es un test. El resultado es un informe para el "
