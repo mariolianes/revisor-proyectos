@@ -117,7 +117,7 @@ def test_una_pagina_de_una_sola_linea_no_cuenta_para_la_alineacion(
     ruta = escribir_pdf(tmp_path / "mixto.pdf", [
         ["Una linea francamente larga que ocupa casi todo el ancho.",
          "Corta.", "Otra mediana de por medio.", "Fin."],
-        ["Sola en su pagina."],
+        ["Sola en su página."],
     ])
 
     with abrir(ruta) as documento:

@@ -1,6 +1,6 @@
-# Semaforo pedagogico. Derivado del §12.1 del Documento Maestro y calibrado
+# Semaforo pedagógico. Derivado del §12.1 del Documento Maestro y calibrado
 # con el §9 de docs/maestro/04-calibracion.md.
-# El semaforo resume el estado; no sustituye la rubrica, la nota ni la
+# El semaforo resume el estado; no sustituye la rúbrica, la nota ni la
 # explicacion. Un mismo color puede responder a causas diferentes.
 #
 # El calibrador llama AMARILLO a lo que el Maestro llama AMBAR. Es el mismo
@@ -31,9 +31,9 @@
 
 - codigo: ROJO
   significado: Carencia estructural o academica que exige reconduccion
-  accion: Revision docente y plan de corrección
+  accion: Revisión docente y plan de corrección
   calibrado: >-
-    Carencia critica o bloqueo academico. Falta desarrollo, incumple una
+    Carencia critica o bloqueo académico. Falta desarrollo, incumple una
     condicion esencial o contiene una incoherencia que afecta al nucleo.
   fuente: maestro#12-errores-y-semaforo
   fuente_calibracion: calibracion#9-semaforo
@@ -50,5 +50,5 @@
 
 # El color resume el estado y no lo sustituye. Un trabajo puede estar verde en
 # formato y ambar en rigor cuantitativo: la lectura por dimensiones se conserva
-# y una apariencia impecable no debe arrastrar toda la valoracion.
+# y una apariencia impecable no debe arrastrar toda la valoración.
 # Fuente: calibracion#9-semaforo

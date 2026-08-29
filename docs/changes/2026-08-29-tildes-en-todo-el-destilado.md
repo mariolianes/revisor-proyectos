@@ -47,3 +47,21 @@ divergencia entre ambos, no introduce criterio nuevo.
 
 Ninguna. El sistema no ha procesado ninguna entrega real: sigue bloqueado a la
 espera de confirmar las condiciones de tratamiento de datos.
+
+## Segunda pasada: lo que la regla no veía
+
+R8 tenía un agujero que ocultaba parte del trabajo. Su filtro de rutas
+descartaba como ruta cualquier palabra pegada a un punto, así que la última
+palabra de cada frase se borraba antes de comprobarla: «una carencia de
+autoría.» pasaba, «autoria en mitad de la frase» no. Como las palabras largas
+—las que llevan tilde— caen a menudo al final de la oración, la regla estaba
+ciega justo donde más falta hacía.
+
+Lo detectó un implementador al corregir sus propias tildes y ver que la
+herramienta no le señalaba una que él sabía que estaba mal.
+
+Corregido exigiendo que una ruta tenga contenido a los dos lados del
+separador. Salieron ocho faltas más, cinco de ellas en `semaforo.yaml`
+—«Revision docente», «academica», «critica»— y el resto en código.
+
+Se añaden al vocabulario «revisión» y «rúbrica», que faltaban.

@@ -42,6 +42,7 @@ PALABRAS: tuple[tuple[str, str], ...] = (
     ("instruccion", "instrucción"),
     ("informacion", "información"),
     ("valoracion", "valoración"),
+    ("revision", "revisión"),
     ("seleccion", "selección"),
     ("decision", "decisión"),
     ("dimension", "dimensión"),
@@ -113,7 +114,14 @@ def _esta_exento(relativa: str) -> bool:
 # contiene un punto y no dos puntos.
 _CODIGO_EN_LINEA = re.compile(r"`[^`]*`|'[^']*'")
 _INTERPOLACION = re.compile(r"\{[^{}]*\}")
-_RUTA = re.compile(r"[\w<>./\\-]*[./\\][\w<>./\\-]*")
+# Un grupo con nombre de una expresion regular: `(?P<codigo>...)`. El nombre es
+# un identificador, y ponerle una tilde rompe el codigo en silencio.
+_GRUPO_NOMBRADO = re.compile(r"\(\?P[=<][^>)]*>?")
+# Una ruta necesita contenido a los dos lados del separador. Exigirlo no es un
+# detalle: con `[\w./-]*[./][\w./-]*` el punto que cierra una frase convertia su
+# ultima palabra en una ruta, y la regla quedaba ciega al final de cada oracion
+# -justo donde mas caen las palabras largas que llevan tilde-.
+_RUTA = re.compile(r"[\w<>-]+(?:[./\\][\w<>-]+)+")
 # Una referencia a la prosa maestra: `calibracion#9-semaforo`. Es un ancla, no
 # una frase, y va sin tildes a proposito para que sea estable como enlace.
 _ANCLA = re.compile(r"\w+#[\w-]+")
@@ -134,6 +142,7 @@ def _limpiar(texto: str) -> str:
     """
     texto = _CODIGO_EN_LINEA.sub(" ", texto)
     texto = _INTERPOLACION.sub(" ", texto)
+    texto = _GRUPO_NOMBRADO.sub(" ", texto)
     texto = _ANCLA.sub(" ", texto)
     texto = _RUTA.sub(" ", texto)
     texto = _CLAVE.sub(" ", texto)
