@@ -78,7 +78,12 @@ def _candidatos(raiz: Path) -> list[str]:
     for ruta in raiz.rglob("*"):
         if not ruta.is_file():
             continue
-        if any(parte in CARPETAS_IGNORADAS for parte in ruta.parts):
+        # Se mira la ruta RELATIVA, no la absoluta. Con la absoluta, un
+        # arbol de trabajo bajo `.claude/worktrees/` llevaba `.claude` en su
+        # propia raíz, así que TODO fichero quedaba ignorado y la herramienta
+        # respondia «conforme» sin haber inspeccionado nada.
+        relativa = ruta.relative_to(raiz)
+        if any(parte in CARPETAS_IGNORADAS for parte in relativa.parts):
             continue
         encontrados.append(ruta.relative_to(raiz).as_posix())
     return sorted(encontrados)
