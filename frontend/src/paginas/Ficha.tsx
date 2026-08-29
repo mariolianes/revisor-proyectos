@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 
 import { TablaComprobaciones } from "../componentes/TablaComprobaciones"
 import { api } from "../lib/api"
-import type { FichaDeLectura } from "../lib/tipos"
+import type { FichaDeLectura, ResultadoAnalisis } from "../lib/tipos"
 
 interface Props {
   id: string
@@ -20,6 +20,15 @@ interface Props {
    */
   inicial?: FichaDeLectura | null
   alVolver: () => void
+  /**
+   * Abre la revisión con un resultado ya en la mano: el que acaba de
+   * devolver `POST /analisis` al analizar, o el que devuelve
+   * `GET /analisis` al volver a abrir una entrega ya ANALIZADO. Es la
+   * misma pantalla en los dos casos -Revision no sabe ni le importa de
+   * cuál de las dos vino su `inicial`-, igual que confirmar abre la ficha
+   * con lo que devuelve `POST /api/entregas` sin volver a pedirla.
+   */
+  alAbrirRevision: (id: string, resultado: ResultadoAnalisis) => void
 }
 
 /**
@@ -41,10 +50,23 @@ interface Props {
  * avisos: que el servidor esté apagado no es culpa del alumno ni dice nada
  * de su trabajo, y pintarlo igual que un incumplimiento le daría un peso
  * que no tiene.
+ *
+ * Analizar y ver la revisión son gestos distintos, y se distinguen en la
+ * pantalla, no solo en el código: analizar llama al motor y cuesta dinero
+ * otra vez, así que solo aparece con RECIBIDO; ver la revisión solo lee lo
+ * que ya se guardó -ninguna llamada al motor, ningún envío del trabajo del
+ * alumno- y aparece con ANALIZADO. Sin este segundo camino, interrumpir
+ * una revisión a medias -el timbre, una clase, cerrar el portátil- dejaba
+ * la única salida en volver a analizar: pagar otra vez y volver a mandar
+ * el documento al proveedor por algo que ya estaba guardado.
  */
-export function Ficha({ id, inicial, alVolver }: Props) {
+export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
   const [ficha, setFicha] = useState<FichaDeLectura | null>(inicial ?? null)
   const [error, setError] = useState("")
+  const [analizando, setAnalizando] = useState(false)
+  const [errorAnalisis, setErrorAnalisis] = useState("")
+  const [cargandoRevision, setCargandoRevision] = useState(false)
+  const [errorRevision, setErrorRevision] = useState("")
 
   useEffect(() => {
     // Con la ficha ya leída no se pide nada: la del POST está recién medida
@@ -78,6 +100,49 @@ export function Ficha({ id, inicial, alVolver }: Props) {
 
   const { entrega, medidas, evolucion } = ficha
 
+  // Solo con la entrega RECIBIDO y sin bloquear: RECIBIDO ya excluye
+  // BLOQUEADO -son valores del mismo campo `estado`-, pero se comprueban
+  // las dos cosas por separado porque son dos preguntas distintas y no hay
+  // que fiarse de que una las implique siempre a la otra si el backend
+  // cambiara. Una entrega ANALIZADO no vuelve a ofrecerlo: pedirlo dos
+  // veces vuelve a llamar al motor y a costar dinero, y esta pantalla no
+  // abre un camino para eso.
+  const puedeAnalizar = entrega.estado === "RECIBIDO" && !entrega.motivo_bloqueo
+  // ANALIZADO es el único estado con una revisión guardada que consultar:
+  // RECIBIDO no la tiene todavía, y BLOQUEADO nunca llegó a analizarse.
+  const puedeVerRevision = entrega.estado === "ANALIZADO"
+
+  async function analizar() {
+    if (analizando) return
+    setErrorAnalisis("")
+    setAnalizando(true)
+    try {
+      const resultado = await api.analizar(id)
+      alAbrirRevision(id, resultado)
+    } catch (fallo) {
+      setErrorAnalisis(fallo instanceof Error ? fallo.message : String(fallo))
+    } finally {
+      setAnalizando(false)
+    }
+  }
+
+  // No pasa por api.analizar: es una lectura de lo ya guardado
+  // (`GET /entregas/{id}/analisis`), no una llamada nueva al motor. No
+  // vuelve a costar dinero ni a mandar el trabajo del alumno al proveedor.
+  async function verRevision() {
+    if (cargandoRevision) return
+    setErrorRevision("")
+    setCargandoRevision(true)
+    try {
+      const resultado = await api.analisis(id)
+      alAbrirRevision(id, resultado)
+    } catch (fallo) {
+      setErrorRevision(fallo instanceof Error ? fallo.message : String(fallo))
+    } finally {
+      setCargandoRevision(false)
+    }
+  }
+
   return (
     <div className="max-w-3xl">
       <button onClick={alVolver} className="text-[13px] text-gris mb-8">
@@ -88,9 +153,47 @@ export function Ficha({ id, inicial, alVolver }: Props) {
         {entrega.codigo_alumno} · {entrega.ciclo} · {entrega.fase} · versión{" "}
         {entrega.version}
       </h2>
-      <p className="font-mono text-[12px] text-gris mb-10">
+      <p className="font-mono text-[12px] text-gris mb-6">
         {entrega.nombre_archivo}
       </p>
+
+      {puedeAnalizar && (
+        <div className="mb-10">
+          <button
+            onClick={analizar}
+            disabled={analizando}
+            className="px-4 py-2 text-[13px] bg-tinta text-papel disabled:opacity-30"
+          >
+            {analizando ? "Analizando…" : "Analizar"}
+          </button>
+          {errorAnalisis && (
+            <p className="mt-3 max-w-lectura text-[13px] text-tinta">
+              {errorAnalisis}
+            </p>
+          )}
+        </div>
+      )}
+
+      {puedeVerRevision && (
+        <div className="mb-10">
+          <button
+            onClick={verRevision}
+            disabled={cargandoRevision}
+            className="px-4 py-2 text-[13px] border border-tinta disabled:opacity-30"
+          >
+            {cargandoRevision ? "Abriendo…" : "Ver revisión"}
+          </button>
+          <p className="mt-2 text-[12px] text-gris">
+            Abre lo que ya está guardado. No vuelve a llamar al motor ni a
+            enviar el trabajo del alumno.
+          </p>
+          {errorRevision && (
+            <p className="mt-3 max-w-lectura text-[13px] text-tinta">
+              {errorRevision}
+            </p>
+          )}
+        </div>
+      )}
 
       {entrega.estado === "BLOQUEADO" && entrega.motivo_bloqueo && (
         <p className="mb-10 max-w-lectura text-[13px] senal">
