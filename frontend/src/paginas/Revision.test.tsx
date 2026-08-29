@@ -423,27 +423,33 @@ describe("Revision", () => {
     ).toBeInTheDocument()
   })
 
-  it("sin ninguna prioridad descartada, el borrador no lleva el aviso concreto de discrepancia", () => {
+  it("sin ninguna prioridad descartada, el borrador no lleva el aviso de discrepancia", () => {
     render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
 
-    expect(screen.queryByText(/todavía pide la acción/i)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/ya no correspond(e|en) a ninguna prioridad viva/i),
+    ).not.toBeInTheDocument()
   })
 
-  it("al descartar una prioridad cuya acción sigue en el borrador, aparece el aviso concreto, con la tinta de señal", () => {
+  it("antes de guardar: al descartar una prioridad cuya acción sigue en el borrador, aparece el aviso, sin nombrar la dimensión, con la tinta de señal", () => {
     render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
 
-    // D02 es la segunda prioridad, con evidencia localizada: le corresponde
-    // la segunda acción del borrador ("Explica por qué se han elegido esas
-    // tres capas."), que sigue en el texto porque no se ha regenerado.
+    // D02 es la segunda prioridad, con evidencia localizada: `componer()`
+    // no escribe más de una acción por prioridad-con-evidencia, así que
+    // descartar una de las dos deja sobrando una acción del borrador -sin
+    // que esta pantalla pueda decir, con certeza, cuál de las dos es-.
     const tarjetaD02 = screen.getByText("D02").closest("li")!
     fireEvent.click(within(tarjetaD02).getByRole("button", { name: /^descartar$/i }))
 
     const aviso = screen.getByText(
-      /el borrador todavía pide la acción de d02, que acabas de descartar/i,
+      /el borrador incluye una acción que ya no corresponde a ninguna prioridad viva/i,
     )
     expect(aviso).toBeInTheDocument()
     expect(aviso).toHaveClass("senal")
-    // El texto de la acción sigue ahí, sin tocar: el aviso no lo recorta.
+    // No nombra D02: el emparejamiento por posición no está comprobado, y
+    // el aviso no puede afirmar más de lo que sabe.
+    expect(aviso.textContent).not.toMatch(/D02/)
+    // El texto del borrador sigue ahí, sin tocar: el aviso no lo recorta.
     expect(
       screen.getByText(/explica por qué se han elegido esas tres capas/i),
     ).toBeInTheDocument()
@@ -453,12 +459,77 @@ describe("Revision", () => {
     render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
 
     // D04 no es una prioridad -no tiene acción en `devolucion.acciones`-,
-    // así que descartarla no puede contradecir un borrador que nunca la
-    // mencionó.
+    // así que descartarla no puede dejar sobrando ninguna acción del
+    // borrador: ya sobraban cero, y descartar D04 no cambia ese recuento.
     const tarjetaD04 = screen.getByText("D04").closest("li")!
     fireEvent.click(within(tarjetaD04).getByRole("button", { name: /^descartar$/i }))
 
-    expect(screen.queryByText(/todavía pide la acción/i)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/ya no correspond(e|en) a ninguna prioridad viva/i),
+    ).not.toBeInTheDocument()
+  })
+
+  it("después de guardar: la revisión que vuelve del servidor ya no trae la prioridad descartada, y el aviso sigue apareciendo, con recuento y sin nombrar la dimensión", async () => {
+    // Lo que de verdad devuelve `revisar()` en `backend/api/analisis.py`
+    // cuando el docente descarta D02: la quita para siempre de
+    // `informe.prioridades` -no la deja ahí marcada-, y no toca
+    // `devolucion`, que sigue con sus dos acciones originales, palabra por
+    // palabra. Es justo la situación en la que el aviso desaparecía antes
+    // de este arreglo: ya no queda ninguna prioridad descartada que
+    // comparar, porque la propia lista de prioridades ya viene sin ella.
+    const TRAS_GUARDAR: ResultadoAnalisis = {
+      ...RESULTADO,
+      informe: {
+        ...RESULTADO.informe,
+        valoraciones: RESULTADO.informe.valoraciones.filter((v) => v.dimension !== "D02"),
+        prioridades: RESULTADO.informe.prioridades.filter((v) => v.dimension !== "D02"),
+      },
+    }
+    vi.mocked(api.revisar).mockResolvedValue(TRAS_GUARDAR)
+
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    const tarjetaD02 = screen.getByText("D02").closest("li")!
+    fireEvent.click(within(tarjetaD02).getByRole("button", { name: /^descartar$/i }))
+    fireEvent.click(screen.getByRole("button", { name: /guardar la revisión/i }))
+
+    await screen.findByText(/guardado/i)
+
+    const aviso = await screen.findByText(
+      /el borrador incluye una acción que ya no corresponde a ninguna prioridad viva/i,
+    )
+    expect(aviso).toBeInTheDocument()
+    expect(aviso).toHaveClass("senal")
+    expect(aviso.textContent).not.toMatch(/D02/)
+    // El texto de la acción de D02 sigue en el borrador, sin regenerar.
+    expect(
+      screen.getByText(/explica por qué se han elegido esas tres capas/i),
+    ).toBeInTheDocument()
+  })
+
+  it("al reabrir una revisión ya guardada, el aviso aparece sin que el docente toque nada", () => {
+    // Una entrega en la que ya se guardó una revisión que descartó D02 en
+    // el pasado: `GET /entregas/{id}/analisis` la devuelve tal cual quedó,
+    // sin D02 en `informe.prioridades`, y con el mismo borrador de
+    // siempre, que nunca se regenera. No hay ningún clic en este test -es
+    // justo lo que pasa "al volver al día siguiente"-.
+    const YA_GUARDADA: ResultadoAnalisis = {
+      ...RESULTADO,
+      informe: {
+        ...RESULTADO.informe,
+        valoraciones: RESULTADO.informe.valoraciones.filter((v) => v.dimension !== "D02"),
+        prioridades: RESULTADO.informe.prioridades.filter((v) => v.dimension !== "D02"),
+      },
+    }
+
+    render(<Revision id="id-1" inicial={YA_GUARDADA} alVolver={vi.fn()} />)
+
+    const aviso = screen.getByText(
+      /el borrador incluye una acción que ya no corresponde a ninguna prioridad viva/i,
+    )
+    expect(aviso).toBeInTheDocument()
+    expect(aviso).toHaveClass("senal")
+    expect(aviso.textContent).not.toMatch(/D02/)
   })
 
   it("vuelve con el botón de volver", () => {

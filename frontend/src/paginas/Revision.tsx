@@ -55,14 +55,24 @@ const estadoDeSalida = (v: ValoracionVerificada): EstadoDeLaDecision => (
  *    misma pantalla: lo compuso el motor a partir del análisis original,
  *    antes de que el docente aceptara, editara o descartara nada. Volver a
  *    pedirlo cuesta dinero y reenvía el trabajo del alumno, así que este
- *    aviso no regenera el texto: dice la verdad sobre él. Cuando una
- *    acción del borrador corresponde a una prioridad que el docente acaba
- *    de descartar -`accionesDescartadas`, por posición: `componer()` arma
- *    `devolucion.acciones` en el mismo orden que las prioridades con
- *    evidencia localizada, ver `backend/salidas/borrador.py`- la pantalla
- *    lo sabe con certeza, no lo insinúa, y ahí sí usa `senal`: es lo único
- *    de este bloque que de verdad espera que el docente lo corrija a mano
- *    o vuelva a aceptar la prioridad antes de usar el texto.
+ *    aviso no regenera el texto: dice la verdad sobre él. Lo que sí puede
+ *    afirmar con certeza es un recuento, no una identidad: `componer()`
+ *    (`backend/salidas/borrador.py`) no escribe más de una acción por
+ *    prioridad con evidencia localizada, así que si el borrador trae más
+ *    acciones que prioridades siguen vivas ahora mismo -contando
+ *    `informe.prioridades` tal como llega a esta pantalla, ya sea de un
+ *    análisis recién hecho o de una revisión ya guardada, más lo que el
+ *    docente acaba de descartar aquí sin guardar todavía- sobra, con toda
+ *    certeza, al menos esa diferencia. Qué acción concreta sobra y de qué
+ *    prioridad era es una pregunta distinta, y esta pantalla no la
+ *    contesta: contestarla se apoyaría en que el motor haya devuelto las
+ *    acciones en el mismo orden en que se le pidieron, una por prioridad,
+ *    y eso no lo comprueba nadie -es texto libre del mismo motor del que
+ *    este sistema desconfía en todo lo demás-. Nombrar una dimensión
+ *    concreta sería afirmar más de lo que se sabe; contar cuántas sobran
+ *    no lo es, y por eso el aviso solo hace lo segundo, con `senal`: es lo
+ *    único de este bloque que de verdad espera que el docente revise el
+ *    borrador entero antes de usarlo.
  * 4. Informe válido, borrador fallido no es un error. Cuando
  *    `resultado.devolucion` es `null`, `resultado.aviso` ya trae la
  *    explicación completa compuesta por el backend; esta pantalla no la
@@ -119,30 +129,32 @@ export function Revision({ id, inicial, alVolver }: Props) {
     (v) => estadoDe(v).decision !== "DESCARTADA",
   )
 
-  // `componer()` (`backend/salidas/borrador.py`) arma `devolucion.acciones`
-  // a partir de `informe.prioridades` filtradas por `evidencia_localizada`,
-  // en ese mismo orden, y recorta a como mucho una acción por prioridad. Por
-  // eso el emparejamiento por posición es fiel a como se compuso el texto,
-  // no una suposición: `accionesEnBorrador[i]` es la prioridad de la que
-  // salió `devolucion.acciones[i]`. Si el motor devolvió menos acciones de
-  // las que le tocaban, `slice` no inventa una correspondencia para las que
-  // faltan.
-  const prioridadesConEvidencia = informe.prioridades.filter(
+  // Cuántas prioridades con evidencia localizada siguen vivas AHORA MISMO,
+  // en el informe que esta pantalla tiene delante -da igual si viene de un
+  // análisis recién hecho o de una revisión ya guardada-. `prioridadesVivas`
+  // ya cubre las dos fuentes de descarte: lo que el docente descartó en una
+  // revisión anterior y ya se guardó -`revisar()` en
+  // `backend/api/analisis.py` quita esas dimensiones de
+  // `informe.prioridades` para siempre, no las deja ahí marcadas- y lo que
+  // acaba de descartar aquí mismo, sin guardar todavía (`estadoDe`).
+  const prioridadesVivasConEvidencia = prioridadesVivas.filter(
     (v) => v.evidencia_localizada,
   )
-  const accionesEnBorrador = devolucion
-    ? prioridadesConEvidencia.slice(0, devolucion.acciones.length)
-    : []
-  // La única discrepancia entre "Prioridades para la devolución" y el
-  // borrador que esta pantalla puede afirmar con certeza: una prioridad que
-  // el docente acaba de descartar y cuya acción el borrador todavía trae,
-  // palabra por palabra, porque no se ha regenerado. No se comprueba nada
-  // más -una edición de texto no rompe la correspondencia por posición, y
-  // "aceptada" es justo lo que el borrador ya asume-, así que el aviso no
-  // se dispara por eso.
-  const accionesDescartadas = accionesEnBorrador.filter(
-    (v) => estadoDe(v).decision === "DESCARTADA",
-  )
+  // No se compara identidad, se compara recuento: `componer()`
+  // (`backend/salidas/borrador.py`) pide como mucho una acción por
+  // prioridad con evidencia localizada, así que `devolucion.acciones.length`
+  // nunca puede superar el número de prioridades-con-evidencia que había en
+  // el momento de componer el texto. Si ese número, hoy, con las
+  // prioridades vivas que quedan, es menor que `devolucion.acciones.length`,
+  // sobra al menos esa diferencia de acciones -con toda certeza, sin
+  // suponer en qué orden las escribió el motor ni a cuál de ellas
+  // corresponde cada una-. Emparejar cada acción con su prioridad exigiría
+  // fiarse de que el motor las devolvió una por prioridad y en el mismo
+  // orden en que se le pidieron, y eso no lo comprueba nadie: por eso el
+  // aviso cuenta, no nombra.
+  const accionesSobrantes = devolucion
+    ? Math.max(0, devolucion.acciones.length - prioridadesVivasConEvidencia.length)
+    : 0
 
   const guardar = async () => {
     if (guardando) return
@@ -400,22 +412,26 @@ export function Revision({ id, inicial, alVolver }: Props) {
             acabas de tomar en esta pantalla: no se ha vuelto a redactar con
             ellas. Revísalo por si alguna ya no aplica.
           </p>
-          {accionesDescartadas.length > 0 && (
+          {accionesSobrantes > 0 && (
             <p className="max-w-lectura text-[13px] senal mb-4">
-              {accionesDescartadas.length === 1 ? (
+              {accionesSobrantes === 1 ? (
                 <>
-                  El borrador todavía pide la acción de{" "}
-                  {accionesDescartadas[0].dimension}, que acabas de
-                  descartar.
+                  El borrador incluye una acción que ya no corresponde a
+                  ninguna prioridad viva de esta revisión. No se puede
+                  señalar con certeza cuál -el orden en que el motor
+                  redacta el texto no está garantizado-, así que revisa el
+                  borrador entero antes de usarlo.
                 </>
               ) : (
                 <>
-                  El borrador todavía pide las acciones de{" "}
-                  {accionesDescartadas.map((v) => v.dimension).join(", ")},
-                  que acabas de descartar.
+                  El borrador incluye {accionesSobrantes} acciones que ya
+                  no corresponden a ninguna prioridad viva de esta
+                  revisión. No se puede señalar con certeza cuáles -el
+                  orden en que el motor redacta el texto no está
+                  garantizado-, así que revisa el borrador entero antes de
+                  usarlo.
                 </>
-              )}{" "}
-              Corrígelo a mano o vuelve a aceptarlas antes de usarlo.
+              )}
             </p>
           )}
           <div className="max-w-lectura text-[14px] space-y-3">
