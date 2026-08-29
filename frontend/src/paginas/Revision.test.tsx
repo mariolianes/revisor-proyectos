@@ -100,16 +100,34 @@ const RESULTADO: ResultadoAnalisis = {
         evidencia_localizada: true,
       },
     ],
-    reparos: [],
-    dimensiones_ausentes: [],
+    reparos: [
+      {
+        regla: "dimension_repetida",
+        detalle: "La dimensión D09 venía valorada dos veces; se ha conservado la primera.",
+      },
+      {
+        regla: "autoria_formulada_categoricamente",
+        detalle:
+          "Además, el indicio está redactado en términos categóricos, como un veredicto y " +
+          "no como una observación.",
+      },
+    ],
+    dimensiones_ausentes: ["D07"],
     semaforo: "AMBAR",
     recomendacion: "Aplicar cambios antes de cerrar la siguiente fase",
     motor: "gpt-ejemplo",
   },
+  // Dos acciones, en el mismo orden que `informe.prioridades`: así
+  // `Revision` puede emparejar `devolucion.acciones[i]` con la prioridad de
+  // la que salió, tal como lo arma `componer()` en
+  // `backend/salidas/borrador.py`.
   devolucion: {
     apertura: "Has avanzado bien en esta fase.",
     fortalezas: ["El repositorio mantiene un histórico de commits ordenado."],
-    acciones: ["Justifica las cifras del presupuesto con fuentes."],
+    acciones: [
+      "Justifica las cifras del presupuesto con fuentes.",
+      "Explica por qué se han elegido esas tres capas.",
+    ],
     cierre: "Sigue así en la próxima entrega.",
   },
   motor: "gpt-ejemplo",
@@ -204,6 +222,51 @@ describe("Revision", () => {
     expect(
       screen.queryByRole("heading", { name: /indicios de autoría/i }),
     ).not.toBeInTheDocument()
+  })
+
+  it("muestra los reparos de verificación, con su regla y su detalle", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    expect(screen.getByText(/reparos de verificación \(2\)/i)).toBeInTheDocument()
+    expect(screen.getByText("dimension_repetida")).toBeInTheDocument()
+    expect(screen.getByText(/D09 venía valorada dos veces/i)).toBeInTheDocument()
+    expect(screen.getByText("autoria_formulada_categoricamente")).toBeInTheDocument()
+    expect(screen.getByText(/redactado en términos categóricos/i)).toBeInTheDocument()
+  })
+
+  it("sin reparos, no se enseña la sección entera", () => {
+    render(
+      <Revision
+        id="id-1"
+        inicial={{ ...RESULTADO, informe: { ...RESULTADO.informe, reparos: [] } }}
+        alVolver={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText(/reparos de verificación/i)).not.toBeInTheDocument()
+  })
+
+  it("muestra las dimensiones sin valorar, con la explicación de por qué importa", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    expect(screen.getByText(/dimensiones sin valorar \(1\)/i)).toBeInTheDocument()
+    expect(screen.getByText("D07")).toBeInTheDocument()
+    expect(screen.getByText(/el motor no llegó a valorarlas/i)).toBeInTheDocument()
+  })
+
+  it("sin dimensiones ausentes, no se enseña la sección entera", () => {
+    render(
+      <Revision
+        id="id-1"
+        inicial={{
+          ...RESULTADO,
+          informe: { ...RESULTADO.informe, dimensiones_ausentes: [] },
+        }}
+        alVolver={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText(/dimensiones sin valorar/i)).not.toBeInTheDocument()
   })
 
   it("el aviso del motor simulado se ve antes que nada", () => {
@@ -350,6 +413,52 @@ describe("Revision", () => {
     expect(
       screen.queryByRole("heading", { name: /borrador de devolución/i }),
     ).not.toBeInTheDocument()
+  })
+
+  it("el borrador avisa de que refleja el análisis original, no las decisiones tomadas", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    expect(
+      screen.getByText(/no se ha vuelto a redactar con ellas/i),
+    ).toBeInTheDocument()
+  })
+
+  it("sin ninguna prioridad descartada, el borrador no lleva el aviso concreto de discrepancia", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    expect(screen.queryByText(/todavía pide la acción/i)).not.toBeInTheDocument()
+  })
+
+  it("al descartar una prioridad cuya acción sigue en el borrador, aparece el aviso concreto, con la tinta de señal", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    // D02 es la segunda prioridad, con evidencia localizada: le corresponde
+    // la segunda acción del borrador ("Explica por qué se han elegido esas
+    // tres capas."), que sigue en el texto porque no se ha regenerado.
+    const tarjetaD02 = screen.getByText("D02").closest("li")!
+    fireEvent.click(within(tarjetaD02).getByRole("button", { name: /^descartar$/i }))
+
+    const aviso = screen.getByText(
+      /el borrador todavía pide la acción de d02, que acabas de descartar/i,
+    )
+    expect(aviso).toBeInTheDocument()
+    expect(aviso).toHaveClass("senal")
+    // El texto de la acción sigue ahí, sin tocar: el aviso no lo recorta.
+    expect(
+      screen.getByText(/explica por qué se han elegido esas tres capas/i),
+    ).toBeInTheDocument()
+  })
+
+  it("descartar una observación que no tiene acción en el borrador no dispara el aviso", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    // D04 no es una prioridad -no tiene acción en `devolucion.acciones`-,
+    // así que descartarla no puede contradecir un borrador que nunca la
+    // mencionó.
+    const tarjetaD04 = screen.getByText("D04").closest("li")!
+    fireEvent.click(within(tarjetaD04).getByRole("button", { name: /^descartar$/i }))
+
+    expect(screen.queryByText(/todavía pide la acción/i)).not.toBeInTheDocument()
   })
 
   it("vuelve con el botón de volver", () => {
