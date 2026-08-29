@@ -15,7 +15,7 @@ from datetime import datetime
 
 import httpx
 
-from backend.persistencia.correccion import Correccion, validar_citas_acotadas
+from backend.persistencia.correccion import Correccion, validar_textos_acotados
 from backend.persistencia.modelos import (
     EntregaNueva,
     EntregaRegistrada,
@@ -379,7 +379,7 @@ class AlmacenSupabase:
         operación que reanalizar y que guardar una revisión del docente: las
         dos sustituyen la corrección entera, no la editan campo a campo.
         """
-        validar_citas_acotadas(informe)
+        validar_textos_acotados(informe, devolucion)
 
         existente = self._uno("correccion", entrega_id=f"eq.{entrega_id}")
         if existente is not None:

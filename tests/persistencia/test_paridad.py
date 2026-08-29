@@ -450,11 +450,15 @@ def _valoracion(
     dimension: str = "D05",
     cita: str = "El presupuesto asciende a 4.500 euros en total del proyecto",
     evidencia_localizada: bool = True,
+    nivel: str = "EN_DESARROLLO",
+    prioridad: str | None = "P2",
+    observacion: str = "Falta justificar las cifras con una fuente.",
+    apartado: str = "5",
 ) -> ValoracionVerificada:
     return ValoracionVerificada(
-        dimension=dimension, nivel="EN_DESARROLLO", prioridad="P2",
-        evidencia=Evidencia(cita=cita, apartado="5"),
-        observacion="Falta justificar las cifras con una fuente.",
+        dimension=dimension, nivel=nivel, prioridad=prioridad,
+        evidencia=Evidencia(cita=cita, apartado=apartado),
+        observacion=observacion,
         evidencia_localizada=evidencia_localizada,
     )
 
@@ -642,6 +646,13 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
     una y no la otra, el docente vería un informe que no cuadra con lo que
     la base de datos dice tener, y nada lo avisaría sin este test.
 
+    Se comparan los cinco campos que se escriben por duplicado -nivel,
+    prioridad, observación, y el apartado y la cita de la evidencia-, no
+    solo dimensión y nivel: la prioridad es la que decide qué se traslada al
+    alumno (`salidas/seleccion.py`), y una consulta SQL futura sobre la
+    tabla estructurada tiene que poder confiar en que coincide con lo que el
+    docente ve en la ficha, campo por campo.
+
     Se ejecuta en los dos almacenes -memoria no tiene una segunda
     representación con la que discrepar, solo guarda el objeto que se le
     da-, para que la comparación de siempre (memoria == supabase) también
@@ -649,11 +660,15 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
     """
     informe = _informe(valoraciones=[
         _valoracion(
-            dimension="D05",
+            dimension="D05", nivel="EN_DESARROLLO", prioridad="P2",
+            observacion="Falta justificar las cifras con una fuente.",
+            apartado="5",
             cita="El presupuesto asciende a 4.500 euros en total",
         ),
         _valoracion(
-            dimension="D06",
+            dimension="D06", nivel="INSUFICIENTE", prioridad="P1",
+            observacion="El reparto de tareas del equipo no queda claro.",
+            apartado="3",
             cita="La memoria describe el reparto de tareas del equipo",
         ),
     ])
@@ -664,7 +679,10 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
         guardada = almacen.correccion_de(entrega.id)
         assert guardada is not None
         return {
-            v.dimension: (v.nivel, v.evidencia.cita)
+            v.dimension: (
+                v.nivel, v.prioridad, v.observacion,
+                v.evidencia.apartado, v.evidencia.cita,
+            )
             for v in guardada.informe.valoraciones
         }
 
@@ -673,8 +691,14 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
     reconstruido_supabase = guion(supabase)
 
     esperado = {
-        "D05": ("EN_DESARROLLO", "El presupuesto asciende a 4.500 euros en total"),
-        "D06": ("EN_DESARROLLO", "La memoria describe el reparto de tareas del equipo"),
+        "D05": (
+            "EN_DESARROLLO", "P2", "Falta justificar las cifras con una fuente.",
+            "5", "El presupuesto asciende a 4.500 euros en total",
+        ),
+        "D06": (
+            "INSUFICIENTE", "P1", "El reparto de tareas del equipo no queda claro.",
+            "3", "La memoria describe el reparto de tareas del equipo",
+        ),
     }
     assert reconstruido_memoria == esperado
     assert reconstruido_supabase == esperado
@@ -695,7 +719,8 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
         if valoracion is None:
             continue
         estructurado[valoracion["dimension"]] = (
-            valoracion["nivel"], fila["fragmento"],
+            valoracion["nivel"], valoracion["prioridad"], valoracion["observacion"],
+            fila["apartado"], fila["fragmento"],
         )
 
     assert estructurado == reconstruido_supabase

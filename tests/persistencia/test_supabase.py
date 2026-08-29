@@ -666,7 +666,7 @@ def test_si_falla_la_segunda_escritura_se_deshace_la_primera(postgrest) -> None:
 def test_si_falla_la_tercera_escritura_se_deshace_todo(postgrest, monkeypatch) -> None:
     """Una cita de más de 1.500 caracteres choca con el CHECK
     `fragmento_acotado` de `evidencia` (D-001) al insertarla. En uso normal
-    esto no llega nunca a la base de datos -`validar_citas_acotadas` ya lo
+    esto no llega nunca a la base de datos -`validar_textos_acotados` ya lo
     rechaza antes de escribir nada, en código-, así que aquí se desactiva esa
     guarda a propósito: es la segunda línea de defensa, la que existe por si
     la primera falla, y tiene que sostener la atomicidad ella sola -la
@@ -675,7 +675,9 @@ def test_si_falla_la_tercera_escritura_se_deshace_todo(postgrest, monkeypatch) -
     """
     import backend.persistencia.supabase as modulo
 
-    monkeypatch.setattr(modulo, "validar_citas_acotadas", lambda informe: None)
+    monkeypatch.setattr(
+        modulo, "validar_textos_acotados", lambda informe, devolucion=None: None
+    )
 
     almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())
     entrega = almacen.registrar(_entrega())

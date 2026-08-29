@@ -9,7 +9,7 @@ aparenta guardar y no guarda es peor que uno que no guarda.
 import uuid
 from datetime import datetime
 
-from backend.persistencia.correccion import Correccion, validar_citas_acotadas
+from backend.persistencia.correccion import Correccion, validar_textos_acotados
 from backend.persistencia.modelos import (
     ESTADO_INICIAL,
     EntregaNueva,
@@ -143,9 +143,9 @@ class AlmacenEnMemoria:
         motor: str,
         aviso: str | None = None,
     ) -> str:
-        # Misma regla que en Supabase, y antes de tocar nada: D-001 no
-        # depende de que haya credenciales.
-        validar_citas_acotadas(informe)
+        # Misma regla que en Supabase, y antes de tocar nada: los límites de
+        # longitud no dependen de que haya credenciales.
+        validar_textos_acotados(informe, devolucion)
         identificador = str(uuid.uuid4())
         self._correcciones[entrega_id] = Correccion(
             id=identificador, informe=informe, devolucion=devolucion,
