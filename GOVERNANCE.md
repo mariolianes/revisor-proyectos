@@ -60,8 +60,9 @@ solo. *Pendiente: se implementa con el backend.*
 leen un profesor y sus alumnos: la instrucción que se manda al motor, el informe
 técnico y el borrador de devolución. Un informe que escribe «Redaccion y
 presentacion» mientras valora la redacción de un trabajo académico se
-desautoriza solo. La regla mira solo prosa —cadenas, comentarios, docstrings y
-el cuerpo de los documentos—, nunca identificadores, claves ni rutas: escribir
+desautoriza solo. La regla mira solo prosa —cadenas, comentarios, docstrings, el cuerpo de los
+documentos y los textos de la interfaz—, nunca identificadores, claves ni
+rutas: escribir
 `analisis` como nombre de variable es una convención deliberada del proyecto.
 El vocabulario contiene únicamente palabras cuya forma sin tilde no existe en
 castellano; nada de «mas», «solo» o «limite», que son válidas sin ella. Cuando

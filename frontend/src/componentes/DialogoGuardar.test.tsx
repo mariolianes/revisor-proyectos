@@ -92,7 +92,7 @@ describe("DialogoGuardar", () => {
     expect(screen.getByText(/revísalo a mano/i)).toBeInTheDocument()
   })
 
-  it("envia el valor que el profesor escribe en un criterio de revision manual", () => {
+  it("envia el valor que el profesor escribe en un criterio de revisión manual", () => {
     const alConfirmar = vi.fn()
     render(<DialogoGuardar propuestas={propuestas} alConfirmar={alConfirmar} alCancelar={vi.fn()} />)
 
@@ -123,7 +123,7 @@ describe("DialogoGuardar", () => {
     })
   })
 
-  it("marcar «lo he revisado y no cambia» tambien es una decision", () => {
+  it("marcar «lo he revisado y no cambia» también es una decisión", () => {
     const alConfirmar = vi.fn()
     render(<DialogoGuardar propuestas={propuestas} alConfirmar={alConfirmar} alCancelar={vi.fn()} />)
 

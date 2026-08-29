@@ -94,7 +94,7 @@ CARPETAS_IGNORADAS = {
     "dist", ".superpowers", ".claude",
 }
 
-EXTENSIONES = {".py", ".md", ".yaml"}
+EXTENSIONES = {".py", ".md", ".yaml", ".ts", ".tsx"}
 
 # Este fichero contiene el vocabulario, asi que se denuncia a si mismo. Los
 # planes y specs de superpowers son cuadernos de trabajo, no producto.
@@ -184,6 +184,40 @@ def prosa_de_python(fuente: str) -> list[tuple[int, str]]:
     return trozos
 
 
+# En un fichero de interfaz la lengua vive en las cadenas, en los comentarios
+# y en el texto que va entre etiquetas. Todo lo demas es codigo: `const
+# analisis = await api.analisis(id)` no es una falta de ortografia.
+_CADENA_TS = re.compile(r"""(["'`])((?:\\.|(?!\1).)*)\1""", re.S)
+_TEXTO_ENTRE_ETIQUETAS = re.compile(r">([^<>{}]+)<")
+_COMENTARIO_TS = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+
+
+def prosa_de_typescript(fuente: str) -> list[tuple[int, str]]:
+    """Devuelve (linea, texto) de las cadenas, comentarios y texto visible.
+
+    No hay analizador lexico de TypeScript a mano, asi que se extrae con
+    expresiones regulares lo que puede ser lengua y se deja fuera el resto.
+    Es menos fino que el de Python y lo es a proposito: ante la duda se calla,
+    porque una regla con falsos positivos acaba desactivada.
+    """
+    trozos: list[tuple[int, str]] = []
+    for patron, grupo in (
+        (_CADENA_TS, 2),
+        (_TEXTO_ENTRE_ETIQUETAS, 1),
+        (_COMENTARIO_TS, 0),
+    ):
+        for hallazgo in patron.finditer(fuente):
+            texto = hallazgo.group(grupo)
+            if not texto or not texto.strip():
+                continue
+            primera = fuente.count("\n", 0, hallazgo.start(grupo)) + 1
+            for desplazamiento, linea in enumerate(texto.splitlines()):
+                limpia = _limpiar(linea)
+                if _es_prosa(limpia):
+                    trozos.append((primera + desplazamiento, limpia))
+    return trozos
+
+
 def prosa_de_markdown(fuente: str) -> list[tuple[int, str]]:
     """Devuelve (linea, texto) del cuerpo, saltando los bloques de codigo."""
     trozos: list[tuple[int, str]] = []
@@ -249,6 +283,8 @@ def faltas_en(relativa: str, fuente: str) -> list[tuple[int, str, str]]:
     """Devuelve (linea, palabra escrita, palabra correcta) de cada falta."""
     if relativa.endswith(".py"):
         trozos = prosa_de_python(fuente)
+    elif relativa.endswith((".ts", ".tsx")):
+        trozos = prosa_de_typescript(fuente)
     else:
         # Markdown y YAML se tratan igual: en ambos el texto legible esta en
         # el cuerpo, y lo que no es prosa lo quitan los filtros de _limpiar.

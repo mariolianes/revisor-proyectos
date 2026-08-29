@@ -181,3 +181,31 @@ def test_dentro_del_repositorio_las_carpetas_ignoradas_siguen_ignorandose(
         "# el analisis va aqui\n", encoding="utf-8"
     )
     assert verificar_r8(tmp_path, []) == []
+
+
+def test_una_cadena_de_typescript_es_prosa() -> None:
+    fuente = 'const aviso = "el analisis no ha podido completarse";\n'
+    assert _palabras(faltas_en("p.tsx", fuente)) == {"analisis"}
+
+
+def test_el_texto_entre_etiquetas_es_prosa() -> None:
+    """Lo que el profesor lee en pantalla no vive en una cadena."""
+    fuente = "<p>Esta cita no se ha localizado en el trabajo. Revisala tambien.</p>\n"
+    assert _palabras(faltas_en("p.tsx", fuente)) == {"tambien"}
+
+
+def test_un_identificador_de_typescript_no_es_prosa() -> None:
+    """`api.analisis` y `const analisis` son código, no faltas."""
+    fuente = "const analisis = await api.analisis(identificador);\n"
+    assert faltas_en("p.tsx", fuente) == []
+
+
+def test_un_comentario_de_typescript_es_prosa() -> None:
+    fuente = "// el analisis se pide una sola vez, aqui\n"
+    assert _palabras(faltas_en("p.tsx", fuente)) == {"analisis", "aqui"}
+
+
+def test_typescript_devuelve_la_linea_real_de_una_cadena_larga() -> None:
+    """Una plantilla puede ocupar varias líneas; la falta va en la suya."""
+    fuente = "const t = `primera linea correcta\ny aqui va la segunda`;\n"
+    assert [n for n, _, _ in faltas_en("p.tsx", fuente)] == [2]
