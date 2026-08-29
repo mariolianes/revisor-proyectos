@@ -28,7 +28,7 @@ def _v(dimension="D05", prioridad="P2", localizada=True):
     return ValoracionVerificada(
         dimension=dimension, nivel="EN_DESARROLLO", prioridad=prioridad,
         evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="5"),
-        observacion=f"Observacion de {dimension}.", evidencia_localizada=localizada,
+        observacion=f"Observación de {dimension}.", evidencia_localizada=localizada,
     )
 
 
@@ -146,18 +146,23 @@ def test_sin_prioridades_el_semaforo_es_verde(criterios_de_analisis: Path) -> No
     assert i.semaforo == "VERDE"
 
 
-def test_sin_ninguna_valoracion_el_semaforo_no_se_inventa(
+def test_sin_ninguna_valoracion_el_semaforo_es_gris(
     criterios_de_analisis: Path,
 ) -> None:
-    """Si el análisis no valoró nada, no hay estado que resumir."""
+    """Si el análisis no valoró nada, no hay estado que resumir con VERDE,
+    AMBAR ni ROJO -ninguno de los tres describe "no se pudo evaluar"-, pero
+    tampoco se deja un hueco vacío que el docente tenga que interpretar:
+    GRIS nombra la incidencia («no evaluable [...] o criterio bloqueado por
+    falta de información», calibrado en `semaforo.yaml`) y trae su propia
+    recomendación, no inventada."""
     i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
                          _analisis([]), "simulado")
 
-    assert i.semaforo is None
-    assert i.recomendacion is None
+    assert i.semaforo == "GRIS"
+    assert i.recomendacion == "Resolver incidencia; no emitir juicio académico automático"
 
 
-def test_si_todas_las_citas_resultaron_inventadas_tampoco_hay_semaforo(
+def test_si_todas_las_citas_resultaron_inventadas_el_semaforo_es_gris(
     criterios_de_analisis: Path,
 ) -> None:
     """Caso raro y peligroso: el motor devuelve valoraciones con prioridad
@@ -165,8 +170,10 @@ def test_si_todas_las_citas_resultaron_inventadas_tampoco_hay_semaforo(
     inventaron-. Un semáforo que mirara solo la prioridad diría ROJO con la
     misma seguridad que si la evidencia fuera real, y el docente confiaría
     en un juicio que no tiene ninguna base verificada. El semáforo se calcula
-    solo sobre lo que sí se localizó; si no hay nada localizado, no hay
-    color, igual que si no hubiera habido ninguna valoración."""
+    solo sobre lo que sí se localizó; si no hay nada localizado, el análisis
+    no es evaluable -GRIS-, igual que si no hubiera habido ninguna
+    valoración: las dos situaciones dejan al docente sin nada verificado de
+    lo que partir, y merecen el mismo nombre."""
     i = componer_informe(
         criterios_de_analisis, "v2026-2027", _entrega(), None,
         _analisis([
@@ -176,10 +183,29 @@ def test_si_todas_las_citas_resultaron_inventadas_tampoco_hay_semaforo(
         "simulado",
     )
 
-    assert i.semaforo is None
-    assert i.recomendacion is None
+    assert i.semaforo == "GRIS"
+    assert i.recomendacion == "Resolver incidencia; no emitir juicio académico automático"
     # Pero las valoraciones no desaparecen: el docente las ve enteras.
     assert len(i.valoraciones) == 2
+
+
+def test_gris_no_es_lo_mismo_que_verde(criterios_de_analisis: Path) -> None:
+    """Misma observación -sin prioridad, así que si contara igual que
+    "revisado y sin nada que objetar" saldría VERDE-, pero con la evidencia
+    localizada o sin localizar decide colores opuestos: GRIS dice "no se ha
+    podido revisar"; VERDE dice "revisado y correcto". Confundirlos sería
+    peor que dejar el semáforo vacío."""
+    gris = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v("D05", None, localizada=False)]), "simulado",
+    )
+    verde = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v("D05", None, localizada=True)]), "simulado",
+    )
+
+    assert gris.semaforo == "GRIS"
+    assert verde.semaforo == "VERDE"
 
 
 def test_una_valoracion_localizada_basta_aunque_otra_no_lo_este(
