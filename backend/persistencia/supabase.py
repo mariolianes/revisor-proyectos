@@ -17,7 +17,11 @@ from pathlib import Path
 import httpx
 import yaml
 
-from backend.persistencia.correccion import Correccion, validar_textos_acotados
+from backend.persistencia.correccion import (
+    LIMITE_DE_OBSERVACION,
+    Correccion,
+    validar_textos_acotados,
+)
 from backend.persistencia.modelos import (
     EntregaNueva,
     EntregaRegistrada,
@@ -427,6 +431,7 @@ class AlmacenSupabase:
         devolucion: Devolucion | None,
         motor: str,
         aviso: str | None = None,
+        limite_de_observacion: int = LIMITE_DE_OBSERVACION,
     ) -> str:
         """Tres escrituras encadenadas: `correccion`, `valoracion_dimension`
         y `evidencia`. Si la segunda o la tercera fallan, se deshace la
@@ -462,7 +467,7 @@ class AlmacenSupabase:
         falla por cualquier otro motivo, así que tampoco ahí queda nada a
         medio guardar. Ver `_correspondencia_de_prioridades`.
         """
-        validar_textos_acotados(informe, devolucion)
+        validar_textos_acotados(informe, devolucion, limite_de_observacion)
         correspondencia_de_prioridades = _correspondencia_de_prioridades(
             self._raiz, informe.identificacion.get("criterios") or ""
         )

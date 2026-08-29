@@ -65,6 +65,13 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
   const [error, setError] = useState("")
   const [analizando, setAnalizando] = useState(false)
   const [errorAnalisis, setErrorAnalisis] = useState("")
+  // El texto que devuelve el backend (`AVISO_PROTECCION_DATOS`, en
+  // `backend/api/analisis.py`) cuando `POST /analisis` responde 428:
+  // mientras `proteccion_datos` siga pendiente, un primer intento sin
+  // confirmar no llega a tocar al proveedor. No es un error más -no va a
+  // `errorAnalisis`-, es una pregunta que el docente tiene que leer y
+  // decidir antes de que se mande nada.
+  const [avisoProteccionDatos, setAvisoProteccionDatos] = useState("")
   const [cargandoRevision, setCargandoRevision] = useState(false)
   const [errorRevision, setErrorRevision] = useState("")
 
@@ -112,15 +119,31 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
   // RECIBIDO no la tiene todavía, y BLOQUEADO nunca llegó a analizarse.
   const puedeVerRevision = entrega.estado === "ANALIZADO"
 
-  async function analizar() {
+  // `confirmoDatosReales` solo llega a `true` cuando el docente pulsa el
+  // botón de la pregunta de abajo, nunca por omisión: la primera llamada,
+  // la del botón «Analizar», siempre sale sin confirmar.
+  async function analizar(confirmoDatosReales = false) {
     if (analizando) return
     setErrorAnalisis("")
     setAnalizando(true)
     try {
-      const resultado = await api.analizar(id)
+      const resultado = await api.analizar(id, confirmoDatosReales)
+      setAvisoProteccionDatos("")
       alAbrirRevision(id, resultado)
     } catch (fallo) {
-      setErrorAnalisis(fallo instanceof Error ? fallo.message : String(fallo))
+      // 428: no es un fallo técnico, es la guarda de protección de datos
+      // pidiendo una decisión consciente (ver el docstring de
+      // `backend/api/analisis.py`). Se enseña como pregunta, con su gesto
+      // propio para confirmar, no como el mismo error genérico de abajo.
+      const codigo = fallo instanceof Error
+        ? (fallo as Error & { estado?: number }).estado
+        : undefined
+      const mensaje = fallo instanceof Error ? fallo.message : String(fallo)
+      if (codigo === 428) {
+        setAvisoProteccionDatos(mensaje)
+      } else {
+        setErrorAnalisis(mensaje)
+      }
     } finally {
       setAnalizando(false)
     }
@@ -159,17 +182,47 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
 
       {puedeAnalizar && (
         <div className="mb-10">
-          <button
-            onClick={analizar}
-            disabled={analizando}
-            className="px-4 py-2 text-[13px] bg-tinta text-papel disabled:opacity-30"
-          >
-            {analizando ? "Analizando…" : "Analizar"}
-          </button>
-          {errorAnalisis && (
-            <p className="mt-3 max-w-lectura text-[13px] text-tinta">
-              {errorAnalisis}
-            </p>
+          {avisoProteccionDatos ? (
+            // La pregunta de la guarda de protección de datos, no un
+            // «¿seguro?» de un clic: el texto completo de
+            // `AVISO_PROTECCION_DATOS` -qué se envía, a quién, y por qué
+            // hace falta decidirlo- se lee entero antes de los dos únicos
+            // gestos disponibles. Ninguno de los dos manda nada por sí
+            // solo: «Cancelar» solo cierra la pregunta.
+            <div className="max-w-lectura">
+              <p className="mb-4 text-[13px] senal">{avisoProteccionDatos}</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => analizar(true)}
+                  disabled={analizando}
+                  className="px-4 py-2 text-[13px] bg-tinta text-papel disabled:opacity-30"
+                >
+                  {analizando ? "Enviando…" : "Sí, enviarlo al proveedor"}
+                </button>
+                <button
+                  onClick={() => setAvisoProteccionDatos("")}
+                  disabled={analizando}
+                  className="px-4 py-2 text-[13px] border border-tinta disabled:opacity-30"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => analizar()}
+                disabled={analizando}
+                className="px-4 py-2 text-[13px] bg-tinta text-papel disabled:opacity-30"
+              >
+                {analizando ? "Analizando…" : "Analizar"}
+              </button>
+              {errorAnalisis && (
+                <p className="mt-3 max-w-lectura text-[13px] text-tinta">
+                  {errorAnalisis}
+                </p>
+              )}
+            </>
           )}
         </div>
       )}

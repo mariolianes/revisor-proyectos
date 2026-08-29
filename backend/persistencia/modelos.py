@@ -145,6 +145,15 @@ class Almacen(Protocol):
         devolucion: Devolucion | None,
         motor: str,
         aviso: str | None = None,
+        # 800, el valor de `LIMITE_DE_OBSERVACION`
+        # (`backend/persistencia/correccion.py`). No se importa esa
+        # constante aquí -importar de `correccion.py` en este módulo
+        # cerraría el ciclo que el docstring de ese fichero explica-, así
+        # que este número es una copia deliberada de un límite que vive en
+        # otro sitio, no un valor propio: este `Protocol` no se instancia
+        # nunca, solo documenta la forma; las dos implementaciones reales
+        # (`memoria.py`, `supabase.py`) sí importan la constante.
+        limite_de_observacion: int = 800,
     ) -> str:
         """Guarda el análisis y sus dos salidas. Devuelve el id de la corrección.
 
@@ -159,6 +168,14 @@ class Almacen(Protocol):
         un resultado legítimo del análisis, no un dato a medias, y forzar
         aquí una `Devolucion` vacía lo confundiría con el caso -distinto- en
         que no hay nada que redactar.
+
+        `limite_de_observacion` se reenvía tal cual a `validar_textos_
+        acotados` (`backend/persistencia/correccion.py`): por omisión, el
+        límite del motor (`LIMITE_DE_OBSERVACION`); `revisar()`
+        (`backend/api/analisis.py`) llama con `LIMITE_DE_OBSERVACION_
+        DOCENTE`, más holgado, porque el texto que guarda esa llamada puede
+        llevar una observación que ha escrito el docente a mano, no el
+        motor.
 
         Guardar el análisis son varias escrituras (la corrección, y una
         valoración con su evidencia por cada dimensión valorada). Si alguna

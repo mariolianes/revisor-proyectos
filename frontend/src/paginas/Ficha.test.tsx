@@ -58,6 +58,22 @@ const COMPLETA: FichaDeLectura = {
   aviso: "",
 }
 
+// El mismo aviso que compone `AVISO_PROTECCION_DATOS` en
+// `backend/api/analisis.py`, y el mismo error que produce `pedir()`
+// (`frontend/src/lib/api.ts`) para una respuesta 428: un `Error` con
+// `estado` puesto, no solo un mensaje.
+const AVISO_PROTECCION_DATOS =
+  "Analizar esta entrega envía el texto íntegro del documento a un " +
+  "proveedor de análisis externo. Las condiciones de protección de datos " +
+  "para tratar documentos reales de alumnos con esa herramienta todavía " +
+  "no están cerradas."
+
+function errorConEstado(mensaje: string, estado: number): Error {
+  const error = new Error(mensaje) as Error & { estado: number }
+  error.estado = estado
+  return error
+}
+
 describe("Ficha", () => {
   beforeEach(() => {
     // Sin esto, `mock.calls` se acumula de un test al siguiente y
@@ -262,6 +278,102 @@ describe("Ficha", () => {
       const mensaje = await screen.findByText(/sin cuota disponible/i)
       expect(mensaje).toBeInTheDocument()
       expect(mensaje).not.toHaveClass("senal")
+    })
+  })
+
+  describe("la confirmación de protección de datos (428)", () => {
+    // El backend responde 428 -no un error cualquiera- cuando
+    // `proteccion_datos` sigue pendiente y todavía no se ha confirmado
+    // nada (ver `backend/api/analisis.py`). El primer intento de analizar
+    // no puede quedarse en el mismo cajón que un fallo técnico: tiene que
+    // enseñar la pregunta entera, con sus propios gestos.
+    const RESULTADO = {
+      entrega: COMPLETA.entrega,
+      informe: {
+        identificacion: {}, control_administrativo: [], resumen: "",
+        valoraciones: [], fortalezas: [], prioridades: [],
+        prioridades_descartadas: [], dudas: [], indicios: [], reparos: [],
+        dimensiones_ausentes: [], semaforo: "GRIS", recomendacion: null,
+        motor: "simulado",
+      },
+      devolucion: null, motor: "simulado", aviso: null,
+    }
+
+    it("al recibir un 428, enseña la pregunta completa en vez de un error genérico", async () => {
+      const usuario = (await import("@testing-library/user-event")).default
+      vi.mocked(api.analizar).mockRejectedValue(
+        errorConEstado(AVISO_PROTECCION_DATOS, 428),
+      )
+
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+      await usuario.click(await screen.findByRole("button", { name: /^analizar$/i }))
+
+      expect(
+        await screen.findByText(/texto íntegro del documento/i),
+      ).toBeInTheDocument()
+      expect(
+        await screen.findByText(/proveedor de análisis externo/i),
+      ).toBeInTheDocument()
+      // No es el cajón de los errores técnicos: no lleva la clase que ese
+      // cajón usa para separarlos (ver el fallo de motor de arriba, que sí
+      // se pinta sin `senal`; aquí se comprueba lo contrario de la
+      // ausencia del botón «Analizar» plano, no de la tinta).
+      expect(
+        screen.queryByRole("button", { name: /^analizar$/i }),
+      ).not.toBeInTheDocument()
+      expect(
+        await screen.findByRole("button", { name: /sí, enviarlo al proveedor/i }),
+      ).toBeInTheDocument()
+      expect(
+        await screen.findByRole("button", { name: /cancelar/i }),
+      ).toBeInTheDocument()
+    })
+
+    it("al confirmar, reintenta con la confirmación y abre la revisión con el resultado", async () => {
+      const usuario = (await import("@testing-library/user-event")).default
+      const alAbrirRevision = vi.fn()
+      vi.mocked(api.analizar).mockRejectedValueOnce(
+        errorConEstado(AVISO_PROTECCION_DATOS, 428),
+      )
+      vi.mocked(api.analizar).mockResolvedValueOnce(RESULTADO)
+
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={alAbrirRevision} />)
+      await usuario.click(await screen.findByRole("button", { name: /^analizar$/i }))
+      await screen.findByText(/texto íntegro del documento/i)
+
+      await usuario.click(
+        await screen.findByRole("button", { name: /sí, enviarlo al proveedor/i }),
+      )
+
+      await waitFor(() =>
+        expect(alAbrirRevision).toHaveBeenCalledWith("id-1", RESULTADO),
+      )
+      // La primera llamada no confirma nada; la segunda -la que sigue a
+      // pulsar el botón de la pregunta- sí. Si `analizar()` no propagara
+      // el `true` hasta `api.analizar`, esta llamada quedaría idéntica a
+      // la primera y el backend volvería a responder 428 en producción,
+      // aunque este test no lo vería -el mock resuelve pase lo que pase-.
+      expect(api.analizar).toHaveBeenNthCalledWith(1, "id-1", false)
+      expect(api.analizar).toHaveBeenNthCalledWith(2, "id-1", true)
+    })
+
+    it("al cancelar, no reintenta y vuelve a ofrecer el botón analizar", async () => {
+      const usuario = (await import("@testing-library/user-event")).default
+      vi.mocked(api.analizar).mockRejectedValue(
+        errorConEstado(AVISO_PROTECCION_DATOS, 428),
+      )
+
+      render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+      await usuario.click(await screen.findByRole("button", { name: /^analizar$/i }))
+      await screen.findByText(/texto íntegro del documento/i)
+
+      await usuario.click(await screen.findByRole("button", { name: /cancelar/i }))
+
+      expect(
+        await screen.findByRole("button", { name: /^analizar$/i }),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/texto íntegro del documento/i)).not.toBeInTheDocument()
+      expect(api.analizar).toHaveBeenCalledTimes(1)
     })
   })
 

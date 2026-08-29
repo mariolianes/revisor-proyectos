@@ -36,30 +36,74 @@ LIMITE_DE_REPARO = 500
 LIMITE_DE_APERTURA_O_CIERRE = 600
 LIMITE_DE_LINEA_DE_DEVOLUCION = 400
 
+# El límite de una observación cuando quien la escribe es el docente, no el
+# motor -aplicado al guardar una revisión (`revisar()`,
+# `backend/api/analisis.py`), nunca al guardar el resultado de un análisis-.
+# `LIMITE_DE_OBSERVACION` (800) existe por D-001: una observación verbosa es
+# la vía por la que un motor podría reconstruir el trabajo del alumno sin
+# tocar el límite de la cita, y ese riesgo es real porque el motor puede
+# citar el documento sin que nadie lo revise antes de guardarlo. El docente
+# no tiene ese riesgo -no va a pegar el trabajo de su propio alumno dentro
+# de su observación sobre ese mismo trabajo; si lo hiciera, sería contra su
+# propio interés, no un atajo que le convenga-, así que este límite no
+# defiende D-001: solo evita que el campo quede sin fondo. Más holgado a
+# propósito -2.400 caracteres son unas 400 palabras, un párrafo largo con
+# margen de sobra para reescribir una observación completa a mano-, y sin
+# relación numérica con `LIMITE_DE_OBSERVACION`: subir uno no tiene por qué
+# mover el otro, porque protegen cosas distintas.
+LIMITE_DE_OBSERVACION_DOCENTE = 2400
 
-def _validar_longitud(texto: str, limite: int, etiqueta: str) -> None:
-    if len(texto) > limite:
-        raise ValueError(
-            f"{etiqueta} tiene {len(texto)} caracteres; el límite para "
+
+class TextoFueraDeLimite(ValueError):
+    """Un texto de la corrección supera el límite de caracteres que le toca.
+
+    Lleva la etiqueta, la longitud y el límite como atributos propios, no
+    solo dentro del mensaje: `str(self)` compone un texto completo que
+    asume que lo escribió el motor -«esto indica un fallo del motor»-,
+    porque ese es el origen habitual de lo que guarda este módulo. Pero no
+    es el único: `revisar()` (`backend/api/analisis.py`) guarda de nuevo la
+    corrección después de aplicar una edición del docente, y ahí el texto
+    largo no lo escribió el motor, lo escribió él a mano. Quien capture esta
+    excepción en ese canal no debe reenviar `str(self)` -acusaría al
+    docente de un fallo que no es suyo-, sino componer su propio mensaje a
+    partir de `etiqueta`, `longitud` y `limite`.
+    """
+
+    def __init__(self, etiqueta: str, longitud: int, limite: int) -> None:
+        self.etiqueta = etiqueta
+        self.longitud = longitud
+        self.limite = limite
+        super().__init__(
+            f"{etiqueta} tiene {longitud} caracteres; el límite para "
             f"guardarlo es {limite}. Esto indica un fallo del motor, no un "
             "dato del alumno que recortar: revisa el análisis antes de "
             "guardarlo."
         )
 
 
+def _validar_longitud(texto: str, limite: int, etiqueta: str) -> None:
+    if len(texto) > limite:
+        raise TextoFueraDeLimite(etiqueta, len(texto), limite)
+
+
 def validar_textos_acotados(
-    informe: Informe, devolucion: Devolucion | None = None
+    informe: Informe,
+    devolucion: Devolucion | None = None,
+    limite_de_observacion: int = LIMITE_DE_OBSERVACION,
 ) -> None:
     """Ninguna cita ni ningún bloque de prosa del análisis pasa de su límite.
 
     Las citas (D-001, `LIMITE_DE_CITA`) llegan por cuatro canales: las
     valoraciones, las prioridades y las prioridades descartadas -en
     principio las mismas instancias que `valoraciones`, comparten objeto por
-    diseño (`analisis/verificacion.py`), pero `revisar()`
-    (`backend/api/analisis.py`) puede dejar en `prioridades` una valoración
-    con una observación distinta de la que quedó en `valoraciones` tras una
-    edición del docente, así que se comprueban los tres por separado y no
-    solo `valoraciones`-, las fortalezas y los indicios de autoría. Los
+    diseño (`analisis/verificacion.py`), y `revisar()`
+    (`backend/api/analisis.py`) aplica la decisión del docente una sola vez
+    por dimensión y reutiliza el mismo resultado en las tres listas, así que
+    hoy no deberían divergir-, las fortalezas y los indicios de autoría. Se
+    comprueban los tres por separado de todos modos, y no solo
+    `valoraciones`: nada en los tipos obliga a que compartan objeto, y esta
+    validación es la última defensa antes de escribir, no el sitio para
+    confiar en que otra capa ya mantuvo la coherencia. Los
     patrones (`PatronVerificado`) quedan fuera a propósito y no por olvido:
     `Informe` no lleva un campo `patrones` -se descartan al componer el
     informe (`salidas/informe.py`), y solo `AnalisisVerificado`, que no se
@@ -75,6 +119,17 @@ def validar_textos_acotados(
     la cita, y el límite de D-001 dejaría de significar lo que el §19 del
     Documento Maestro dice que significa.
 
+    `limite_de_observacion` es la única excepción a que cada campo tenga un
+    único límite fijo: por omisión es `LIMITE_DE_OBSERVACION` (el del motor,
+    D-001), pero `revisar()` guarda pasando `LIMITE_DE_OBSERVACION_DOCENTE`
+    -más holgado-, porque la observación de una valoración es el único
+    campo de este módulo que puede llegar de dos autores distintos con dos
+    motivos de límite distintos: el motor, al analizar, y el docente, al
+    editar una observación al revisar. El resto de campos de este módulo
+    -la cita, el resumen, las dudas, los reparos, la devolución entera- solo
+    los escribe el motor o el propio sistema, nunca el docente a mano, así
+    que no necesitan ese segundo límite.
+
     Se llama antes de escribir nada, en los dos almacenes: un análisis con
     un texto fuera de límite no debe dejar ni una fila a medias.
     """
@@ -84,7 +139,7 @@ def validar_textos_acotados(
             v.evidencia.cita, LIMITE_DE_CITA, f"La cita de {v.dimension}"
         )
         _validar_longitud(
-            v.observacion, LIMITE_DE_OBSERVACION,
+            v.observacion, limite_de_observacion,
             f"La observación de {v.dimension}",
         )
     for f in informe.fortalezas:
