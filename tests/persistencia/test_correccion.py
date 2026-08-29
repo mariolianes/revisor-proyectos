@@ -14,11 +14,14 @@ Documento Maestro afirmando algo que no se cumple.
 
 Esta batería comprueba dos cosas por separado: que las citas se acotan en
 sus cuatro canales (valoraciones, prioridades, fortalezas e indicios de
-autoría -no solo `valoraciones`, porque `revisar()` puede dejar en
-`prioridades` una observación distinta de la que quedó en `valoraciones`- y
-que `dudas` y `reparos` quedan fuera del límite de cita por no llevar
-evidencia), y que cada campo de prosa se acota con el límite que le
-corresponde, no uno reutilizado de otro campo.
+autoría -no solo `valoraciones`: `revisar()` (`backend/api/analisis.py`)
+aplica la decisión del docente por dimensión y reutiliza el mismo resultado
+en las tres listas, pero nada en los tipos obliga a que compartan objeto, y
+esta validación es la última defensa antes de escribir, no el sitio para
+confiar en que otra capa mantuvo la coherencia- y que `dudas` y `reparos`
+quedan fuera del límite de cita por no llevar evidencia), y que cada campo
+de prosa se acota con el límite que le corresponde, no uno reutilizado de
+otro campo.
 """
 
 import pytest
@@ -38,6 +41,7 @@ from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     LIMITE_DE_REPARO,
     LIMITE_DE_RESUMEN,
+    TextoFueraDeLimite,
     validar_textos_acotados,
 )
 from backend.salidas.borrador import Devolucion
@@ -98,13 +102,13 @@ def test_una_cita_larga_se_rechaza_en_los_cinco_canales(canal: str) -> None:
     """Los cuatro tipos que llevan `Evidencia` -valoraciones, fortalezas e
     indicios de autoría-, más `prioridades` y `prioridades_descartadas` por
     separado: en principio comparten instancia con `valoraciones`
-    (`analisis/verificacion.py`), pero `revisar()`
-    (`backend/api/analisis.py`) puede dejar en `prioridades` una valoración
-    con una observación -y en teoría una cita- distinta de la que quedó en
-    `valoraciones` tras una edición del docente, así que se comprueban los
-    tres por separado. `dudas` y `reparos` quedan fuera de este test -son
-    texto libre sin evidencia, no citan el documento-, pero sí tienen el suyo
-    más abajo.
+    (`analisis/verificacion.py`), y `revisar()`
+    (`backend/api/analisis.py`) aplica la decisión del docente una sola vez
+    por dimensión y reutiliza el mismo resultado en las tres listas. Se
+    comprueban los tres por separado de todos modos, como defensa: nada en
+    los tipos obliga a que compartan objeto. `dudas` y `reparos` quedan
+    fuera de este test -son texto libre sin evidencia, no citan el
+    documento-, pero sí tienen el suyo más abajo.
     """
     cita_larga = "x" * (LIMITE_DE_CITA + 1)
     evidencia = Evidencia(cita=cita_larga, apartado="5")
@@ -137,6 +141,29 @@ def test_el_mensaje_no_culpa_al_alumno() -> None:
         validar_textos_acotados(informe)
 
     assert "fallo del motor" in str(info.value)
+
+
+def test_el_fallo_lleva_los_datos_para_que_otra_capa_componga_su_mensaje() -> None:
+    """`str(fallo)` asume que el texto largo lo escribió el motor -«esto
+    indica un fallo del motor»-, y esa suposición no vale en todos los
+    canales que guardan una corrección: `revisar()`
+    (`backend/api/analisis.py`) guarda de nuevo después de aplicar una
+    edición del docente, y ahí el texto lo ha escrito él a mano. Por eso
+    `TextoFueraDeLimite` lleva `etiqueta`, `longitud` y `limite` como
+    atributos propios -no solo dentro del mensaje-: quien la capture en ese
+    canal compone su propio aviso a partir de estos tres datos, sin tener
+    que analizar la frase ni heredar la acusación equivocada.
+    """
+    texto = "x" * (LIMITE_DE_OBSERVACION + 7)
+    informe = _informe(valoraciones=[_valoracion(observacion=texto)])
+
+    with pytest.raises(TextoFueraDeLimite) as info:
+        validar_textos_acotados(informe)
+
+    fallo = info.value
+    assert fallo.etiqueta == "La observación de D05"
+    assert fallo.longitud == len(texto)
+    assert fallo.limite == LIMITE_DE_OBSERVACION
 
 
 # --- la prosa: un límite propio por campo, no el de la cita -----------------

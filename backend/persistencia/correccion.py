@@ -37,14 +37,36 @@ LIMITE_DE_APERTURA_O_CIERRE = 600
 LIMITE_DE_LINEA_DE_DEVOLUCION = 400
 
 
-def _validar_longitud(texto: str, limite: int, etiqueta: str) -> None:
-    if len(texto) > limite:
-        raise ValueError(
-            f"{etiqueta} tiene {len(texto)} caracteres; el límite para "
+class TextoFueraDeLimite(ValueError):
+    """Un texto de la corrección supera el límite de caracteres que le toca.
+
+    Lleva la etiqueta, la longitud y el límite como atributos propios, no
+    solo dentro del mensaje: `str(self)` compone un texto completo que
+    asume que lo escribió el motor -«esto indica un fallo del motor»-,
+    porque ese es el origen habitual de lo que guarda este módulo. Pero no
+    es el único: `revisar()` (`backend/api/analisis.py`) guarda de nuevo la
+    corrección después de aplicar una edición del docente, y ahí el texto
+    largo no lo escribió el motor, lo escribió él a mano. Quien capture esta
+    excepción en ese canal no debe reenviar `str(self)` -acusaría al
+    docente de un fallo que no es suyo-, sino componer su propio mensaje a
+    partir de `etiqueta`, `longitud` y `limite`.
+    """
+
+    def __init__(self, etiqueta: str, longitud: int, limite: int) -> None:
+        self.etiqueta = etiqueta
+        self.longitud = longitud
+        self.limite = limite
+        super().__init__(
+            f"{etiqueta} tiene {longitud} caracteres; el límite para "
             f"guardarlo es {limite}. Esto indica un fallo del motor, no un "
             "dato del alumno que recortar: revisa el análisis antes de "
             "guardarlo."
         )
+
+
+def _validar_longitud(texto: str, limite: int, etiqueta: str) -> None:
+    if len(texto) > limite:
+        raise TextoFueraDeLimite(etiqueta, len(texto), limite)
 
 
 def validar_textos_acotados(
@@ -55,11 +77,14 @@ def validar_textos_acotados(
     Las citas (D-001, `LIMITE_DE_CITA`) llegan por cuatro canales: las
     valoraciones, las prioridades y las prioridades descartadas -en
     principio las mismas instancias que `valoraciones`, comparten objeto por
-    diseño (`analisis/verificacion.py`), pero `revisar()`
-    (`backend/api/analisis.py`) puede dejar en `prioridades` una valoración
-    con una observación distinta de la que quedó en `valoraciones` tras una
-    edición del docente, así que se comprueban los tres por separado y no
-    solo `valoraciones`-, las fortalezas y los indicios de autoría. Los
+    diseño (`analisis/verificacion.py`), y `revisar()`
+    (`backend/api/analisis.py`) aplica la decisión del docente una sola vez
+    por dimensión y reutiliza el mismo resultado en las tres listas, así que
+    hoy no deberían divergir-, las fortalezas y los indicios de autoría. Se
+    comprueban los tres por separado de todos modos, y no solo
+    `valoraciones`: nada en los tipos obliga a que compartan objeto, y esta
+    validación es la última defensa antes de escribir, no el sitio para
+    confiar en que otra capa ya mantuvo la coherencia. Los
     patrones (`PatronVerificado`) quedan fuera a propósito y no por olvido:
     `Informe` no lleva un campo `patrones` -se descartan al componer el
     informe (`salidas/informe.py`), y solo `AnalisisVerificado`, que no se

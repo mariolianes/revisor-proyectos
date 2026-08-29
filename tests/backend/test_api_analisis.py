@@ -8,11 +8,14 @@ from fastapi.testclient import TestClient
 
 from backend.analisis.contrato import AnalisisDelMotor, Evidencia, Valoracion
 from backend.analisis.proveedor import ErrorDelProveedor, ProveedorSimulado
+from backend.analisis.verificacion import ValoracionVerificada
 from backend.app import crear_app
 from backend.configuracion import Configuracion
+from backend.persistencia.correccion import LIMITE_DE_OBSERVACION
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva
 from backend.salidas.borrador import Devolucion
+from backend.salidas.informe import Informe
 
 CITA = "El presupuesto inicial asciende a 4.500 euros"
 
@@ -50,6 +53,40 @@ def _devolucion_con_nota():
         acciones=["Justifica las cifras con fuentes."],
         cierre="Sigue asi.",
     )
+
+
+def _valoracion_de_prueba(
+    dimension: str, observacion: str, prioridad: str | None = "P2",
+) -> ValoracionVerificada:
+    return ValoracionVerificada(
+        dimension=dimension, nivel="EN_DESARROLLO", prioridad=prioridad,
+        evidencia=Evidencia(cita="cita de prueba", apartado="5"),
+        observacion=observacion, evidencia_localizada=True,
+    )
+
+
+def _informe_de_prueba(**cambios) -> Informe:
+    """Un `Informe` construido a mano, sin pasar por el motor ni por
+    `seleccionar_prioridades`.
+
+    Sirve para preparar directamente el estado guardado que `revisar()` va
+    a leer, con listas que -a propósito- no comparten instancia entre sí:
+    es justo la situación con la que se topa `revisar()` en producción
+    tras una edición anterior, y la más exigente para comprobar que la
+    decisión de esta petición se aplica en las tres listas por igual.
+    """
+    datos = dict(
+        identificacion={
+            "alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": "1",
+            "archivo": "AF023_DAM_E2_20260115_v1.pdf", "criterios": "v2026-2027",
+        },
+        control_administrativo=[], resumen="Resumen.", valoraciones=[],
+        fortalezas=[], prioridades=[], prioridades_descartadas=[], dudas=[],
+        indicios=[], reparos=[], dimensiones_ausentes=[], semaforo="AMBAR",
+        recomendacion=None, motor="simulado",
+    )
+    datos.update(cambios)
+    return Informe(**datos)
 
 
 @pytest.fixture
@@ -95,7 +132,8 @@ def cliente(criterios_de_analisis: Path, entregas: Path, escribir_pdf):
 
 
 def test_analizar_devuelve_las_dos_salidas(cliente) -> None:
-    r = cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                      json={"confirmo_datos_reales": True})
 
     assert r.status_code == 200
     assert r.json()["informe"]["valoraciones"][0]["dimension"] == "D05"
@@ -104,7 +142,8 @@ def test_analizar_devuelve_las_dos_salidas(cliente) -> None:
 
 
 def test_el_analisis_se_recupera_despues(cliente) -> None:
-    cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
 
     r = cliente.get(f"/api/entregas/{cliente.identificador}/analisis")
 
@@ -121,7 +160,8 @@ def test_sin_analizar_no_hay_analisis_que_devolver(cliente) -> None:
 
 def test_analizar_no_repite_la_llamada_al_motor(cliente) -> None:
     """Un análisis cuesta dinero: pedir la ficha no puede volver a pagarlo."""
-    cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
     cliente.get(f"/api/entregas/{cliente.identificador}/analisis")
     cliente.get(f"/api/entregas/{cliente.identificador}/analisis")
 
@@ -142,7 +182,8 @@ def test_un_fallo_del_motor_llega_en_castellano(criterios_de_analisis, entregas,
     )
     ident = _confirmar(c)
 
-    r = c.post(f"/api/entregas/{ident}/analisis")
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
 
     assert r.status_code == 503
     assert "sin red" in r.json()["detail"]
@@ -158,7 +199,8 @@ def test_el_motor_se_declara(cliente) -> None:
 
 
 def test_la_revision_conserva_solo_lo_aprobado(cliente) -> None:
-    cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
 
     r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
         "decisiones": [{"dimension": "D05", "decision": "DESCARTADA", "texto": None}],
@@ -169,7 +211,8 @@ def test_la_revision_conserva_solo_lo_aprobado(cliente) -> None:
 
 
 def test_la_revision_admite_editar_el_texto(cliente) -> None:
-    cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
 
     r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
         "decisiones": [{"dimension": "D05", "decision": "EDITADA",
@@ -215,7 +258,8 @@ def test_un_informe_sin_borrador_no_se_trata_como_un_fallo(
     c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
     ident = _confirmar(c)
 
-    r = c.post(f"/api/entregas/{ident}/analisis")
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
 
     assert r.status_code == 200
     cuerpo = r.json()
@@ -312,7 +356,8 @@ def test_un_archivo_que_desaparece_no_da_un_error_de_servidor(
     ident = _confirmar(c)
     (entregas / "AF023_DAM_E2_20260115_v1.pdf").unlink()
 
-    r = c.post(f"/api/entregas/{ident}/analisis")
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
 
     assert r.status_code == 400
     assert "ya no está en la carpeta" in r.json()["detail"]
@@ -366,7 +411,8 @@ def test_una_segunda_peticion_simultanea_no_paga_el_motor_dos_veces(
     # real. Es determinista, a diferencia de lanzar dos hilos de verdad.
     c.app.state.analisis_en_curso.add(ident)
     try:
-        r = c.post(f"/api/entregas/{ident}/analisis")
+        r = c.post(f"/api/entregas/{ident}/analisis",
+                    json={"confirmo_datos_reales": True})
     finally:
         c.app.state.analisis_en_curso.discard(ident)
 
@@ -387,7 +433,8 @@ def test_el_candado_se_libera_incluso_si_el_analisis_falla(
     )
     ident = _confirmar(c)
 
-    c.post(f"/api/entregas/{ident}/analisis")
+    c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
 
     assert ident not in c.app.state.analisis_en_curso
 
@@ -409,7 +456,8 @@ def test_dos_hilos_a_la_vez_solo_uno_analiza(
 
     def _pedir() -> None:
         listos.wait()
-        r = c.post(f"/api/entregas/{ident}/analisis")
+        r = c.post(f"/api/entregas/{ident}/analisis",
+                    json={"confirmo_datos_reales": True})
         resultados.append(r.status_code)
 
     hilos = [threading.Thread(target=_pedir) for _ in range(2)]
@@ -491,7 +539,8 @@ def test_ningun_mensaje_de_error_deja_pasar_jerga_de_programador(
     )
     ident_fallo = _confirmar(fallo_motor)
     respuestas.append(
-        (503, fallo_motor.post(f"/api/entregas/{ident_fallo}/analisis"))
+        (503, fallo_motor.post(f"/api/entregas/{ident_fallo}/analisis",
+                                json={"confirmo_datos_reales": True}))
     )
 
     # Su propio archivo, no el que ya usan `cliente` y `fallo_motor`: al
@@ -503,7 +552,8 @@ def test_ningun_mensaje_de_error_deja_pasar_jerga_de_programador(
     ident_ilegible = _confirmar(ilegible, "ilegible.pdf")
     (entregas / "ilegible.pdf").unlink()
     respuestas.append(
-        (400, ilegible.post(f"/api/entregas/{ident_ilegible}/analisis"))
+        (400, ilegible.post(f"/api/entregas/{ident_ilegible}/analisis",
+                             json={"confirmo_datos_reales": True}))
     )
 
     # El candado necesita una entrega real -y su propio archivo, distinto
@@ -516,10 +566,12 @@ def test_ningun_mensaje_de_error_deja_pasar_jerga_de_programador(
     ident_en_curso = _confirmar(en_curso, "candado.pdf")
     en_curso.app.state.analisis_en_curso.add(ident_en_curso)
     respuestas.append(
-        (409, en_curso.post(f"/api/entregas/{ident_en_curso}/analisis"))
+        (409, en_curso.post(f"/api/entregas/{ident_en_curso}/analisis",
+                             json={"confirmo_datos_reales": True}))
     )
 
-    cliente.post(f"/api/entregas/{cliente.identificador}/analisis")
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
     respuestas.append((400, cliente.post(
         f"/api/entregas/{cliente.identificador}/revision", json={
             "decisiones": [{"dimension": "D05", "decision": "INVENTADA",
@@ -568,10 +620,200 @@ def test_el_fallo_del_motor_usa_el_contrato_del_tipo_no_str_crudo(
     c = _crear_cliente(criterios_de_analisis, entregas, _ProveedorConMensajeSucio())
     ident = _confirmar(c)
 
-    r = c.post(f"/api/entregas/{ident}/analisis")
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
 
     assert r.status_code == 503
     assert "fuga-de-prueba" not in r.json()["detail"]
     assert r.json()["detail"] == (
         "No se ha podido completar el análisis: fallo del proveedor de prueba."
     )
+
+
+# --- Tres fallos encontrados en `analisis.py` en revisión: cada uno tenía --
+# un test que comprobaba justo lo único que ya funcionaba, o no tenía
+# ninguno. Ver `.superpowers/sdd/2026-08-29-analisis-y-salidas/
+# arreglo-revision-report.md`.
+
+
+def test_editar_una_observacion_llega_tambien_a_prioridades(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """Bug 1: `revisar()` reconstruía `prioridades` filtrando los objetos
+    ORIGINALES de `guardada.informe.prioridades`, así que una edición
+    quedaba aplicada en `valoraciones` y perdida en `prioridades` -el
+    Anexo C, lo que de verdad se traslada al alumno-: las dos versiones
+    convivían en el mismo informe, sin ningún aviso. El test anterior solo
+    comprobaba `valoraciones`, el único campo que sí funcionaba.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
+                 [["1. Introduccion", "Texto suficiente del trabajo."]])
+    c = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
+    ident = _confirmar(c)
+
+    original = "Faltan fuentes que respalden las cifras."
+    informe = _informe_de_prueba(
+        valoraciones=[_valoracion_de_prueba("D05", original)],
+        prioridades=[_valoracion_de_prueba("D05", original)],
+    )
+    c.app.state.almacen.guardar_correccion(ident, informe, None, "simulado")
+
+    editado = "Justifica las cifras con al menos una fuente primaria."
+    r = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [{"dimension": "D05", "decision": "EDITADA",
+                        "texto": editado}],
+    })
+
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert cuerpo["informe"]["valoraciones"][0]["observacion"] == editado
+    assert cuerpo["informe"]["prioridades"][0]["observacion"] == editado
+
+    # Lo guardado tiene que coincidir con lo devuelto: una recarga de la
+    # ficha no puede volver a enseñar la versión del motor en `prioridades`.
+    r2 = c.get(f"/api/entregas/{ident}/analisis")
+    assert r2.json()["informe"]["prioridades"][0]["observacion"] == editado
+
+
+def test_descartar_una_observacion_la_quita_de_prioridades_descartadas(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """Bug 1, la otra mitad: `prioridades_descartadas` ni siquiera entraba
+    en el `model_copy` de `revisar()` -no se filtraba, no se editaba, se
+    quedaba tal cual estaba guardada-. Si el docente descarta una
+    observación por completo, no puede sobrevivir aquí tampoco: sigue
+    siendo parte del informe interno que lee el docente, y «descartada»
+    tiene que significar lo mismo en las tres listas.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
+                 [["1. Introduccion", "Texto suficiente del trabajo."]])
+    c = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
+    ident = _confirmar(c)
+
+    informe = _informe_de_prueba(
+        valoraciones=[_valoracion_de_prueba("D07", "Observación discutible.")],
+        prioridades_descartadas=[
+            _valoracion_de_prueba("D07", "Observación discutible.")
+        ],
+    )
+    c.app.state.almacen.guardar_correccion(ident, informe, None, "simulado")
+
+    r = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [{"dimension": "D07", "decision": "DESCARTADA",
+                        "texto": None}],
+    })
+
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert cuerpo["informe"]["valoraciones"] == []
+    assert cuerpo["informe"]["prioridades_descartadas"] == []
+
+
+def test_una_edicion_demasiado_larga_no_da_un_500_y_no_guarda_nada(
+    cliente,
+) -> None:
+    """Bug 2: `validar_textos_acotados` limita la observación a
+    `LIMITE_DE_OBSERVACION` caracteres y levanta una excepción; `revisar()`
+    no la capturaba, así que una edición larga del docente reventaba en un
+    «Internal Server Error» crudo y todas las decisiones de esa petición se
+    perdían. El mensaje de la excepción de base, además, dice «esto indica
+    un fallo del motor»: falso en este canal, el texto lo ha escrito el
+    docente a mano, y ese mensaje concreto no puede llegarle tal cual.
+    """
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    texto_largo = "x" * (LIMITE_DE_OBSERVACION + 1)
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [{"dimension": "D05", "decision": "EDITADA",
+                        "texto": texto_largo}],
+    })
+
+    assert r.status_code == 400
+    detalle = r.json()["detail"]
+    assert "fallo del motor" not in detalle
+    assert str(len(texto_largo)) in detalle
+    assert str(LIMITE_DE_OBSERVACION) in detalle
+    assert "no se ha guardado" in detalle.lower()
+    assert _sin_jerga(detalle)
+
+    # Nada de la revisión ha quedado guardado: la observación sigue siendo
+    # la que había, no la editada y rechazada.
+    r2 = cliente.get(f"/api/entregas/{cliente.identificador}/analisis")
+    observacion_guardada = r2.json()["informe"]["valoraciones"][0]["observacion"]
+    assert observacion_guardada != texto_largo
+
+
+def test_sin_confirmar_el_analisis_no_llama_al_proveedor(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """Bug 3: la raíz de prueba no trae `docs/PENDIENTE_OFICIAL.md` -lo que
+    `proteccion_datos_pendiente()` trata igual que si `proteccion_datos`
+    siguiera pendiente, con el mismo criterio que ya usaba
+    `tools/calibrar.py`-, así que analizar sin confirmar no puede ni tocar
+    al proveedor: ese es justo el canal por el que saldría el trabajo real
+    de un alumno.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
+                 [["1. Introduccion", "Texto suficiente del trabajo."]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis")
+
+    assert r.status_code == 428
+    detalle = r.json()["detail"]
+    assert "proteccion_datos" in detalle
+    assert "confirm" in detalle.lower()
+    assert _sin_jerga(detalle)
+    assert proveedor.llamadas == []
+    assert c.app.state.almacen.correccion_de(ident) is None
+
+
+def test_confirmando_se_puede_analizar_aunque_siga_pendiente(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """El reverso del test anterior: la guarda no es un bloqueo sin
+    salida. Con la confirmación explícita, el análisis sigue su curso con
+    normalidad -mismo resultado que sin la guarda-.
+    """
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
+
+    assert r.status_code == 200
+    assert len(proveedor.llamadas) == 2
+
+
+def test_si_proteccion_datos_ya_no_esta_pendiente_no_hace_falta_confirmar(
+    criterios_de_analisis, entregas, escribir_pdf
+) -> None:
+    """Cuando `proteccion_datos` ya no conste en `docs/PENDIENTE_OFICIAL.md`
+    -se ha resuelto de verdad-, la guarda deja de pedir nada: es la misma
+    lectura que ya hace `tools/calibrar.py` de su propia raíz.
+    """
+    (criterios_de_analisis / "docs").mkdir()
+    (criterios_de_analisis / "docs" / "PENDIENTE_OFICIAL.md").write_text(
+        "# Pendiente\n\nYa no queda nada pendiente de este apartado.\n",
+        encoding="utf-8",
+    )
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis")
+
+    assert r.status_code == 200
+    assert len(proveedor.llamadas) == 2
