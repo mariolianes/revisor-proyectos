@@ -34,43 +34,43 @@ def _analisis(valoraciones, **cambios):
 
 def test_un_p4_no_llega_nunca(criterios_de_analisis: Path) -> None:
     """El §7 del calibrador: no debe cargarse al alumno."""
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
         _analisis([_v("D05", "P4"), _v("D07", "P4")]),
     )
 
-    assert elegidas == []
+    assert seleccion.elegidas == []
 
 
 def test_como_mucho_cuatro(criterios_de_analisis: Path) -> None:
     """Economía pedagógica: si hay diez errores, no se trasladan los diez."""
     muchas = [_v(f"D0{i}", "P2") for i in range(1, 8)]
 
-    elegidas = seleccionar_prioridades(criterios_de_analisis, "v2026-2027",
-                                       _analisis(muchas))
+    seleccion = seleccionar_prioridades(criterios_de_analisis, "v2026-2027",
+                                        _analisis(muchas))
 
-    assert len(elegidas) == 4
+    assert len(seleccion.elegidas) == 4
 
 
 def test_los_criticos_van_primero(criterios_de_analisis: Path) -> None:
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
         _analisis([_v("D05", "P3"), _v("D07", "P1"), _v("D12", "P2")]),
     )
 
-    assert [v.prioridad for v in elegidas] == ["P1", "P2", "P3"]
+    assert [v.prioridad for v in seleccion.elegidas] == ["P1", "P2", "P3"]
 
 
 def test_un_critico_desplaza_a_los_secundarios(criterios_de_analisis: Path) -> None:
     """Con cinco candidatas y sitio para cuatro, cae el menos prioritario."""
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
         _analisis([_v("D01", "P3"), _v("D02", "P3"), _v("D05", "P1"),
                    _v("D07", "P1"), _v("D12", "P2")]),
     )
 
-    assert len(elegidas) == 4
-    assert [v.prioridad for v in elegidas] == ["P1", "P1", "P2", "P3"]
+    assert len(seleccion.elegidas) == 4
+    assert [v.prioridad for v in seleccion.elegidas] == ["P1", "P1", "P2", "P3"]
 
 
 def test_una_evidencia_no_localizada_no_llega_al_alumno(
@@ -78,24 +78,24 @@ def test_una_evidencia_no_localizada_no_llega_al_alumno(
 ) -> None:
     """La primera defensa, aplicada donde importa: si no se pudo señalar en el
     documento, el alumno no lo recibe. El docente sí lo ve en el informe."""
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
         _analisis([_v("D05", "P1", localizada=False), _v("D07", "P2")]),
     )
 
-    assert [v.dimension for v in elegidas] == ["D07"]
+    assert [v.dimension for v in seleccion.elegidas] == ["D07"]
 
 
 def test_una_valoracion_sin_prioridad_no_es_una_accion(
     criterios_de_analisis: Path,
 ) -> None:
     """Sin prioridad no hay nada que pedirle al alumno que haga."""
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
         _analisis([_v("D05", None, nivel="SOLIDO")]),
     )
 
-    assert elegidas == []
+    assert seleccion.elegidas == []
 
 
 def test_el_limite_sale_del_fichero_de_criterios(criterios_de_analisis: Path) -> None:
@@ -108,12 +108,12 @@ def test_el_limite_sale_del_fichero_de_criterios(criterios_de_analisis: Path) ->
         encoding="utf-8",
     )
 
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
         _analisis([_v(f"D0{i}", "P2") for i in range(1, 6)]),
     )
 
-    assert len(elegidas) == 2
+    assert len(seleccion.elegidas) == 2
 
 
 def test_llega_al_alumno_sale_del_fichero_de_prioridades(
@@ -130,19 +130,19 @@ def test_llega_al_alumno_sale_del_fichero_de_prioridades(
         encoding="utf-8",
     )
 
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
         _analisis([_v("D05", "P3"), _v("D07", "P1")]),
     )
 
-    assert [v.dimension for v in elegidas] == ["D07"]
+    assert [v.dimension for v in seleccion.elegidas] == ["D07"]
 
 
 def test_los_indicios_de_autoria_nunca_llegan_a_las_elegidas(
     criterios_de_analisis: Path,
 ) -> None:
     """El §13 reserva la autoría al docente. Un indicio no es del mismo tipo
-    que devuelve esta función -`IndicioDeAutoriaVerificado` frente a
+    que maneja esta función -`IndicioDeAutoriaVerificado` frente a
     `ValoracionVerificada`-, así que no hay forma de que se cuele aquí; este
     test deja la garantía escrita como comportamiento, no solo como tipo."""
     indicio = IndicioDeAutoriaVerificado(
@@ -154,52 +154,69 @@ def test_los_indicios_de_autoria_nunca_llegan_a_las_elegidas(
         [_v("D05", "P1")], indicios_de_autoria=[indicio, indicio, indicio],
     )
 
-    elegidas = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
+    seleccion = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
 
-    assert [v.dimension for v in elegidas] == ["D05"]
-    assert all(isinstance(v, ValoracionVerificada) for v in elegidas)
+    assert [v.dimension for v in seleccion.elegidas] == ["D05"]
+    assert all(isinstance(v, ValoracionVerificada) for v in seleccion.elegidas)
 
 
 def test_ninguna_elegida_lleva_una_nota(criterios_de_analisis: Path) -> None:
     """R3: el sistema propone y se detiene, no califica. No hay nota en
     ninguna salida; aquí se comprueba en la más cercana al alumno."""
-    elegidas = seleccionar_prioridades(
+    seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027", _analisis([_v("D05", "P1")]),
     )
 
-    assert elegidas
-    for v in elegidas:
+    assert seleccion.elegidas
+    for v in seleccion.elegidas:
         assert not hasattr(v, "nota")
         assert "nota" not in v.model_dump()
 
 
-def test_el_exceso_por_el_limite_queda_registrado_como_reparo(
+def test_el_exceso_por_el_limite_va_en_descartadas(
     criterios_de_analisis: Path,
 ) -> None:
-    """Cuatro caben; el resto no desaparece en silencio. El docente tiene que
-    poder ver que hubo más candidatas de las que llegaron a la devolución, y
-    cuáles son: una selección callada haría creer que solo hay cuatro
-    problemas cuando hay siete."""
+    """Cuatro caben; el resto no desaparece. Quien construya el informe
+    (Task 9) tiene que poder ver que hubo más candidatas de las que llegaron
+    a la devolución, y cuáles son -no un recuento, las observaciones mismas-:
+    una selección callada haría creer que solo hay cuatro problemas cuando
+    hay siete."""
     analisis = _analisis([_v(f"D0{i}", "P1") for i in range(1, 8)])
 
-    elegidas = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
+    seleccion = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
 
-    elegidas_dims = [v.dimension for v in elegidas]
-    assert elegidas_dims == ["D01", "D02", "D03", "D04"]
-
-    reparo = next(r for r in analisis.reparos if r.regla == "limite_de_prioridades")
-    for dimension in ("D05", "D06", "D07"):
-        assert dimension in reparo.detalle
-        assert dimension not in elegidas_dims
+    assert [v.dimension for v in seleccion.elegidas] == ["D01", "D02", "D03", "D04"]
+    assert [v.dimension for v in seleccion.descartadas] == ["D05", "D06", "D07"]
+    for v in seleccion.descartadas:
+        assert v.prioridad == "P1"
+        assert v.observacion
 
 
-def test_sin_exceso_no_se_anade_ningun_reparo_de_limite(
+def test_sin_exceso_no_hay_descartadas(criterios_de_analisis: Path) -> None:
+    """`descartadas` solo lleva algo cuando de verdad sobra: no es una lista
+    que se rellene de cualquier cosa que no se eligió."""
+    seleccion = seleccionar_prioridades(
+        criterios_de_analisis, "v2026-2027",
+        _analisis([_v("D05", "P1"), _v("D07", "P2")]),
+    )
+
+    assert seleccion.descartadas == []
+
+
+def test_llamar_dos_veces_da_el_mismo_resultado_y_no_toca_la_entrada(
     criterios_de_analisis: Path,
 ) -> None:
-    """El reparo del límite solo aparece cuando de verdad sobra algo: no es un
-    aviso que se pegue a cualquier selección."""
-    analisis = _analisis([_v("D05", "P1"), _v("D07", "P2")])
+    """La función es pura: el borrador (Task 8) y el informe (Task 9) la van
+    a llamar los dos sobre el mismo análisis, y una segunda llamada no puede
+    devolver algo distinto ni dejar una marca de la primera. Este es
+    exactamente el error que se cometió en la primera versión de este
+    módulo: mutaba `analisis.reparos`, y una segunda llamada duplicaba el
+    aviso del recorte."""
+    analisis = _analisis([_v(f"D0{i}", "P1") for i in range(1, 8)])
+    antes = analisis.model_dump()
 
-    seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
+    primera = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
+    segunda = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
 
-    assert not any(r.regla == "limite_de_prioridades" for r in analisis.reparos)
+    assert primera == segunda
+    assert analisis.model_dump() == antes

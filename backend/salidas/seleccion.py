@@ -25,22 +25,27 @@ pueda olvidar.
 Y aunque queden diez, salen cuatro como mucho -o el número que fije
 `feedback.yaml`-. Es la regla de economía pedagógica del §2.3: si hay diez
 errores, no se trasladan los diez, se identifican los que desbloquean el
-desarrollo. Lo que el límite deja fuera no desaparece sin dejar rastro: queda
-anotado como un reparo más en el propio análisis, para que el docente sepa
-que hubo más candidatas de las que caben en la devolución y cuáles son. Una
-selección silenciosa sería peor que una lista larga: le haría creer al
-docente que solo hay cuatro problemas cuando puede haber siete.
+desarrollo.
+
+Esta función es pura y no deja rastro en `analisis`: lo que el límite deja
+fuera se devuelve en `descartadas`, no se anota aquí dentro. Al borrador
+(Task 8) y al informe (Task 9) los va a llamar cada uno, por separado, sobre
+el mismo análisis verificado; si esta función mutara `analisis.reparos` para
+avisar del recorte, la segunda llamada añadiría un segundo aviso idéntico, y
+el docente acabaría leyendo dos veces que se descartaron las mismas tres
+observaciones. Que constar el recorte en el informe es una decisión de quien
+compone el informe, no un efecto secundario de quien selecciona; a quien
+compone el informe se le entrega la lista completa -dimensión, prioridad y
+observación de cada una-, no solo un recuento. Una selección silenciosa sería
+peor que una lista larga: por eso `descartadas` no cuenta, enumera.
 """
 
 from pathlib import Path
 
 import yaml
+from pydantic import BaseModel, ConfigDict
 
-from backend.analisis.verificacion import (
-    AnalisisVerificado,
-    Reparo,
-    ValoracionVerificada,
-)
+from backend.analisis.verificacion import AnalisisVerificado, ValoracionVerificada
 
 # Si el fichero de criterios no dice otra cosa. El valor real vive en
 # criteria/<version>/feedback.yaml, bajo economia_pedagogica.prioridades_maximas.
@@ -85,20 +90,38 @@ def _maximo(raiz: Path, version: str) -> int:
     return int(economia.get("prioridades_maximas") or _MAXIMO_POR_OMISION)
 
 
+class SeleccionDePrioridades(BaseModel):
+    """Lo que sale de aplicar los tres filtros: lo elegido para el alumno, y
+    lo que quedó fuera solo por el límite de la economía pedagógica.
+
+    `descartadas` no lleva los P4 ni las observaciones sin evidencia
+    localizada: esas nunca llegaron a ser candidatas, y su motivo de
+    exclusión ya está en otro sitio -el propio campo `prioridad`, o
+    `evidencia_localizada`, dentro de `analisis.valoraciones`, que el informe
+    interno muestra entero-. Aquí solo están las que sí tenían prioridad y
+    evidencia para el alumno y aun así no cupieron.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    elegidas: list[ValoracionVerificada]
+    descartadas: list[ValoracionVerificada]
+
+
 def seleccionar_prioridades(
     raiz: Path, version: str, analisis: AnalisisVerificado
-) -> list[ValoracionVerificada]:
-    """Las observaciones que pueden llegar al alumno, ya ordenadas.
+) -> SeleccionDePrioridades:
+    """Las observaciones que pueden llegar al alumno, ya ordenadas, junto con
+    las que quedaron fuera solo por el límite.
 
-    Solo entran las que tienen una prioridad que `prioridades.yaml` marca
-    como capaz de llegar al alumno (nunca un P4, hoy) y cuya evidencia se
-    localizó en el documento. De las que quedan, se ordenan por prioridad y
-    se recortan al máximo que fija `feedback.yaml`.
+    Solo entran como candidatas las que tienen una prioridad que
+    `prioridades.yaml` marca como capaz de llegar al alumno (nunca un P4,
+    hoy) y cuya evidencia se localizó en el documento. De las que quedan, se
+    ordenan por prioridad y se recortan al máximo que fija `feedback.yaml`;
+    las que sobran van en `descartadas`, no se pierden.
 
-    Las que sobran por ese recorte no se pierden en silencio: se anotan como
-    un `Reparo` en `analisis.reparos`, con sus dimensiones y prioridades, así
-    que el informe interno (que muestra todos los reparos) deja constancia de
-    que existieron más candidatas de las que caben en la devolución.
+    Es una función pura: no toca `analisis`. Llamarla dos veces con la misma
+    entrada da el mismo resultado y no deja ninguna marca de la primera vez.
     """
     orden = _orden_de_las_prioridades_que_llegan_al_alumno(raiz, version)
     candidatas = [
@@ -108,21 +131,7 @@ def seleccionar_prioridades(
     candidatas.sort(key=lambda v: (orden[v.prioridad], v.dimension))
 
     maximo = _maximo(raiz, version)
-    elegidas = candidatas[:maximo]
-    descartadas_por_limite = candidatas[maximo:]
-
-    if descartadas_por_limite:
-        listado = ", ".join(
-            f"{v.dimension} ({v.prioridad})" for v in descartadas_por_limite
-        )
-        analisis.reparos.append(Reparo(
-            regla="limite_de_prioridades",
-            detalle=(
-                f"Había {len(candidatas)} observaciones con evidencia "
-                f"localizada y prioridad para el alumno; el límite de "
-                f"{maximo} (economía pedagógica) deja fuera de la devolución "
-                f"a: {listado}. Se conservan en este informe."
-            ),
-        ))
-
-    return elegidas
+    return SeleccionDePrioridades(
+        elegidas=candidatas[:maximo],
+        descartadas=candidatas[maximo:],
+    )
