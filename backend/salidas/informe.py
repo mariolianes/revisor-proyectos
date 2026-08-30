@@ -22,6 +22,7 @@ repite ni suaviza ese aviso, se limita a no esconderlo: `indicios` y
 `reparos` viajan juntos en el mismo informe.
 """
 
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -34,6 +35,7 @@ from backend.analisis.verificacion import (
     Reparo,
     ValoracionVerificada,
 )
+from backend.evolucion.continuidad import ContinuidadFeedback, clasificar_continuidad
 from backend.persistencia.modelos import EntregaRegistrada
 from backend.salidas.seleccion import SeleccionDePrioridades, seleccionar_prioridades
 from backend.servicios.lectura_objetiva import FichaDeLectura
@@ -63,22 +65,22 @@ _RECOMENDACION_POR_OMISION = {
 class Informe(BaseModel):
     """Los bloques del Anexo C que este módulo sabe componer.
 
-    Quedan fuera dos bloques de la plantilla del Maestro, y ninguno de los
-    dos se inventa aquí.
-
-    "Continuidad" -feedback aplicado, pendiente y nuevos efectos- exige
-    saber qué se le devolvió al alumno en la fase anterior. Ese histórico
-    todavía no existe: nadie ha aprobado ninguna devolución todavía, porque
-    la Task 9 y la Task 8 son la primera vez que el sistema compone algo
-    para revisar. Rellenarlo ahora sería inventar continuidad donde no la
-    hay; llegará cuando exista un registro de devoluciones aprobadas al
-    que `componer_informe` pueda consultar.
+    Queda fuera un bloque de la plantilla del Maestro, y no se inventa aquí.
 
     "Revisión del profesor" -aceptar, editar o descartar, con su nota final
-    interna- tampoco se inventa, pero por una razón distinta: no es un dato
-    que preceda al informe, es el resultado de que el docente lo use. No
-    hay ningún valor de ese bloque que este módulo pudiera calcular por sí
-    mismo, ni ahora ni con más datos.
+    interna- no es un dato que preceda al informe, es el resultado de que
+    el docente lo use. No hay ningún valor de ese bloque que este módulo
+    pudiera calcular por sí mismo, ni ahora ni con más datos.
+
+    "Continuidad" sí se compone aquí, con una salvedad importante: se
+    construye desde la segunda entrega de cada alumno y fase, contra el
+    último análisis guardado de la entrega anterior -no contra una
+    devolución que el docente haya aprobado formalmente, porque ese estado
+    no existe todavía en el flujo implementado; ver D-012 en
+    `docs/decisions.md`-. Y se clasifica con lo que el sistema ya puede
+    comprobar mecánicamente, no con un juicio del motor: ver
+    `backend/evolucion/continuidad.py` para el porqué completo y D-012 para
+    la decisión, todavía provisional, de haberlo resuelto así.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -98,6 +100,22 @@ class Informe(BaseModel):
     indicios: list[IndicioDeAutoriaVerificado]
     reparos: list[Reparo]
     dimensiones_ausentes: list[str]
+    # El feedback de la entrega anterior, clasificado. Vacía en la primera
+    # entrega de un alumno y fase -no hay antecedente-, y también cuando sí
+    # hay antecedente pero no hay nada que clasificar (ver `continuidad_nota`
+    # para cuál de los dos es). Con valor por omisión -a diferencia del
+    # resto de listas de este modelo- porque no todo lo que construye un
+    # `Informe` pasa por `componer_informe`: `tools/calibrar.py` y varias
+    # pruebas de otras tareas montan uno directamente para lo que cada una
+    # necesita comprobar, y ninguna de ellas tiene por qué conocer todavía
+    # este bloque. Quien sí lo conoce -`componer_informe`- lo rellena
+    # siempre, sin apoyarse en la omisión.
+    continuidad: list[ContinuidadFeedback] = []
+    # Por qué `continuidad` está vacía, cuando lo está: primera entrega, la
+    # anterior sin análisis guardado, o la anterior sin prioridades que
+    # trasladar. `None` cuando `continuidad` sí trae algo -los elementos ya
+    # se explican solos- o cuando no aplica ninguno de esos tres motivos.
+    continuidad_nota: str | None = None
     semaforo: str
     recomendacion: str | None
     motor: str
@@ -247,6 +265,69 @@ def _recomendaciones_por_color(raiz: Path, version: str) -> dict[str, str]:
     }
 
 
+# Los tres motivos por los que `continuidad` puede llegar vacía sin que
+# haya nada que clasificar. No son un error: son la constancia de por qué
+# no hay nada que enseñar, para que el docente no lo confunda con «se
+# comprobó y no había nada pendiente».
+_NOTA_SIN_ENTREGA_ANTERIOR = (
+    "Primera entrega de este alumno en esta fase: no hay antecedente con "
+    "el que comparar."
+)
+_NOTA_SIN_CORRECCION_ANTERIOR = (
+    "La entrega anterior no tiene un análisis guardado: no hay feedback "
+    "que recuperar."
+)
+_NOTA_SIN_PRIORIDADES_ANTERIORES = (
+    "La entrega anterior no tenía prioridades para el alumno: no hay "
+    "continuidad que valorar."
+)
+
+
+def _continuidad(
+    ficha: FichaDeLectura | None,
+    hay_entrega_anterior: bool,
+    prioridades_anteriores: list[ValoracionVerificada] | None,
+) -> tuple[list[ContinuidadFeedback], str | None]:
+    """El bloque «Continuidad» del §17.1, y por qué está vacío si lo está.
+
+    Tres estados de entrada que `componer_informe` no puede confundir entre
+    sí, y que esta función traduce cada uno a su propia nota:
+
+    - No hay entrega anterior (`hay_entrega_anterior` falso): primera
+      entrega del alumno en esta fase, tal como la instrucción del docente
+      la nombra -«primera entrega: sin antecedente»-.
+    - Hay entrega anterior, pero sin corrección guardada
+      (`prioridades_anteriores` es `None`): nunca se analizó, o el
+      análisis no llegó a completarse.
+    - Hay entrega y corrección anteriores, pero sin ninguna prioridad que
+      llegara a la devolución (`prioridades_anteriores` es una lista
+      vacía): la fase anterior no dejó nada que continuar.
+
+    Solo en el resto de casos hay algo que clasificar, y eso lo hace
+    `clasificar_continuidad` (`backend/evolucion/continuidad.py`) a partir
+    de la comparación de texto que ya trae `ficha.evolucion` y del texto de
+    esta entrega -`ficha.medidas.texto_plano`-, sin volver a llamar al
+    motor. Si `ficha` o `ficha.medidas` faltan -no debería ocurrir cuando
+    se llega aquí desde `analizar_entrega`, pero `componer_informe` acepta
+    `ficha=None` para poder probarse sin ella-, no hay texto nuevo con el
+    que comparar y cada prioridad anterior queda NO_VERIFICABLE, con el
+    mismo motivo que si la comparación de texto no se hubiera podido hacer.
+    """
+    if not hay_entrega_anterior:
+        return [], _NOTA_SIN_ENTREGA_ANTERIOR
+    if prioridades_anteriores is None:
+        return [], _NOTA_SIN_CORRECCION_ANTERIOR
+    if not prioridades_anteriores:
+        return [], _NOTA_SIN_PRIORIDADES_ANTERIORES
+
+    texto_nuevo = (
+        ficha.medidas.texto_plano
+        if ficha is not None and ficha.medidas is not None else ""
+    )
+    evolucion = ficha.evolucion if ficha is not None else None
+    return clasificar_continuidad(prioridades_anteriores, texto_nuevo, evolucion), None
+
+
 def componer_informe(
     raiz: Path,
     version: str,
@@ -254,6 +335,10 @@ def componer_informe(
     ficha: FichaDeLectura | None,
     analisis: AnalisisVerificado,
     motor: str,
+    *,
+    hay_entrega_anterior: bool = False,
+    prioridades_anteriores: list[ValoracionVerificada] | None = None,
+    fecha: date | None = None,
 ) -> Informe:
     """Compone el Anexo C. `ficha` es la lectura objetiva, o `None` si no la hay.
 
@@ -262,6 +347,21 @@ def componer_informe(
     `descartadas`- son justo `prioridades` y `prioridades_descartadas` de
     este informe. Volver a llamarla no cambiaría el resultado, pero
     duplicaría el trabajo sin motivo.
+
+    `hay_entrega_anterior` y `prioridades_anteriores` los resuelve quien
+    llama -`analizar_entrega`, en `backend/servicios/analisis_de_entrega.py`-
+    porque consultar `Almacen.anterior_de` y `Almacen.correccion_de` es
+    trabajo del almacén, no de este módulo de composición. Los dos son
+    palabra por omisión -sin entrega anterior, sin prioridades- para no
+    romper ninguna llamada existente: la primera entrega de cualquier
+    prueba que no las declare sigue componiendo un informe válido, con
+    `continuidad` vacía y su nota puesta.
+
+    `fecha` es la fecha de esta ejecución, para la cabecera del §17.1 -no la
+    de recepción del archivo, que ya lleva `entrega.recibida_en` con otro
+    propósito-. Por omisión, hoy: cada ejecución real imprime su propia
+    fecha sin que quien llama tenga que pasarla, y las pruebas pueden fijar
+    una para que la comparación no dependa del reloj.
     """
     control: list[str] = []
     if ficha is not None and ficha.medidas is not None:
@@ -277,15 +377,32 @@ def componer_informe(
 
     seleccion = seleccionar_prioridades(raiz, version, analisis)
     color = _semaforo(analisis)
+    continuidad, continuidad_nota = _continuidad(
+        ficha, hay_entrega_anterior, prioridades_anteriores
+    )
 
     return Informe(
         identificacion={
             "alumno": entrega.codigo_alumno,
             "ciclo": entrega.ciclo,
+            # Del proyecto, no de la entrega -igual que `ciclo` es del
+            # alumno-, y todavía puede faltar: no existe hoy una pantalla
+            # de validación de tema (§3.2) que la fije antes de la primera
+            # entrega. Que falte no es un error del informe, es un dato que
+            # el docente aún no ha declarado, y se dice así en vez de
+            # dejar la clave ausente -una clave que falta obliga a quien
+            # lee el informe a adivinar si no se pidió o si se perdió por
+            # el camino-.
+            "modalidad": entrega.modalidad or "No registrada",
             "fase": entrega.fase,
             "version": str(entrega.version),
             "archivo": entrega.nombre_archivo,
             "criterios": entrega.version_criterios,
+            # La fecha de esta ejecución -§17.1 e instrucción del docente
+            # («imprimir ciclo, modalidad, fase, fecha y versión de
+            # criterios en todas las ejecuciones»)-, no una fecha del
+            # trabajo del alumno.
+            "fecha": (fecha or date.today()).isoformat(),
         },
         control_administrativo=control,
         resumen=componer_resumen(
@@ -299,6 +416,8 @@ def componer_informe(
         indicios=analisis.indicios_de_autoria,
         reparos=analisis.reparos,
         dimensiones_ausentes=analisis.dimensiones_ausentes,
+        continuidad=continuidad,
+        continuidad_nota=continuidad_nota,
         semaforo=color,
         # `.get()` y no indexado: si `semaforo.yaml` no declarara `accion`
         # para este color -un criterio alterado a mano, por ejemplo- el

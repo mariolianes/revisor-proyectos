@@ -742,9 +742,12 @@ class PostgrestSimulado:
             return {}
         return {
             **fila,
-            "proyecto": {"alumno": {
-                "codigo": alumno["codigo"], "ciclo": alumno["ciclo"],
-            }},
+            "proyecto": {
+                "modalidad": proyecto.get("modalidad") if proyecto else None,
+                "alumno": {
+                    "codigo": alumno["codigo"], "ciclo": alumno["ciclo"],
+                },
+            },
         }
 
     def _valor(self, fila: dict, columna: str):

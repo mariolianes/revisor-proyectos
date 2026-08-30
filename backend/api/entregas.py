@@ -35,13 +35,21 @@ ESTADOS_DE_ESTA_API: tuple[str, ...] = ("RECIBIDO", "BLOQUEADO", "ANALIZADO")
 
 
 class Confirmacion(BaseModel):
-    """Lo que el docente confirma de un archivo pendiente."""
+    """Lo que el docente confirma de un archivo pendiente.
+
+    `modalidad` puede faltar: el nombre del archivo no la codifica (§15.3) y
+    todavía no existe una pantalla propia de validación de tema (§3.2) desde
+    la que fijarla antes de la primera entrega. Cuando se declara, es del
+    proyecto, no de esta entrega -el mismo caso que `ciclo`- y `registrar`
+    decide qué hacer si ya estaba fijada por una entrega anterior.
+    """
 
     nombre_archivo: str
     codigo_alumno: str
     ciclo: str
     fase: str
     version: int = 1
+    modalidad: str | None = None
 
 
 class CambioDeEstado(BaseModel):
@@ -175,6 +183,7 @@ def confirmar(cuerpo: Confirmacion, peticion: Request) -> FichaDeLectura:
             nombre_archivo=relativa,
             huella=huella,
             version_criterios=configuracion.version_criterios,
+            modalidad=cuerpo.modalidad.strip().upper() if cuerpo.modalidad else None,
         )
         entrega = almacen.registrar(declarada)
     except ValueError as fallo:
@@ -219,6 +228,25 @@ def confirmar(cuerpo: Confirmacion, peticion: Request) -> FichaDeLectura:
             "los dos está mal; si el alumno ha cambiado de ciclo de verdad, "
             "hay que corregirlo en su ficha de alumno, y eso no se hace "
             "desde aquí. La entrega ha quedado registrada igual."
+        )
+
+    if declarada.modalidad is not None and declarada.modalidad != entrega.modalidad:
+        # La modalidad es del proyecto, no de la entrega -igual que el
+        # ciclo es del alumno-, así que la primera que se fijó manda sobre
+        # la que se declara ahora. Aquí no se normaliza en silencio: el §3.2
+        # exige decisión expresa del profesor para un cambio de modalidad, y
+        # el §13 se la reserva. El sistema no la cambia por su cuenta ni
+        # aunque el docente la declare distinta al confirmar una entrega
+        # posterior; si de verdad ha cambiado, hace falta una vía que la
+        # actualice a propósito, que hoy no existe. La entrega queda
+        # registrada con la modalidad que ya tenía el proyecto.
+        avisos.append(
+            f"Has declarado la modalidad {declarada.modalidad}, pero el "
+            f"proyecto de {entrega.codigo_alumno} ya está fijado en "
+            f"{entrega.modalidad}, y es la que se ha usado: la modalidad es "
+            "del proyecto, no de cada entrega, y cambiarla es una decisión "
+            "expresa del profesor (§3.2), no algo que esta pantalla pueda "
+            "decidir por sí sola. La entrega ha quedado registrada igual."
         )
 
     if ficha.aviso:

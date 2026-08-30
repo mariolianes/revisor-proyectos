@@ -12,6 +12,7 @@ const ENTREGA = {
   nombre_archivo: "AF023_DAM_E2_20260115_v1.pdf", huella: "a".repeat(64),
   recibida_en: "2026-08-27T10:00:00", estado: "ANALIZADO",
   motivo_bloqueo: null, version_criterios: "v2026-2027",
+  modalidad: "PROFESIONAL",
 }
 
 const CITA_1 = "El presupuesto inicial asciende a 4.500 euros"
@@ -31,8 +32,9 @@ const RESULTADO: ResultadoAnalisis = {
   entrega: ENTREGA,
   informe: {
     identificacion: {
-      alumno: "AF023", ciclo: "DAM", fase: "E2", version: "1",
-      archivo: ENTREGA.nombre_archivo, criterios: "v2026-2027",
+      alumno: "AF023", ciclo: "DAM", modalidad: "PROFESIONAL", fase: "E2",
+      version: "1", archivo: ENTREGA.nombre_archivo, criterios: "v2026-2027",
+      fecha: "2026-08-27",
     },
     control_administrativo: [],
     resumen: "El trabajo cubre la mayoría de los apartados exigidos.",
@@ -113,6 +115,26 @@ const RESULTADO: ResultadoAnalisis = {
       },
     ],
     dimensiones_ausentes: ["D07"],
+    continuidad: [
+      {
+        dimension: "D06", prioridad: "P2",
+        observacion_anterior: "Falta justificar el presupuesto con fuentes externas.",
+        estado: "PENDIENTE",
+        motivo: "El fragmento que motivó esta observación sigue apareciendo "
+          + "igual, literal, en la entrega nueva: no se ha tocado.",
+      },
+      {
+        dimension: "D08", prioridad: "P1",
+        observacion_anterior: "El anexo de riesgos no identifica ninguna mitigación.",
+        estado: "NO_VERIFICABLE",
+        motivo: "El fragmento que motivó esta observación ya no aparece "
+          + "igual en la entrega nueva. Algo ha cambiado en ese punto, pero "
+          + "el sistema no puede saber si el cambio corrige lo señalado, lo "
+          + "corrige solo en parte, o simplemente lo desplaza sin "
+          + "resolverlo: esa lectura le corresponde al docente.",
+      },
+    ],
+    continuidad_nota: null,
     semaforo: "AMBAR",
     recomendacion: "Aplicar cambios antes de cerrar la siguiente fase",
     motor: "gpt-ejemplo",
@@ -530,6 +552,84 @@ describe("Revision", () => {
     expect(aviso).toBeInTheDocument()
     expect(aviso).toHaveClass("senal")
     expect(aviso.textContent).not.toMatch(/D02/)
+  })
+
+  it("la cabecera enseña ciclo, modalidad, fecha y versión de criterios", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    expect(
+      screen.getByText(/DAM · PROFESIONAL · 2026-08-27 · criterios v2026-2027/),
+    ).toBeInTheDocument()
+  })
+
+  it("cuando la modalidad no está registrada, la cabecera lo dice en vez de dejar un hueco", () => {
+    render(
+      <Revision
+        id="id-1"
+        inicial={{
+          ...RESULTADO,
+          informe: {
+            ...RESULTADO.informe,
+            identificacion: { ...RESULTADO.informe.identificacion, modalidad: "No registrada" },
+          },
+        }}
+        alVolver={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/No registrada/)).toBeInTheDocument()
+  })
+
+  it("muestra la continuidad, con lo pendiente en tinta normal y lo no verificable con la señal", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    const pendiente = screen.getByText(/falta justificar el presupuesto con fuentes/i)
+    expect(pendiente).toBeInTheDocument()
+    expect(pendiente).not.toHaveClass("senal")
+    expect(screen.getByText(/D06 · Pendiente/)).toBeInTheDocument()
+
+    const noVerificable = screen.getByText(/el anexo de riesgos no identifica ninguna mitigación/i)
+    expect(noVerificable).toBeInTheDocument()
+    expect(noVerificable).toHaveClass("senal")
+    expect(screen.getByText(/D08 · No verificable/)).toBeInTheDocument()
+  })
+
+  it("sin nada que clasificar, la continuidad enseña la nota en vez de una lista vacía", () => {
+    render(
+      <Revision
+        id="id-1"
+        inicial={{
+          ...RESULTADO,
+          informe: {
+            ...RESULTADO.informe,
+            continuidad: [],
+            continuidad_nota:
+              "Primera entrega de este alumno en esta fase: no hay antecedente con el que comparar.",
+          },
+        }}
+        alVolver={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/no hay antecedente con el que comparar/i)).toBeInTheDocument()
+    expect(screen.queryByText(/D06/)).not.toBeInTheDocument()
+  })
+
+  it("sin continuidad y sin nota, no se enseña la sección entera", () => {
+    render(
+      <Revision
+        id="id-1"
+        inicial={{
+          ...RESULTADO,
+          informe: { ...RESULTADO.informe, continuidad: [], continuidad_nota: null },
+        }}
+        alVolver={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.queryByRole("heading", { name: /^continuidad$/i }),
+    ).not.toBeInTheDocument()
   })
 
   it("vuelve con el botón de volver", () => {

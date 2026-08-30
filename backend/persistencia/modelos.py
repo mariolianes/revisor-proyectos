@@ -65,6 +65,31 @@ def _normalizar_identidad(valor: str) -> str:
     return "".join(valor.split()).upper()
 
 
+# Las tres modalidades del §3 del Documento Maestro, en el mismo vocabulario
+# que declara `create type modalidad as enum (...)` en
+# `supabase/migrations/20260827120000_esquema_inicial.sql`. No se inventa
+# aquí: es la traducción directa de un tipo que ya existe en el esquema
+# aprobado, igual que `FASES` (`backend/vigilancia/nombres.py`) traduce el
+# enum `fase` de la misma migración.
+MODALIDADES: tuple[str, ...] = ("PROFESIONAL", "INVESTIGACION", "REVISION")
+
+
+def _normalizar_modalidad(valor: str | None) -> str | None:
+    """`None` si no se declara ninguna -la modalidad se fija al validar el
+    tema (§3.2), y ese paso todavía no existe en este sistema-, o el valor
+    normalizado y comprobado contra `MODALIDADES` si se declara alguna.
+    """
+    if valor is None:
+        return None
+    normalizada = _normalizar_identidad(valor)
+    if normalizada not in MODALIDADES:
+        raise ValueError(
+            f"«{valor}» no es una modalidad. Las modalidades son: "
+            + ", ".join(MODALIDADES) + "."
+        )
+    return normalizada
+
+
 class EntregaNueva(BaseModel):
     """Una entrega que el docente acaba de confirmar."""
 
@@ -75,11 +100,27 @@ class EntregaNueva(BaseModel):
     nombre_archivo: str
     huella: str
     version_criterios: str
+    # La modalidad es del proyecto, no de la entrega -la tiene la tabla
+    # `proyecto`, no `entrega`, en la migración-, exactamente la misma
+    # relación que ya tiene `ciclo` con `alumno`. Se acepta aquí, en el
+    # mismo formulario con el que se confirma cada entrega, porque hoy no
+    # existe una pantalla propia de validación de tema (§3.2) desde la que
+    # fijarla una sola vez; `Almacen.registrar` decide qué hacer cuando la
+    # modalidad ya estaba fijada por una entrega anterior del mismo
+    # proyecto y esta declara otra -ver `memoria.py` y `supabase.py`-.
+    # Puede faltar: nadie debería quedar bloqueado por un dato que el
+    # Documento Maestro no exige antes de la validación del tema.
+    modalidad: str | None = None
 
     @field_validator("codigo_alumno", "ciclo", "fase")
     @classmethod
     def _normalizar(cls, valor: str) -> str:
         return _normalizar_identidad(valor)
+
+    @field_validator("modalidad")
+    @classmethod
+    def _validar_modalidad(cls, valor: str | None) -> str | None:
+        return _normalizar_modalidad(valor)
 
 
 class EntregaRegistrada(BaseModel):
@@ -104,11 +145,19 @@ class EntregaRegistrada(BaseModel):
     estado: str
     motivo_bloqueo: str | None
     version_criterios: str
+    # Del proyecto, igual que `ciclo` es del alumno. Ver el comentario de
+    # `EntregaNueva.modalidad`.
+    modalidad: str | None = None
 
     @field_validator("codigo_alumno", "ciclo", "fase")
     @classmethod
     def _normalizar(cls, valor: str) -> str:
         return _normalizar_identidad(valor)
+
+    @field_validator("modalidad")
+    @classmethod
+    def _validar_modalidad(cls, valor: str | None) -> str | None:
+        return _normalizar_modalidad(valor)
 
 
 class Almacen(Protocol):

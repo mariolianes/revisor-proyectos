@@ -1,6 +1,6 @@
 """El Anexo C: todo lo que el docente necesita ver."""
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from backend.analisis.contrato import Evidencia
@@ -464,3 +464,126 @@ def test_llamar_seleccionar_prioridades_una_vez_basta(
                      _analisis([_v("D05", "P1")]), "simulado")
 
     assert len(llamadas) == 1
+
+
+# --- cabecera: modalidad y fecha (§17.1, decisión del docente) -------------
+
+
+def test_sin_modalidad_registrada_la_cabecera_lo_dice(criterios_de_analisis: Path) -> None:
+    """`entrega.modalidad` es `None` por omisión -no existe todavía una
+    pantalla de validación de tema-, y la cabecera no puede dejar la clave
+    ausente ni en blanco: el docente tiene que ver que no se ha declarado,
+    no adivinarlo."""
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
+                         _analisis([_v()]), "simulado")
+
+    assert i.identificacion["modalidad"] == "No registrada"
+
+
+def test_con_modalidad_registrada_la_cabecera_la_lleva(criterios_de_analisis: Path) -> None:
+    entrega = _entrega().model_copy(update={"modalidad": "PROFESIONAL"})
+
+    i = componer_informe(criterios_de_analisis, "v2026-2027", entrega, None,
+                         _analisis([_v()]), "simulado")
+
+    assert i.identificacion["modalidad"] == "PROFESIONAL"
+
+
+def test_la_cabecera_lleva_la_fecha_de_esta_ejecucion(criterios_de_analisis: Path) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()]), "simulado", fecha=date(2026, 8, 30),
+    )
+
+    assert i.identificacion["fecha"] == "2026-08-30"
+
+
+def test_sin_fecha_explicita_se_usa_la_de_hoy(
+    criterios_de_analisis: Path, monkeypatch,
+) -> None:
+    """Cada ejecución imprime su propia fecha sin que quien llama tenga
+    que pasarla -es lo que usa `analizar_entrega` en producción-, así que
+    el valor por omisión tiene que ser el día real, no uno fijo."""
+    import backend.salidas.informe as informe_mod
+
+    class _FechaFija(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 1, 1)
+
+    monkeypatch.setattr(informe_mod, "date", _FechaFija)
+
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
+                         _analisis([_v()]), "simulado")
+
+    assert i.identificacion["fecha"] == "2026-01-01"
+
+
+# --- continuidad (§17.1, D-012) ---------------------------------------------
+#
+# `componer_informe` delega la clasificación en
+# `backend.evolucion.continuidad.clasificar_continuidad` (probada aparte,
+# en `tests/evolucion/test_continuidad.py`); lo que se comprueba aquí es
+# el cableado propio de este módulo: qué nota compone según lo que le llega
+# de `hay_entrega_anterior` y `prioridades_anteriores`, y que la clasificación
+# de verdad llega al campo `continuidad` del informe.
+
+
+def test_sin_declarar_entrega_anterior_la_nota_dice_primera_entrega(
+    criterios_de_analisis: Path,
+) -> None:
+    """Valor por omisión de `componer_informe`: quien no declara nada sobre
+    la continuidad obtiene el mismo resultado que una primera entrega de
+    verdad, no un error ni una lista vacía sin explicación."""
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
+                         _analisis([_v()]), "simulado")
+
+    assert i.continuidad == []
+    assert "primera entrega" in i.continuidad_nota.lower()
+
+
+def test_con_entrega_anterior_pero_sin_correccion_la_nota_lo_dice(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()]), "simulado",
+        hay_entrega_anterior=True, prioridades_anteriores=None,
+    )
+
+    assert i.continuidad == []
+    assert "analisis guardado" in i.continuidad_nota.lower() or \
+        "análisis guardado" in i.continuidad_nota.lower()
+
+
+def test_con_correccion_anterior_sin_prioridades_la_nota_lo_dice(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()]), "simulado",
+        hay_entrega_anterior=True, prioridades_anteriores=[],
+    )
+
+    assert i.continuidad == []
+    assert "prioridades" in i.continuidad_nota.lower()
+
+
+def test_con_prioridades_anteriores_pero_sin_ficha_todo_es_no_verificable(
+    criterios_de_analisis: Path,
+) -> None:
+    """Sin `ficha` no hay texto nuevo con el que comparar -es el caso que
+    puede darse al probar `componer_informe` sola, sin pasar por
+    `analizar_entrega`-, así que no se inventa ninguna certeza: cada
+    prioridad anterior queda NO_VERIFICABLE."""
+    anterior = _v("D06", "P2")
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()]), "simulado",
+        hay_entrega_anterior=True, prioridades_anteriores=[anterior],
+    )
+
+    assert i.continuidad_nota is None
+    assert len(i.continuidad) == 1
+    assert i.continuidad[0].dimension == "D06"
+    assert i.continuidad[0].estado == "NO_VERIFICABLE"

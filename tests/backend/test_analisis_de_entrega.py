@@ -20,7 +20,7 @@ from backend.servicios.analisis_de_entrega import (
 )
 
 
-def _analisis_bueno(cita):
+def _analisis_bueno(cita, dimension="D05"):
     """Un `AnalisisDelMotor` válido cuyas citas existen en el PDF de prueba.
 
     El brief traía `fortalezas=["La estructura del documento es clara."]`,
@@ -30,10 +30,18 @@ def _analisis_bueno(cita):
     valida contra ese tipo. Se corrige aquí construyendo la `Fortaleza` con
     evidencia real, tomada del mismo fragmento que ya se sabe localizable
     porque `cita` lo es.
+
+    `dimension` es D05 por omisión -la fase de todos los usos históricos de
+    este ayudante es E2, donde D05 está activa (`criteria/v2026-2027/
+    dimensiones.yaml`)-, pero D05 no está activa en E1: las pruebas de
+    continuidad de más abajo, que analizan una E1 primero, tienen que pasar
+    una dimensión que sí lo esté (D01, por ejemplo), o `verificar()` la
+    descarta entera -no por la cita, sino por la fase- y no queda ninguna
+    prioridad de la que continuar nada.
     """
     return AnalisisDelMotor(
         valoraciones=[Valoracion(
-            dimension="D05", nivel="EN_DESARROLLO", prioridad="P2",
+            dimension=dimension, nivel="EN_DESARROLLO", prioridad="P2",
             evidencia=Evidencia(cita=cita, apartado="5"),
             observacion="Faltan fuentes que respalden las cifras.",
         )],
@@ -347,3 +355,241 @@ def test_el_texto_del_alumno_no_viaja_en_la_correccion(
 
     assert "texto_plano" not in Correccion.model_fields
     assert texto_completo not in c.model_dump_json()
+
+
+# --- cabecera: modalidad y fecha (§17.1) ------------------------------------
+
+
+def test_la_cabecera_lleva_modalidad_y_fecha(
+    criterios_de_analisis, entregas_con_pdf
+) -> None:
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf)
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        _devolucion(),
+    ])
+
+    c = analizar_entrega(criterios_de_analisis, entregas_con_pdf, "v2026-2027",
+                         almacen, proveedor, entrega)
+
+    # `_registrar` no declara modalidad: sin pantalla de validación de tema
+    # todavía, es el caso más frecuente, y el informe lo dice en vez de
+    # dejar la clave vacía o ausente.
+    assert c.informe.identificacion["modalidad"] == "No registrada"
+    assert c.informe.identificacion["fecha"]
+
+
+def test_la_cabecera_lleva_la_modalidad_declarada_al_confirmar(
+    criterios_de_analisis, entregas_con_pdf
+) -> None:
+    from backend.extraccion import medir
+    from backend.persistencia.modelos import EntregaNueva
+
+    almacen = AlmacenEnMemoria()
+    ruta = entregas_con_pdf / "AF023_DAM_E2_20260115_v1.pdf"
+    entrega = almacen.registrar(EntregaNueva(
+        codigo_alumno="AF023", ciclo="DAM", fase="E2", version=1,
+        nombre_archivo=ruta.name, huella=medir(ruta).huella,
+        version_criterios="v2026-2027", modalidad="profesional",
+    ))
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        _devolucion(),
+    ])
+
+    c = analizar_entrega(criterios_de_analisis, entregas_con_pdf, "v2026-2027",
+                         almacen, proveedor, entrega)
+
+    assert c.informe.identificacion["modalidad"] == "PROFESIONAL"
+
+
+# --- continuidad (§17.1, D-012) ---------------------------------------------
+#
+# El bloque «Continuidad» compara el último feedback guardado -las
+# prioridades de la corrección anterior- con el texto de esta entrega. Estas
+# pruebas ejercitan el recorrido entero, con PDFs reales, no con un
+# `Informe` montado a mano: es la única forma de comprobar que
+# `analizar_entrega` de verdad recupera la entrega y la corrección
+# anteriores y se las pasa a `componer_informe`.
+
+
+@pytest.fixture
+def carpeta_dos_fases(tmp_path: Path, escribir_pdf):
+    """E1 y E2 del mismo alumno, con el mismo párrafo de presupuesto: sirve
+    de base tanto para «sigue igual» (PENDIENTE) como, modificando solo la
+    segunda entrega, para «ha cambiado» (NO_VERIFICABLE)."""
+    carpeta = tmp_path / "entregas"
+    carpeta.mkdir()
+    escribir_pdf(carpeta / "AF023_DAM_E1_20260101_v1.pdf", [[
+        "1. Introduccion",
+        "El presente proyecto describe la implantacion de un sistema.",
+        "5. Presupuesto",
+        "El presupuesto inicial asciende a 4.500 euros en total.",
+    ]])
+    return carpeta
+
+
+def _registrar_fase(almacen, carpeta, nombre_archivo, fase):
+    from backend.extraccion import medir
+    ruta = carpeta / nombre_archivo
+    return almacen.registrar(EntregaNueva(
+        codigo_alumno="AF023", ciclo="DAM", fase=fase, version=1,
+        nombre_archivo=ruta.name, huella=medir(ruta).huella,
+        version_criterios="v2026-2027",
+    ))
+
+
+def _analizar_e1(criterios_de_analisis, carpeta_dos_fases, almacen):
+    """Analiza la E1 y, a diferencia de lo que hace `analizar_entrega` por
+    sí sola, GUARDA la corrección en el almacén -es lo que hace
+    `backend/api/analisis.py` (`_guardar_o_fallar`), no este servicio-, para
+    que `anterior_de`/`correccion_de` puedan encontrarla al analizar la E2.
+    Sin este guardado explícito, `almacen.correccion_de(entrega_e1.id)`
+    devolvería `None` y todas las pruebas de continuidad de aquí abajo
+    estarían comparando contra un antecedente que en realidad nunca se
+    guardó.
+    """
+    entrega_e1 = _registrar_fase(
+        almacen, carpeta_dos_fases, "AF023_DAM_E1_20260101_v1.pdf", "E1",
+    )
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros", dimension="D01"),
+        _devolucion(),
+    ])
+    c = analizar_entrega(
+        criterios_de_analisis, carpeta_dos_fases, "v2026-2027",
+        almacen, proveedor, entrega_e1,
+    )
+    almacen.guardar_correccion(entrega_e1.id, c.informe, c.devolucion, c.motor)
+    return c
+
+
+def test_la_primera_entrega_no_tiene_continuidad(
+    criterios_de_analisis, carpeta_dos_fases
+) -> None:
+    almacen = AlmacenEnMemoria()
+
+    c = _analizar_e1(criterios_de_analisis, carpeta_dos_fases, almacen)
+
+    assert c.informe.continuidad == []
+    assert "primera entrega" in c.informe.continuidad_nota.lower()
+
+
+def test_el_feedback_que_sigue_igual_en_la_entrega_nueva_es_pendiente(
+    criterios_de_analisis, carpeta_dos_fases, escribir_pdf
+) -> None:
+    almacen = AlmacenEnMemoria()
+    _analizar_e1(criterios_de_analisis, carpeta_dos_fases, almacen)
+
+    # La E2 conserva, literal, el párrafo del presupuesto que motivó la
+    # prioridad de la E1: el alumno no lo ha tocado.
+    escribir_pdf(carpeta_dos_fases / "AF023_DAM_E2_20260201_v1.pdf", [[
+        "1. Introduccion",
+        "El presente proyecto describe la implantacion de un sistema.",
+        "3. Arquitectura",
+        "El sistema se organiza en tres capas bien diferenciadas.",
+        "5. Presupuesto",
+        "El presupuesto inicial asciende a 4.500 euros en total.",
+    ]])
+    entrega_e2 = _registrar_fase(
+        almacen, carpeta_dos_fases, "AF023_DAM_E2_20260201_v1.pdf", "E2",
+    )
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El sistema se organiza en tres capas"),
+        _devolucion(),
+    ])
+
+    c = analizar_entrega(
+        criterios_de_analisis, carpeta_dos_fases, "v2026-2027",
+        almacen, proveedor, entrega_e2,
+    )
+
+    assert c.informe.continuidad_nota is None
+    por_dimension = {item.dimension: item.estado for item in c.informe.continuidad}
+    assert por_dimension == {"D01": "PENDIENTE"}
+
+
+def test_el_feedback_que_ya_no_aparece_es_no_verificable(
+    criterios_de_analisis, carpeta_dos_fases, escribir_pdf
+) -> None:
+    almacen = AlmacenEnMemoria()
+    _analizar_e1(criterios_de_analisis, carpeta_dos_fases, almacen)
+
+    # La E2 conserva la introducción, pero reescribe el presupuesto entero:
+    # el fragmento que motivó la prioridad de la E1 ya no está.
+    escribir_pdf(carpeta_dos_fases / "AF023_DAM_E2_20260201_v1.pdf", [[
+        "1. Introduccion",
+        "El presente proyecto describe la implantacion de un sistema.",
+        "3. Arquitectura",
+        "El sistema se organiza en tres capas bien diferenciadas.",
+        "5. Presupuesto",
+        "Se ha revisado el coste total del proyecto con el nuevo proveedor.",
+    ]])
+    entrega_e2 = _registrar_fase(
+        almacen, carpeta_dos_fases, "AF023_DAM_E2_20260201_v1.pdf", "E2",
+    )
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El sistema se organiza en tres capas"),
+        _devolucion(),
+    ])
+
+    c = analizar_entrega(
+        criterios_de_analisis, carpeta_dos_fases, "v2026-2027",
+        almacen, proveedor, entrega_e2,
+    )
+
+    assert c.informe.continuidad_nota is None
+    por_dimension = {item.dimension: item.estado for item in c.informe.continuidad}
+    assert por_dimension == {"D01": "NO_VERIFICABLE"}
+
+
+def test_sin_prioridades_en_la_entrega_anterior_la_nota_lo_dice(
+    criterios_de_analisis, carpeta_dos_fases, escribir_pdf
+) -> None:
+    """La E1 se analiza con un motor que no encuentra nada que priorizar
+    -`AnalisisDelMotor` con `valoraciones=[]`-, así que no hay ningún
+    feedback que continuar en la E2, y no es lo mismo que no tener
+    antecedente en absoluto."""
+    almacen = AlmacenEnMemoria()
+    entrega_e1 = _registrar_fase(
+        almacen, carpeta_dos_fases, "AF023_DAM_E1_20260101_v1.pdf", "E1",
+    )
+    c1 = analizar_entrega(
+        criterios_de_analisis, carpeta_dos_fases, "v2026-2027", almacen,
+        ProveedorSimulado(respuestas=[
+            AnalisisDelMotor(
+                valoraciones=[], fortalezas=[], patrones=[],
+                dudas_para_el_docente=[], indicios_de_autoria=[],
+            ),
+            _devolucion(),
+        ]),
+        entrega_e1,
+    )
+    # Sin este guardado explícito no habría corrección que recuperar al
+    # analizar la E2: ver el docstring de `_analizar_e1`.
+    almacen.guardar_correccion(entrega_e1.id, c1.informe, c1.devolucion, c1.motor)
+
+    escribir_pdf(carpeta_dos_fases / "AF023_DAM_E2_20260201_v1.pdf", [[
+        "1. Introduccion",
+        "El presente proyecto describe la implantacion de un sistema.",
+    ]])
+    entrega_e2 = _registrar_fase(
+        almacen, carpeta_dos_fases, "AF023_DAM_E2_20260201_v1.pdf", "E2",
+    )
+
+    c = analizar_entrega(
+        criterios_de_analisis, carpeta_dos_fases, "v2026-2027", almacen,
+        ProveedorSimulado(respuestas=[
+            AnalisisDelMotor(
+                valoraciones=[], fortalezas=[], patrones=[],
+                dudas_para_el_docente=[], indicios_de_autoria=[],
+            ),
+            _devolucion(),
+        ]),
+        entrega_e2,
+    )
+
+    assert c.informe.continuidad == []
+    assert "no tenia prioridades" in c.informe.continuidad_nota.lower() \
+        or "no tenía prioridades" in c.informe.continuidad_nota.lower()

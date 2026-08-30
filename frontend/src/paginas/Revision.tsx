@@ -3,7 +3,20 @@ import { useState } from "react"
 import { Observacion } from "../componentes/Observacion"
 import type { EstadoDeLaDecision } from "../componentes/Observacion"
 import { api } from "../lib/api"
-import type { Decision, ResultadoAnalisis, ValoracionVerificada } from "../lib/tipos"
+import type {
+  ContinuidadFeedback, Decision, ResultadoAnalisis, ValoracionVerificada,
+} from "../lib/tipos"
+
+// El vocabulario del §17.1 en castellano legible. El backend solo emite
+// PENDIENTE y NO_VERIFICABLE hoy -ver `backend/evolucion/continuidad.py`-,
+// pero las cuatro claves están aquí porque son el contrato del bloque, no
+// una posibilidad futura sin etiqueta.
+const ETIQUETA_DE_CONTINUIDAD: Record<ContinuidadFeedback["estado"], string> = {
+  APLICADO: "Aplicado",
+  PARCIALMENTE_APLICADO: "Parcialmente aplicado",
+  PENDIENTE: "Pendiente",
+  NO_VERIFICABLE: "No verificable",
+}
 
 interface Props {
   id: string
@@ -213,7 +226,15 @@ export function Revision({ id, inicial, alVolver }: Props) {
         {informe.identificacion.alumno} · {informe.identificacion.fase} · versión{" "}
         {informe.identificacion.version}
       </h2>
-      <p className="text-[13px] text-gris mb-10">Revisión del análisis</p>
+      {/* La cabecera del §17.1: ciclo, modalidad, fase, fecha y versión de
+          criterios en todas las ejecuciones. La fase y la versión ya están
+          en el titular; aquí va el resto, en la misma línea que antes solo
+          decía "Revisión del análisis". */}
+      <p className="text-[13px] text-gris mb-10">
+        Revisión del análisis · {informe.identificacion.ciclo} ·{" "}
+        {informe.identificacion.modalidad} · {informe.identificacion.fecha} ·
+        {" "}criterios {informe.identificacion.criterios}
+      </p>
 
       {resultado.aviso && (
         // El caso especial: el informe salió bien, solo falló el borrador.
@@ -242,6 +263,46 @@ export function Revision({ id, inicial, alVolver }: Props) {
             Resumen
           </h3>
           <p className="max-w-lectura text-[14px]">{informe.resumen}</p>
+        </section>
+      )}
+
+      {(informe.continuidad.length > 0 || informe.continuidad_nota) && (
+        <section className="mb-10">
+          <h3 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-3">
+            Continuidad
+          </h3>
+          {informe.continuidad_nota ? (
+            <p className="text-[13px] text-gris">{informe.continuidad_nota}</p>
+          ) : (
+            <>
+              <p className="max-w-lectura text-[12px] text-gris mb-3">
+                Lo que se le señaló al alumno en la fase anterior, contrastado
+                con esta entrega. Solo dice PENDIENTE cuando el fragmento
+                señalado sigue igual, literal, en el texto nuevo: en
+                cualquier otro caso el sistema no tiene con qué afirmar que
+                se aplicó, se aplicó a medias o se dejó pendiente, y lo dice
+                como NO VERIFICABLE en vez de adivinarlo.
+              </p>
+              <ul className="space-y-3">
+                {informe.continuidad.map((c, i) => (
+                  <li
+                    key={i}
+                    className={`max-w-lectura text-[13px] ${
+                      c.estado === "NO_VERIFICABLE" ? "senal" : ""
+                    }`}
+                  >
+                    <span className="block text-[11px] uppercase tracking-[0.08em] text-gris">
+                      {c.dimension} · {ETIQUETA_DE_CONTINUIDAD[c.estado]}
+                    </span>
+                    {c.observacion_anterior}
+                    <span className="block mt-1 text-[12px] text-gris">
+                      {c.motivo}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </section>
       )}
 
