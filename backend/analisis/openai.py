@@ -139,6 +139,26 @@ def _consumo_de(uso) -> ConsumoDeLlamada | None:
     )
 
 
+# Familias de modelos que fijan su propia temperatura y rechazan el
+# parámetro. Se enumeran por prefijo y no por nombre exacto porque salen
+# versiones nuevas -`o3-2025-04-16`, `o4-mini-...`- que se comportan igual.
+# Si aparece una familia nueva que tampoco lo admita, se añade aquí: es
+# preferible a descubrirlo con un 400 en mitad de una corrección.
+_SIN_TEMPERATURA = ("o1", "o3", "o4")
+
+
+def admite_temperatura(modelo: str) -> bool:
+    """Si a este modelo se le puede pedir `temperature=0`.
+
+    Importa más de lo que parece. El sistema pide temperatura cero para que
+    el mismo trabajo no reciba dos juicios distintos; con un modelo que no
+    la admite, esa garantía desaparece y dos ejecuciones pueden dar
+    resultados diferentes. No es motivo para no usarlo -un modelo de
+    razonamiento puede juzgar mejor- pero sí para saberlo y comprobarlo.
+    """
+    return not modelo.startswith(_SIN_TEMPERATURA)
+
+
 class ProveedorOpenAI:
     """Pide el análisis a OpenAI y devuelve el formulario ya validado."""
 
@@ -218,7 +238,16 @@ class ProveedorOpenAI:
                 input=texto,
                 text_format=formato,
                 # Un juicio que cambia cada vez que se pulsa no es un juicio.
-                temperature=0,
+                # No todos los modelos lo admiten: los de razonamiento -o3,
+                # o4-mini- responden 400 «Unsupported parameter» si se les
+                # manda, porque fijan su propia temperatura. Mandarlo a
+                # ciegas ataba el sistema a una familia de modelos sin que
+                # nada lo dijera, en un puerto que existe justamente para
+                # poder cambiar de proveedor. Con esos modelos no hay forma
+                # de pedir determinismo, y eso es una diferencia que el
+                # docente debe conocer antes de elegir uno: ver
+                # `admite_temperatura`.
+                **({"temperature": 0} if admite_temperatura(self._modelo) else {}),
                 # El profesor lo pidió expresamente: que OpenAI no conserve
                 # un objeto persistente de esta llamada en su lado. Sin
                 # `store=False`, la API de Responses guarda la conversación

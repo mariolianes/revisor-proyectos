@@ -16,6 +16,9 @@ import pydantic
 import pytest
 
 from backend.analisis.contrato import AnalisisDelMotor
+from backend.analisis.openai import (
+    admite_temperatura,
+)
 from backend.analisis.openai import ProveedorOpenAI
 from backend.analisis.proveedor import ErrorDelProveedor, RespuestaNoValida
 
@@ -566,3 +569,43 @@ def test_el_modelo_se_expone_sin_el_prefijo_de_nombre() -> None:
 
     assert p.modelo == "gpt-4.1"
     assert p.nombre == "openai:gpt-4.1"
+
+
+@pytest.mark.parametrize("modelo", ["gpt-4.1", "gpt-4o", "gpt-5.6-sol"])
+def test_a_los_modelos_que_la_admiten_se_les_pide_temperatura_cero(modelo) -> None:
+    """Un juicio que cambia cada vez que se pulsa no es un juicio."""
+    assert admite_temperatura(modelo)
+
+
+@pytest.mark.parametrize("modelo", ["o3", "o3-mini", "o4-mini", "o1-pro"])
+def test_a_los_modelos_de_razonamiento_no_se_les_manda_temperatura(modelo) -> None:
+    """Responden 400 «Unsupported parameter» si se les manda: fijan la suya.
+
+    Mandarla a ciegas ataba el sistema a una familia de modelos sin que nada
+    lo dijera, en un puerto que existe justamente para poder cambiar de
+    proveedor. Se descubrió probando `o3` de verdad, no leyendo código.
+    """
+    assert not admite_temperatura(modelo)
+
+
+def test_el_modelo_sin_temperatura_no_la_recibe_en_la_llamada() -> None:
+    """Lo que importa no es la función suelta, sino lo que de verdad se envía."""
+    cliente = _ClienteFalso()
+
+    ProveedorOpenAI(clave="sk-de-prueba", modelo="o3", cliente=cliente).analizar(
+        "instrucción", "texto del trabajo", AnalisisDelMotor
+    )
+
+    assert "temperature" not in cliente.recibido
+    assert cliente.recibido["model"] == "o3"
+    assert cliente.recibido["store"] is False
+
+
+def test_el_modelo_que_si_la_admite_la_recibe() -> None:
+    cliente = _ClienteFalso()
+
+    ProveedorOpenAI(clave="sk-de-prueba", modelo="gpt-4.1", cliente=cliente).analizar(
+        "instrucción", "texto del trabajo", AnalisisDelMotor
+    )
+
+    assert cliente.recibido["temperature"] == 0
