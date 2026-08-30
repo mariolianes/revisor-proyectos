@@ -263,6 +263,22 @@ def _viola_una_regla_dura(devolucion: Devolucion) -> str | None:
     return None
 
 
+# Lo que va en el hueco del texto al pedir el borrador. **No es el trabajo del
+# alumno, y esa es la clave**: la instrucción ya lleva las prioridades
+# verificadas y sus citas, así que el documento no tiene que viajar una
+# segunda vez al proveedor.
+#
+# Aquí iba una cadena vacía, y por eso el borrador no se generó nunca con el
+# motor real: la API de OpenAI responde 400 -«One of "input" or
+# "previous_response_id"...»- cuando el campo llega vacío. No lo cazó ningún
+# test porque todos usan `ProveedorSimulado`, que acepta cualquier cosa; se
+# vio ejecutando el flujo entero contra el servicio de verdad. Es el mismo
+# punto ciego que dejó pasar la prioridad «P1» contra el enum de la base de
+# datos: un doble más permisivo que el original no protege de lo que el
+# original rechaza.
+PETICION_DEL_BORRADOR = "Redacta el borrador con lo que dice la instrucción."
+
+
 def componer(
     raiz: Path,
     version: str,
@@ -289,7 +305,9 @@ def componer(
         return Devolucion(apertura="", fortalezas=[], acciones=[], cierre="")
 
     borrador = proveedor.analizar(
-        instruccion_de_devolucion(raiz, version, analisis, elegidas), "", Devolucion
+        instruccion_de_devolucion(raiz, version, analisis, elegidas),
+        PETICION_DEL_BORRADOR,
+        Devolucion,
     )
     devolucion = Devolucion(
         apertura=borrador.apertura,
