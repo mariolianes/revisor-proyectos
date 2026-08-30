@@ -610,7 +610,14 @@ def proteccion_datos_pendiente(raiz: Path) -> bool:
     fichero = raiz / "docs" / "PENDIENTE_OFICIAL.md"
     if not fichero.is_file():
         return True
-    return "**proteccion_datos**" in fichero.read_text(encoding="utf-8")
+    texto = fichero.read_text(encoding="utf-8")
+    # Solo cuenta lo que sigue en «Pendientes». El documento conserva las
+    # entradas resueltas en su propia sección -saber que algo estuvo
+    # pendiente, y por qué dejó de estarlo, es parte de la trazabilidad-, y
+    # buscar el nombre en el fichero entero haría que una entrada archivada
+    # siguiera bloqueando para siempre.
+    pendientes = texto.split("## Pendientes", 1)[-1].split(chr(10) + "## ", 1)[0]
+    return "**proteccion_datos**" in pendientes
 
 
 def _dentro_del_repositorio(raiz: Path, ruta: Path) -> bool:

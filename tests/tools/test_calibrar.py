@@ -1124,3 +1124,42 @@ def test_sin_espera_no_se_duerme(
     )
 
     assert esperas == []
+
+
+def test_una_entrada_archivada_como_resuelta_ya_no_bloquea(tmp_path: Path) -> None:
+    """`docs/PENDIENTE_OFICIAL.md` conserva lo resuelto en su propia sección,
+    porque saber que algo estuvo pendiente y por qué dejó de estarlo es parte
+    de poder reconstruir con qué criterio se corrigió a un alumno.
+
+    Si la comprobación buscara el nombre en el fichero entero, esa constancia
+    bloquearía para siempre, y la única forma de desbloquear sería borrar la
+    historia. Solo cuenta lo que sigue en «Pendientes».
+    """
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PENDIENTE_OFICIAL.md").write_text(
+        "## Pendientes\n\n"
+        "- **rubrica** — criterios oficiales. Se espera de la programación.\n\n"
+        "## Resueltas\n\n"
+        "- **proteccion_datos** — *Resuelta el 2026-08-30.* Ya no bloquea.\n",
+        encoding="utf-8",
+    )
+
+    assert proteccion_datos_pendiente(tmp_path) is False
+
+
+def test_lo_que_sigue_en_pendientes_bloquea_aunque_haya_resueltas(
+    tmp_path: Path,
+) -> None:
+    """La sección de resueltas no puede tapar lo que de verdad sigue abierto."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PENDIENTE_OFICIAL.md").write_text(
+        "## Pendientes\n\n"
+        "- **proteccion_datos** — condiciones de tratamiento. Bloquea.\n\n"
+        "## Resueltas\n\n"
+        "- **otra_cosa** — *Resuelta.* Ya no bloquea.\n",
+        encoding="utf-8",
+    )
+
+    assert proteccion_datos_pendiente(tmp_path) is True
