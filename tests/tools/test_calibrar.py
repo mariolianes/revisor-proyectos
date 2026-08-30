@@ -23,16 +23,22 @@ from backend.analisis.verificacion import (
     IndicioDeAutoriaVerificado,
     ValoracionVerificada,
 )
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.modelos import EntregaNueva
 from backend.salidas.borrador import Devolucion
 from backend.salidas.informe import Informe
 from tools.calibrar import (
+    PRESUPUESTO_CALIBRACION,
+    PROYECCIONES_DE_ANALISIS,
+    UMBRALES_DE_ALERTA_PCT,
     CasoDeCalibracion,
     ResultadoDeCaso,
     _componer_informe,
     _dentro_del_repositorio,
+    _formatear,
     _problema_de_ruta_de_salida,
     _registrar_progreso,
+    _resumen_de_consumo,
     cargar_casos,
     ejecutar,
     evaluar,
@@ -756,6 +762,105 @@ def test_main_completa_una_pasada_sin_proveedor_configurado(
 
 
 # ---------------------------------------------------------------------------
+# El presupuesto: por línea de órdenes, por entorno, o sin configurar
+# ---------------------------------------------------------------------------
+
+
+def _preparar_pasada_minima(raiz: Path, tmp_path: Path, escribir_pdf) -> tuple[Path, Path]:
+    """Lo mínimo para que `main()` complete una pasada de un caso: carpeta,
+    PDF, fichero de casos y `PENDIENTE_OFICIAL.md` ya resuelto."""
+    docs = raiz / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    (docs / "PENDIENTE_OFICIAL.md").write_text("# Pendiente\n", encoding="utf-8")
+    carpeta = tmp_path / "calibracion"
+    carpeta.mkdir()
+    texto = "Contenido inventado para la prueba del presupuesto."
+    _pdf_de_caso(carpeta, escribir_pdf, "x01.pdf", texto)
+    fichero_de_casos = tmp_path / "casos.yaml"
+    fichero_de_casos.write_text(
+        "- codigo: X01\n  archivo: x01.pdf\n  fase: E3\n"
+        "  semaforo_esperado: AMBAR\n",
+        encoding="utf-8",
+    )
+    return carpeta, fichero_de_casos
+
+
+def test_main_sin_presupuesto_lo_dice_sin_inventar_un_numero(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf, capsys, monkeypatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("REVISOR_MODELO_ANALISIS", raising=False)
+    monkeypatch.delenv(PRESUPUESTO_CALIBRACION, raising=False)
+    raiz = criterios_de_analisis
+    carpeta, fichero_de_casos = _preparar_pasada_minima(raiz, tmp_path, escribir_pdf)
+
+    codigo = main([
+        "--carpeta", str(carpeta), "--casos", str(fichero_de_casos), "--confirmo",
+    ], raiz=raiz)
+
+    assert codigo == 0
+    salida = capsys.readouterr().out
+    assert "Alertas de presupuesto: sin configurar" in salida
+    assert PRESUPUESTO_CALIBRACION in salida
+
+
+def test_main_lee_el_presupuesto_de_la_linea_de_ordenes(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf, capsys, monkeypatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("REVISOR_MODELO_ANALISIS", raising=False)
+    monkeypatch.delenv(PRESUPUESTO_CALIBRACION, raising=False)
+    raiz = criterios_de_analisis
+    carpeta, fichero_de_casos = _preparar_pasada_minima(raiz, tmp_path, escribir_pdf)
+
+    codigo = main([
+        "--carpeta", str(carpeta), "--casos", str(fichero_de_casos), "--confirmo",
+        "--presupuesto-usd", "50",
+    ], raiz=raiz)
+
+    assert codigo == 0
+    salida = capsys.readouterr().out
+    assert "Presupuesto configurado: 50.00 USD" in salida
+
+
+def test_main_lee_el_presupuesto_del_entorno_si_no_hay_flag(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf, capsys, monkeypatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("REVISOR_MODELO_ANALISIS", raising=False)
+    monkeypatch.setenv(PRESUPUESTO_CALIBRACION, "75")
+    raiz = criterios_de_analisis
+    carpeta, fichero_de_casos = _preparar_pasada_minima(raiz, tmp_path, escribir_pdf)
+
+    codigo = main([
+        "--carpeta", str(carpeta), "--casos", str(fichero_de_casos), "--confirmo",
+    ], raiz=raiz)
+
+    assert codigo == 0
+    salida = capsys.readouterr().out
+    assert "Presupuesto configurado: 75.00 USD" in salida
+
+
+def test_main_avisa_si_el_presupuesto_del_entorno_no_es_un_numero(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf, capsys, monkeypatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("REVISOR_MODELO_ANALISIS", raising=False)
+    monkeypatch.setenv(PRESUPUESTO_CALIBRACION, "cincuenta euros")
+    raiz = criterios_de_analisis
+    carpeta, fichero_de_casos = _preparar_pasada_minima(raiz, tmp_path, escribir_pdf)
+
+    codigo = main([
+        "--carpeta", str(carpeta), "--casos", str(fichero_de_casos), "--confirmo",
+    ], raiz=raiz)
+
+    assert codigo == 0  # un presupuesto ilegible no aborta la pasada
+    salida = capsys.readouterr().out
+    assert "no es un número" in salida
+    assert "Alertas de presupuesto: sin configurar" in salida
+
+
+# ---------------------------------------------------------------------------
 # El guardián que impide escribir dentro del repositorio
 # ---------------------------------------------------------------------------
 #
@@ -1163,3 +1268,415 @@ def test_lo_que_sigue_en_pendientes_bloquea_aunque_haya_resueltas(
     )
 
     assert proteccion_datos_pendiente(tmp_path) is True
+
+
+# ---------------------------------------------------------------------------
+# El bloque de capacidad: coste, tokens, proyección y alertas de presupuesto
+# ---------------------------------------------------------------------------
+#
+# `_resumen_de_consumo` se prueba directamente, con `RegistroDeConsumo`
+# construidos a mano, por el mismo motivo que ya explica el comentario de
+# arriba del fichero sobre `_componer_informe`: aislar exactamente la
+# función que agrega las cifras, sin que el resultado dependa de la tarifa
+# vigente hoy en `config/precios_openai.yaml` -que cambia con el tiempo- ni
+# de la fecha real en la que corre la suite. Los tests de integración con
+# `ejecutar()`, más abajo, comprueban que esas cifras llegan desde
+# `almacen.consumos()` sin recalcularse por el camino.
+
+
+def _registro(
+    *,
+    entrega_id: str = "AF999",
+    modelo: str = "modelo-de-prueba",
+    tokens_entrada: int | None = None,
+    tokens_salida: int | None = None,
+    coste_estimado_usd: float | None = None,
+    estado: str = "OK",
+) -> RegistroDeConsumo:
+    return RegistroDeConsumo(
+        entrega_id=entrega_id,
+        modelo=modelo,
+        tokens_entrada=tokens_entrada,
+        tokens_salida=tokens_salida,
+        coste_estimado_usd=coste_estimado_usd,
+        tarifa_aplicada=f"{modelo}@2026-08-30" if coste_estimado_usd is not None else None,
+        duracion_ms=100,
+        estado=estado,
+        intentos=1,
+        paginas=3,
+        caracteres_texto=1000,
+    )
+
+
+def test_sin_ejecuciones_no_hay_coste_ni_proyeccion() -> None:
+    resumen = _resumen_de_consumo([], presupuesto_usd=None)
+
+    assert resumen.ejecuciones_registradas == 0
+    assert resumen.coste_total_usd is None
+    assert resumen.coste_medio_usd is None
+    assert resumen.proyeccion_usd == {n: None for n in PROYECCIONES_DE_ANALISIS}
+    assert "ninguna ejecución" in resumen.lectura.lower()
+
+
+def test_ninguna_ejecucion_con_coste_calculable_no_inventa_una_cifra() -> None:
+    """Tokens conocidos, pero un modelo sin tarifa en la tabla: el coste no
+    se rellena con nada, se deja como no calculable."""
+    registros = [
+        _registro(tokens_entrada=1000, tokens_salida=200, coste_estimado_usd=None),
+        _registro(tokens_entrada=800, tokens_salida=150, coste_estimado_usd=None),
+    ]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.ejecuciones_registradas == 2
+    assert resumen.ejecuciones_sin_coste_calculable == 2
+    assert resumen.coste_total_usd is None
+    assert resumen.coste_medio_usd is None
+    assert resumen.proyeccion_usd == {n: None for n in PROYECCIONES_DE_ANALISIS}
+    # Los tokens no dependen de la tarifa: siguen siendo calculables.
+    assert resumen.tokens_entrada_medios == 900.0
+    assert resumen.tokens_salida_medios == 175.0
+    assert "coste calculable" in resumen.lectura.lower()
+
+
+def test_coste_total_medio_mediana_y_maximo() -> None:
+    registros = [
+        _registro(coste_estimado_usd=0.01),
+        _registro(coste_estimado_usd=0.02),
+        _registro(coste_estimado_usd=0.09),
+    ]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.coste_total_usd == pytest.approx(0.12)
+    assert resumen.coste_medio_usd == pytest.approx(0.04)
+    assert resumen.coste_mediana_usd == pytest.approx(0.02)
+    assert resumen.coste_maximo_usd == pytest.approx(0.09)
+
+
+def test_ejecuciones_sin_coste_calculable_no_entran_en_la_media() -> None:
+    """Una tanda mixta: dos con coste calculable, una sin tarifa vigente. La
+    media, la mediana y el máximo son solo de las dos que sí tienen coste;
+    el total de ejecuciones cuenta las tres."""
+    registros = [
+        _registro(coste_estimado_usd=0.10),
+        _registro(coste_estimado_usd=0.20),
+        _registro(modelo="modelo-sin-tarifa", coste_estimado_usd=None),
+    ]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.ejecuciones_registradas == 3
+    assert resumen.ejecuciones_sin_coste_calculable == 1
+    assert resumen.coste_total_usd == pytest.approx(0.30)
+    assert resumen.coste_medio_usd == pytest.approx(0.15)
+    assert "1 sin coste calculable" in resumen.lectura
+
+
+def test_la_media_por_encima_de_la_mediana_se_senala_en_la_lectura() -> None:
+    """Dos casos baratos y uno caro: la media queda tirada hacia arriba por
+    el caro, y eso es justo lo que el docente tiene que saber antes de
+    fiarse de la proyección."""
+    registros = [
+        _registro(coste_estimado_usd=0.01),
+        _registro(coste_estimado_usd=0.01),
+        _registro(coste_estimado_usd=0.50),
+    ]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.coste_medio_usd > resumen.coste_mediana_usd
+    assert "media supera a la mediana" in resumen.lectura
+
+
+def test_la_media_por_debajo_de_la_mediana_tambien_se_senala() -> None:
+    registros = [
+        _registro(coste_estimado_usd=0.01),
+        _registro(coste_estimado_usd=0.50),
+        _registro(coste_estimado_usd=0.50),
+    ]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.coste_medio_usd < resumen.coste_mediana_usd
+    assert "media queda por debajo de la mediana" in resumen.lectura
+
+
+def test_media_y_mediana_iguales_no_alarman_de_mas() -> None:
+    registros = [_registro(coste_estimado_usd=0.10) for _ in range(3)]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert "Media y mediana coinciden" in resumen.lectura
+
+
+def test_intercambiar_media_y_mediana_al_componer_lo_cazaria_este_test() -> None:
+    """Como el test homónimo de sesgo, más arriba: la garantía de que
+    `coste_medio_usd` y `coste_mediana_usd` no pueden intercambiarse sin que
+    algo falle aquí, con datos donde los dos valores son claramente
+    distintos y calculados a mano."""
+    registros = [
+        _registro(coste_estimado_usd=0.10),
+        _registro(coste_estimado_usd=0.20),
+        _registro(coste_estimado_usd=0.30),
+        _registro(coste_estimado_usd=0.90),
+    ]
+    # Media = (0.10+0.20+0.30+0.90)/4 = 0.375; mediana de 4 valores es la
+    # media de los dos centrales: (0.20+0.30)/2 = 0.25.
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.coste_medio_usd == pytest.approx(0.375)
+    assert resumen.coste_mediana_usd == pytest.approx(0.25)
+
+
+def test_tokens_medios_de_entrada_y_de_salida() -> None:
+    registros = [
+        _registro(tokens_entrada=10290, tokens_salida=2054, coste_estimado_usd=0.037012),
+        _registro(tokens_entrada=5000, tokens_salida=1000, coste_estimado_usd=0.018),
+    ]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.tokens_entrada_medios == pytest.approx(7645.0)
+    assert resumen.tokens_salida_medios == pytest.approx(1527.0)
+
+
+def test_la_proyeccion_multiplica_el_coste_medio_por_50_100_y_200() -> None:
+    registros = [_registro(coste_estimado_usd=1.0), _registro(coste_estimado_usd=1.0)]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.proyeccion_usd == {50: 50.0, 100: 100.0, 200: 200.0}
+
+
+def test_sin_presupuesto_no_hay_alertas_y_queda_marcado_como_no_configurado() -> None:
+    registros = [_registro(coste_estimado_usd=1.0)]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=None)
+
+    assert resumen.presupuesto_configurado is False
+    assert resumen.presupuesto_usd is None
+    assert resumen.alertas == []
+
+
+def test_un_presupuesto_a_cero_o_negativo_se_trata_como_no_configurado() -> None:
+    """Un dato roto -un `.env` mal escrito, un signo equivocado en la línea
+    de órdenes- no puede colarse como si fuera un presupuesto real."""
+    registros = [_registro(coste_estimado_usd=1.0)]
+
+    for valor_roto in (0.0, -25.0):
+        resumen = _resumen_de_consumo(registros, presupuesto_usd=valor_roto)
+        assert resumen.presupuesto_configurado is False
+        assert resumen.alertas == []
+
+
+def test_las_alertas_marcan_solo_los_umbrales_que_de_verdad_se_superan() -> None:
+    """Coste medio de 0,60 USD y presupuesto de 100 USD: 50 análisis quedan
+    en el 30 % (ningún umbral), 100 análisis en el 60 % (supera 50 %), y 200
+    análisis en el 120 % (supera los tres)."""
+    registros = [_registro(coste_estimado_usd=0.60)]
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=100.0)
+
+    assert resumen.presupuesto_configurado is True
+    por_proyeccion = {a.analisis_proyectados: a for a in resumen.alertas}
+    assert por_proyeccion[50].porcentaje_del_presupuesto == pytest.approx(30.0)
+    assert por_proyeccion[50].umbrales_superados == []
+    assert por_proyeccion[100].porcentaje_del_presupuesto == pytest.approx(60.0)
+    assert por_proyeccion[100].umbrales_superados == [50]
+    assert por_proyeccion[200].porcentaje_del_presupuesto == pytest.approx(120.0)
+    assert por_proyeccion[200].umbrales_superados == list(UMBRALES_DE_ALERTA_PCT)
+
+
+def test_intercambiar_los_umbrales_superados_lo_cazaria_este_test() -> None:
+    """Si `umbrales_superados` comparase con `<=` en vez de `>=`, o si el
+    signo de la comparación se invirtiera, una proyección muy por debajo del
+    presupuesto aparecería marcando los tres umbrales -exactamente al
+    revés de lo que pasó de verdad-."""
+    registros = [_registro(coste_estimado_usd=0.01)]  # proyección muy barata
+
+    resumen = _resumen_de_consumo(registros, presupuesto_usd=1000.0)
+
+    for alerta in resumen.alertas:
+        assert alerta.umbrales_superados == []
+
+
+# ---------------------------------------------------------------------------
+# El bloque de capacidad, de punta a punta, a través de ejecutar()
+# ---------------------------------------------------------------------------
+
+
+class _ProveedorConConsumo:
+    """Un proveedor de prueba que sí deja huella de consumo -`numero_de_
+    llamadas`, `ultimo_consumo`, `modelo`-, igual que el que ya usa
+    `tests/backend/test_analisis_de_entrega.py` para el mismo propósito: sin
+    él, `MedidorDeConsumo` no ve ninguna llamada real y no hay nada que
+    agregar en el bloque de capacidad.
+    """
+
+    def __init__(self, respuestas, consumos=None, fallos=None) -> None:
+        self._interno = ProveedorSimulado(respuestas=respuestas, fallos=fallos)
+        self._consumos = list(consumos or [])
+        self.numero_de_llamadas = 0
+        self.ultimo_consumo = None
+        self.modelo = "modelo-de-prueba"  # no está en config/precios_openai.yaml
+
+    @property
+    def nombre(self) -> str:
+        return "proveedor-de-prueba"
+
+    def analizar(self, instruccion: str, texto: str, formato):
+        self.numero_de_llamadas += 1
+        self.ultimo_consumo = self._consumos.pop(0) if self._consumos else None
+        return self._interno.analizar(instruccion, texto, formato)
+
+
+class _ConsumoFalso:
+    def __init__(self, tokens_entrada: int, tokens_salida: int) -> None:
+        self.tokens_entrada = tokens_entrada
+        self.tokens_salida = tokens_salida
+        self.tokens_entrada_cacheados = 0
+
+
+def test_ejecutar_agrega_el_consumo_de_las_ejecuciones_reales(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf
+) -> None:
+    carpeta = tmp_path / "calibracion"
+    carpeta.mkdir()
+    texto_uno = "Contenido inventado del primer caso, para medir su consumo."
+    texto_dos = "Contenido inventado del segundo caso, para medir su consumo."
+    _pdf_de_caso(carpeta, escribir_pdf, "uno.pdf", texto_uno)
+    _pdf_de_caso(carpeta, escribir_pdf, "dos.pdf", texto_dos)
+    casos = [
+        _caso(codigo="UNO", archivo="uno.pdf", semaforo_esperado="AMBAR"),
+        _caso(codigo="DOS", archivo="dos.pdf", semaforo_esperado="AMBAR"),
+    ]
+    proveedor = _ProveedorConConsumo(
+        respuestas=[
+            _analisis_simulado("Contenido inventado del primer caso"), _devolucion_simulada(),
+            _analisis_simulado("Contenido inventado del segundo caso"), _devolucion_simulada(),
+        ],
+        consumos=[
+            _ConsumoFalso(1000, 200), _ConsumoFalso(500, 100),  # caso UNO: 1500/300
+            _ConsumoFalso(2000, 400), _ConsumoFalso(1000, 200),  # caso DOS: 3000/600
+        ],
+    )
+
+    informe = ejecutar(criterios_de_analisis, casos, carpeta, proveedor)
+
+    assert informe.consumo.ejecuciones_registradas == 2
+    # El modelo de prueba no tiene tarifa: el coste no se inventa.
+    assert informe.consumo.coste_total_usd is None
+    assert informe.consumo.tokens_entrada_medios == pytest.approx((1500 + 3000) / 2)
+    assert informe.consumo.tokens_salida_medios == pytest.approx((300 + 600) / 2)
+
+
+def test_un_caso_saltado_sin_archivo_no_deja_registro_de_consumo(
+    criterios_de_analisis, tmp_path: Path
+) -> None:
+    """Sin PDF no hay llamada al proveedor, y sin llamada no hay nada que
+    costar: el bloque de capacidad no cuenta este caso en absoluto."""
+    carpeta = tmp_path / "calibracion"
+    carpeta.mkdir()
+    caso = _caso(archivo="no-esta-aqui.pdf")
+    proveedor = _ProveedorConConsumo(respuestas=[])
+
+    informe = ejecutar(criterios_de_analisis, [caso], carpeta, proveedor)
+
+    assert informe.saltados == 1
+    assert informe.consumo.ejecuciones_registradas == 0
+
+
+def test_un_fallo_del_proveedor_que_ya_gasto_tokens_cuenta_en_el_consumo(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf
+) -> None:
+    """«Un análisis fallido también consume»: si el proveedor gastó tokens
+    antes de fallar, el bloque de capacidad los cuenta, aunque el caso se
+    salte en el recuento de aciertos."""
+    carpeta = tmp_path / "calibracion"
+    carpeta.mkdir()
+    texto = "Contenido inventado de un caso que va a fallar tras gastar tokens."
+    _pdf_de_caso(carpeta, escribir_pdf, "x01.pdf", texto)
+    caso = _caso(codigo="X01", archivo="x01.pdf")
+    proveedor = _ProveedorConConsumo(
+        respuestas=[],
+        consumos=[_ConsumoFalso(4000, 0)],
+        fallos=[ErrorDelProveedor("la cuota se ha agotado a mitad de la llamada")],
+    )
+
+    informe = ejecutar(criterios_de_analisis, [caso], carpeta, proveedor)
+
+    assert informe.saltados == 1
+    assert informe.consumo.ejecuciones_registradas == 1
+    assert informe.consumo.tokens_entrada_medios == pytest.approx(4000.0)
+
+
+def test_el_proveedor_simulado_no_deja_nada_que_costar(
+    criterios_de_analisis, tmp_path: Path, escribir_pdf
+) -> None:
+    carpeta = tmp_path / "calibracion"
+    carpeta.mkdir()
+    texto = "Contenido inventado para comprobar que el simulado no cuesta nada."
+    _pdf_de_caso(carpeta, escribir_pdf, "x01.pdf", texto)
+    caso = _caso(codigo="X01", archivo="x01.pdf", semaforo_esperado="AMBAR")
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_simulado("Contenido inventado para comprobar"), _devolucion_simulada(),
+    ])
+
+    informe = ejecutar(criterios_de_analisis, [caso], carpeta, proveedor)
+
+    assert informe.consumo.ejecuciones_registradas == 0
+    assert "proveedor simulado" in informe.consumo.lectura.lower()
+
+
+# ---------------------------------------------------------------------------
+# El bloque de capacidad, en el texto que se enseña al docente
+# ---------------------------------------------------------------------------
+
+
+def test_formatear_incluye_el_bloque_de_capacidad_y_sus_proyecciones() -> None:
+    registros = [
+        _registro(coste_estimado_usd=0.02, tokens_entrada=5000, tokens_salida=1000),
+        _registro(coste_estimado_usd=0.04, tokens_entrada=7000, tokens_salida=1400),
+    ]
+    informe = _componer_informe([], registros, presupuesto_usd=None)
+
+    texto = _formatear(informe)
+
+    assert "Capacidad: coste, tokens y proyección de esta tanda." in texto
+    assert "Proyección de coste por número de análisis" in texto
+    assert "50 análisis" in texto and "100 análisis" in texto and "200 análisis" in texto
+    assert "estimación, no un precio" in texto
+
+
+def test_formatear_sin_presupuesto_configurado_no_inventa_un_porcentaje() -> None:
+    registros = [_registro(coste_estimado_usd=0.02)]
+    informe = _componer_informe([], registros, presupuesto_usd=None)
+
+    texto = _formatear(informe)
+
+    assert "Alertas de presupuesto: sin configurar" in texto
+    assert PRESUPUESTO_CALIBRACION in texto
+    assert "--presupuesto-usd" in texto
+    # Nunca se cuela un "% del presupuesto" cuando no hay presupuesto.
+    assert "% del presupuesto" not in texto
+
+
+def test_formatear_con_presupuesto_configurado_enseña_los_umbrales_superados() -> None:
+    registros = [_registro(coste_estimado_usd=0.60)]
+    informe = _componer_informe([], registros, presupuesto_usd=100.0)
+
+    texto = _formatear(informe)
+
+    assert "Presupuesto configurado: 100.00 USD" in texto
+    assert "supera 50 %" in texto  # el caso de 200 análisis, ver el test de arriba
+
+
+def test_formatear_menciona_que_la_cola_de_reintento_no_esta_construida() -> None:
+    informe = _componer_informe([], [], presupuesto_usd=None)
+
+    texto = _formatear(informe)
+
+    assert "vuelve a RECIBIDO" in texto
+    assert "alcance nuevo" in texto
