@@ -39,6 +39,18 @@ class AlmacenEnMemoria:
         # AlmacenSupabase, que reutiliza el alumno ya existente con el
         # ciclo con el que se creó. El primero que se registra manda.
         self._ciclo_del_alumno: dict[str, str] = {}
+        # La modalidad es del proyecto, no de la entrega: en la base de
+        # datos la lleva la tabla `proyecto` -clave (alumno_id,
+        # version_criterios), igual que `AlmacenSupabase._proyecto`- y
+        # `entrega` no la tiene. La primera modalidad DECLARADA manda -no
+        # necesariamente la de la primera entrega: una fase TEMA puede
+        # llegar sin modalidad todavía, antes de validar el tema (§3.2), y
+        # la primera entrega que sí la declare es la que la fija-, y
+        # ninguna declaración posterior la sustituye: cambiarla es una
+        # decisión expresa del profesor (§3.2) que este almacén no toma por
+        # su cuenta. Ver el aviso que compone `api/entregas.confirmar`
+        # cuando lo declarado no coincide.
+        self._modalidad_del_proyecto: dict[tuple[str, str], str] = {}
         # Una corrección por entrega: guardar dos veces sobre la misma
         # entrega sustituye el valor del diccionario entero, igual que
         # `unique (entrega_id)` sustituye la fila en Supabase.
@@ -69,6 +81,10 @@ class AlmacenEnMemoria:
         datos["ciclo"] = self._ciclo_del_alumno.setdefault(
             entrega.codigo_alumno, entrega.ciclo
         )
+        clave_proyecto = (entrega.codigo_alumno, entrega.version_criterios)
+        if entrega.modalidad is not None and clave_proyecto not in self._modalidad_del_proyecto:
+            self._modalidad_del_proyecto[clave_proyecto] = entrega.modalidad
+        datos["modalidad"] = self._modalidad_del_proyecto.get(clave_proyecto)
         registrada = EntregaRegistrada(
             id=str(uuid.uuid4()),
             recibida_en=datetime.now(),

@@ -129,11 +129,31 @@ def analizar_entrega(
     texto = ficha.medidas.texto_plano
     instruccion = construir(raiz, version, entrega.fase)
 
+    # Para el bloque «Continuidad» del informe (§17.1, D-012 en
+    # `docs/decisions.md`). `leer()` ya consulta `anterior_de` por su cuenta
+    # -para la comparación de texto que deja en `ficha.evolucion`-, pero no
+    # devuelve la entrega anterior en sí, así que se vuelve a pedir aquí: es
+    # una segunda consulta al almacén, no una llamada al motor, y mantiene
+    # `componer_informe` sin depender de `Almacen` para nada más que lo que
+    # ya recibe. Sin corrección anterior guardada, `prioridades_anteriores`
+    # queda en `None` -no en una lista vacía-, para que el informe pueda
+    # distinguir «no hay análisis anterior» de «lo había y no dejó
+    # prioridades».
+    anterior = almacen.anterior_de(entrega.codigo_alumno, entrega.fase, entrega.version)
+    correccion_anterior = almacen.correccion_de(anterior.id) if anterior is not None else None
+    prioridades_anteriores = (
+        correccion_anterior.informe.prioridades if correccion_anterior is not None else None
+    )
+
     crudo = _con_un_reintento(
         lambda: proveedor.analizar(instruccion, texto, AnalisisDelMotor)
     )
     analisis = verificar(raiz, version, entrega.fase, texto, crudo)
-    informe = componer_informe(raiz, version, entrega, ficha, analisis, proveedor.nombre)
+    informe = componer_informe(
+        raiz, version, entrega, ficha, analisis, proveedor.nombre,
+        hay_entrega_anterior=anterior is not None,
+        prioridades_anteriores=prioridades_anteriores,
+    )
 
     try:
         devolucion = _con_un_reintento(

@@ -135,6 +135,12 @@ export interface EntregaRegistrada {
   estado: string
   motivo_bloqueo: string | null
   version_criterios: string
+  /**
+   * Del proyecto, no de la entrega -igual que `ciclo` es del alumno-.
+   * Puede faltar: no existe todavía una pantalla de validación de tema
+   * (§3.2) desde la que fijarla antes de la primera entrega.
+   */
+  modalidad: string | null
 }
 
 export interface Comprobacion {
@@ -233,9 +239,15 @@ export interface Confirmacion {
   ciclo: string
   fase: string
   version: number
+  /** Del proyecto, no de esta entrega. Puede faltar (ver `EntregaRegistrada`). */
+  modalidad: string | null
 }
 
 export const FASES = ["TEMA", "E1", "E2", "E3", "FINAL", "DEFENSA"] as const
+
+// Las tres modalidades del §3 del Documento Maestro, en el mismo
+// vocabulario que `backend.persistencia.modelos.MODALIDADES`.
+export const MODALIDADES = ["PROFESIONAL", "INVESTIGACION", "REVISION"] as const
 
 // --- El análisis y la revisión docente -------------------------------------
 //
@@ -289,6 +301,20 @@ export interface Reparo {
   detalle: string
 }
 
+/**
+ * Las cuatro categorías del §17.1: APLICADO, PARCIALMENTE_APLICADO,
+ * PENDIENTE o NO_VERIFICABLE. El backend solo emite hoy las dos últimas
+ * -ver `backend/evolucion/continuidad.py`-, pero el tipo declara las
+ * cuatro porque son el vocabulario del bloque, no una posibilidad futura.
+ */
+export interface ContinuidadFeedback {
+  dimension: string
+  prioridad: string | null
+  observacion_anterior: string
+  estado: "APLICADO" | "PARCIALMENTE_APLICADO" | "PENDIENTE" | "NO_VERIFICABLE"
+  motivo: string
+}
+
 export interface Informe {
   identificacion: Record<string, string>
   control_administrativo: string[]
@@ -303,6 +329,11 @@ export interface Informe {
   indicios: IndicioDeAutoriaVerificado[]
   reparos: Reparo[]
   dimensiones_ausentes: string[]
+  /** El feedback de la entrega anterior, clasificado. Vacío si no hay
+   * antecedente que clasificar -ver `continuidad_nota` para saber por qué-. */
+  continuidad: ContinuidadFeedback[]
+  /** Por qué `continuidad` está vacía, cuando lo está. `null` si no lo está. */
+  continuidad_nota: string | null
   semaforo: string
   recomendacion: string | null
   motor: string

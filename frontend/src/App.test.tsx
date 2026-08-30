@@ -41,7 +41,7 @@ const REGISTRADA = {
   id: "id-nueva", codigo_alumno: "AF023", ciclo: "DAM", fase: "E2", version: 1,
   nombre_archivo: "AF023_DAM_E2_20260115_v1.pdf", huella: "a".repeat(64),
   recibida_en: "2026-08-27T10:00:00", estado: "RECIBIDO",
-  motivo_bloqueo: null, version_criterios: "v2026-2027",
+  motivo_bloqueo: null, version_criterios: "v2026-2027", modalidad: null,
 }
 
 describe("App", () => {
@@ -149,14 +149,16 @@ describe("App", () => {
       entrega: ANALIZADA,
       informe: {
         identificacion: {
-          alumno: "AF023", ciclo: "DAM", fase: "E2", version: "1",
-          archivo: ANALIZADA.nombre_archivo, criterios: "v2026-2027",
+          alumno: "AF023", ciclo: "DAM", modalidad: "No registrada", fase: "E2",
+          version: "1", archivo: ANALIZADA.nombre_archivo, criterios: "v2026-2027",
+          fecha: "2026-08-27",
         },
         control_administrativo: [],
         resumen: "Resumen guardado de una revisión anterior que no hay que repetir.",
         valoraciones: [], fortalezas: [], prioridades: [],
         prioridades_descartadas: [], dudas: [], indicios: [], reparos: [],
-        dimensiones_ausentes: [], semaforo: "GRIS", recomendacion: null,
+        dimensiones_ausentes: [], continuidad: [], continuidad_nota: null,
+        semaforo: "GRIS", recomendacion: null,
         motor: "simulado",
       },
       devolucion: null, motor: "simulado", aviso: null,

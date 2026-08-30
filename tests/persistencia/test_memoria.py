@@ -266,3 +266,73 @@ def test_entrega_registrada_normaliza_igual_que_entrega_nueva() -> None:
     assert registrada.codigo_alumno == "AF023"
     assert registrada.ciclo == "DAM"
     assert registrada.fase == "E2"
+
+
+# --- modalidad: del proyecto, no de la entrega ------------------------------
+
+
+def test_sin_declarar_modalidad_la_entrega_queda_sin_ella() -> None:
+    almacen = AlmacenEnMemoria()
+
+    guardada = almacen.registrar(_entrega())
+
+    assert guardada.modalidad is None
+
+
+def test_la_modalidad_declarada_se_normaliza_y_se_guarda() -> None:
+    almacen = AlmacenEnMemoria()
+
+    guardada = almacen.registrar(_entrega(modalidad=" profesional "))
+
+    assert guardada.modalidad == "PROFESIONAL"
+
+
+def test_una_modalidad_que_no_existe_se_rechaza_en_castellano() -> None:
+    with pytest.raises(ValueError, match="no es una modalidad"):
+        _entrega(modalidad="EXPERIMENTAL")
+
+
+def test_la_modalidad_es_del_proyecto_y_manda_la_primera_declarada() -> None:
+    """Igual que el ciclo del alumno: la primera modalidad que se declara
+    para un alumno y una versión de criterios manda sobre lo que se declare
+    después, aunque sea en una entrega distinta."""
+    almacen = AlmacenEnMemoria()
+    almacen.registrar(_entrega(fase="E1", modalidad="PROFESIONAL",
+                                huella="1" * 64,
+                                nombre_archivo="AF023_DAM_E1_20260101_v1.pdf"))
+
+    segunda = almacen.registrar(_entrega(fase="E2", modalidad="INVESTIGACION",
+                                          huella="2" * 64))
+
+    assert segunda.modalidad == "PROFESIONAL"
+
+
+def test_una_entrega_sin_modalidad_no_borra_la_ya_fijada() -> None:
+    """Que una entrega posterior no declare modalidad no vacía la que ya
+    tenía el proyecto: `registrar` no confunde «no se ha dicho nada» con
+    «se ha dicho que no hay ninguna»."""
+    almacen = AlmacenEnMemoria()
+    almacen.registrar(_entrega(fase="E1", modalidad="REVISION",
+                                huella="1" * 64,
+                                nombre_archivo="AF023_DAM_E1_20260101_v1.pdf"))
+
+    segunda = almacen.registrar(_entrega(fase="E2", huella="2" * 64))
+
+    assert segunda.modalidad == "REVISION"
+
+
+def test_la_primera_entrega_sin_modalidad_deja_hueco_hasta_que_alguna_la_declare() -> None:
+    """Ninguna de las dos primeras entregas declara modalidad -es el caso
+    normal antes de que exista una pantalla de validación de tema-, así que
+    el proyecto sigue sin ella; la tercera sí la declara, y a partir de ahí
+    manda, igual que si hubiera sido la primera."""
+    almacen = AlmacenEnMemoria()
+    almacen.registrar(_entrega(fase="TEMA", huella="1" * 64,
+                                nombre_archivo="AF023_DAM_TEMA_20260101_v1.pdf"))
+    segunda = almacen.registrar(_entrega(fase="E1", huella="2" * 64,
+                                          nombre_archivo="AF023_DAM_E1_20260108_v1.pdf"))
+    assert segunda.modalidad is None
+
+    tercera = almacen.registrar(_entrega(fase="E2", modalidad="PROFESIONAL",
+                                          huella="3" * 64))
+    assert tercera.modalidad == "PROFESIONAL"

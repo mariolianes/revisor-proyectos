@@ -284,3 +284,75 @@ podría escribir él la síntesis que el §17.1 describe.
 **Arrastra:** `backend/salidas/informe.py` (`_resumen`) y
 `frontend/src/paginas/Revision.tsx`, donde el bloque «Resumen» sigue
 mostrando el campo tal cual llega del backend.
+
+---
+
+## D-012 · La continuidad se deriva de lo ya medido, no se le pide al motor
+
+**Fecha:** 2026-08-30 · **Estado:** Provisional, a la espera de que Marcos la
+valide · **Propuesta desde la implementación**
+
+> A diferencia de las anteriores, esta decisión no la ha tomado el docente:
+> él pidió construir el bloque «Continuidad» y clasificar cada feedback
+> anterior en aplicado, parcialmente aplicado, pendiente o no verificable,
+> pero dejó abierto CÓMO clasificarlo. Se propone desde la implementación y
+> se registra aquí para que la valide.
+
+El §17.1 pide, en el informe interno, un bloque «Continuidad» con el
+«feedback anterior aplicado, pendiente o no verificable»; el docente amplió
+el vocabulario a cuatro estados, añadiendo «parcialmente aplicado», y dio
+dos instrucciones concretas: desde la segunda entrega, recuperar el último
+feedback aprobado y clasificarlo; y no fingir continuidad en la primera,
+donde no hay antecedente.
+
+Clasificar si una prioridad anterior se aplicó exige comparar lo que se le
+dijo al alumno con lo que ha hecho, y eso es un juicio. Había dos caminos:
+
+1. Pedírselo al motor -la observación anterior y el texto nuevo, y que
+   diga si se aplicó-. Es exactamente el tipo de afirmación que el resto
+   del sistema no se cree sin comprobar (`backend/analisis/verificacion.py`
+   existe entero por eso), y aquí no hay con qué verificarla: sería texto
+   libre sobre un cambio entre dos documentos, sin ninguna cita que
+   contrastar.
+2. Derivarlo de lo que el sistema ya mide, sin pedir un juicio nuevo:
+   `comparar()` (`backend/evolucion/comparacion.py`), que ya calcula cuánto
+   cambia una entrega frente a la anterior con n-gramas, sin semántica; y
+   `cita_localizada()` (`backend/analisis/verificacion.py`), que ya decide
+   si un fragmento exacto sigue en un texto, con el mismo criterio que
+   verifica cada cita del motor.
+
+Se elige el segundo. El resultado es más conservador que las cuatro
+categorías que pide el docente: `clasificar_continuidad()`
+(`backend/evolucion/continuidad.py`) solo emite PENDIENTE -cuando la cita
+que motivó la observación anterior sigue apareciendo literal en la entrega
+nueva, certeza mecánica de que no se ha tocado- o NO_VERIFICABLE -en
+cualquier otro caso, incluido cuando la comparación global no es de fiar o
+no se pudo hacer-. APLICADO y PARCIALMENTE_APLICADO quedan declarados en el
+vocabulario del bloque, porque son parte del contrato del §17.1, pero
+ninguna medida de este sistema hoy distingue «se corrigió» de «se rehízo
+sin corregirlo» sin leer y entender el trabajo, y NO_VERIFICABLE es la
+respuesta honesta cuando esa distinción no se puede sostener. El docstring
+de `backend/evolucion/continuidad.py` explica el criterio completo, caso
+por caso.
+
+«El último feedback aprobado» se lee como `Informe.prioridades` de la
+corrección guardada para la entrega anterior -lo que `revisar()`
+(`backend/api/analisis.py`) llama, en su propio docstring, «lo que el §13
+llama revisión docente»-, porque hoy no existe ningún estado distinto de
+«aprobado» en el flujo implementado: ni `entrega.estado` llega nunca a
+`APROBADO`, ni `correccion.aprobada_en`/`aprobada_por` se escriben desde
+ningún endpoint. Es la mejor aproximación disponible a lo que pide el
+docente, no una lectura literal de una columna que hoy nadie rellena.
+
+Lo que el docente pide y este cambio **no** entrega: «cuando exista un
+registro de comunicación, conservar también esa fecha». La tabla
+`feedback.comunicado_en` existe en la migración, pero D-004 -qué canal usa
+la devolución al alumno- sigue sin decidirse, y ningún endpoint escribe esa
+columna. Añadir un campo que siempre leería vacío sería decorar el informe
+con una promesa sin nada detrás; se deja pendiente de D-004, no inventado.
+
+**Arrastra:** `backend/evolucion/continuidad.py` (nuevo),
+`backend/salidas/informe.py` (`componer_informe`, campo `continuidad`),
+`backend/servicios/analisis_de_entrega.py` (recupera la entrega y la
+corrección anteriores) y `frontend/src/paginas/Revision.tsx` (el bloque
+«Continuidad»).
