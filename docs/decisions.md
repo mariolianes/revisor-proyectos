@@ -686,3 +686,70 @@ del encabezado, no del contenido.
 `backend/persistencia/correccion.py` (`LIMITE_DE_SINTESIS`) y
 `frontend/src/paginas/Revision.tsx` (la sección «Síntesis provisional para
 revisión docente»).
+
+## D-018 · El bloque de capacidad vive en el informe de calibración, no en un sistema de alertas nuevo
+
+**Fecha:** 2026-08-30 · **Estado:** Provisional, a la espera de que Marcos la
+valide · **Responsable:** Marcos
+
+El docente pidió, tras ejecutar los nueve casos de calibración, un resumen
+con coste total, coste medio, mediana, máximo, tokens medios y proyección
+para 50, 100 y 200 análisis, más alertas de presupuesto al 50 %, 75 % y
+90 %, y que un análisis marcado para reintento al agotar un límite no
+pierda el PDF, la ficha ni el estado de la revisión. Los nueve casos son,
+literalmente, lo que ejecuta `tools/calibrar.py`, así que este bloque se
+compone ahí -`_resumen_de_consumo`, al final de `ejecutar()`- y no en un
+sistema de monitorización nuevo: no hay dónde más leerlo hoy sin inventar
+una infraestructura que nadie ha pedido.
+
+El bloque no llama al proveedor una segunda vez ni recalcula nada por su
+cuenta: lee `almacen.consumos()`, la misma tabla que ya deja
+`analizar_entrega` por cada ejecución real (D-014), tras el mismo
+`AlmacenEnMemoria` compartido por los nueve casos de la tanda.
+
+**La mediana viaja siempre junto a la media.** Los nueve casos del banco
+van de 4.000 a 12.600 palabras -dispersión real, no teórica-, y una media
+sola no dice si el gasto se concentra en unos pocos trabajos largos.
+`_lectura_de_consumo` compara los dos valores en prosa -sin inventar un
+umbral de «cuánta diferencia es demasiada»- y deja el juicio al docente.
+
+**La proyección no se presenta como precio.** `proyeccion_usd` multiplica
+el coste medio de la tanda por 50, 100 y 200, con la tarifa vigente hoy
+-`config/precios_openai.yaml`, D-014-, y tanto la prosa compuesta como el
+texto final repiten que es una estimación sobre nueve casos, no una
+promesa. Incluye los intentos que llegaron a llamar al proveedor y
+fallaron después de gastar tokens -«un análisis fallido también
+consume»-, porque esos registros están en `almacen.consumos()` igual que
+los que terminaron bien; no incluye los casos saltados por un archivo
+ilegible o ausente, que nunca llegan a costar nada. La estimación del
+curso completo queda fuera a propósito: hace falta el número real de
+alumnos y entregas, que nadie ha dado todavía, y este módulo no lo
+inventa (R3).
+
+**Las alertas de presupuesto son un mecanismo, no un número.** El docente
+pidió avisar al 50 %, 75 % y 90 %, pero no ha fijado ningún presupuesto
+todavía. `PRESUPUESTO_CALIBRACION` (`REVISOR_PRESUPUESTO_USD`, por entorno
+o `.env`) y `--presupuesto-usd` en la línea de órdenes son las dos vías por
+las que ese número podrá entrar; mientras ninguna lo traiga,
+`ResumenDeConsumo.presupuesto_configurado` queda en `False` y el informe
+lo dice sin calcular ningún porcentaje sobre un límite inventado. Un
+presupuesto a cero o en negativo -un `.env` mal escrito, un signo
+equivocado- se trata igual que ausente, no como un presupuesto real de
+cero. Este es exactamente el mismo patrón que ya usa `CARPETA_CALIBRACION`
+para la carpeta de los PDF.
+
+**La cola o el reintento marcado, sin perder el PDF ni la ficha, queda
+fuera.** Hoy, si un análisis falla, la entrega vuelve a `RECIBIDO` -no se
+guarda nada a medias- y se puede volver a pedir a mano; el PDF y la ficha
+nunca se tocan porque `analizar_entrega` no llega a escribir nada cuando
+falla. Encolar automáticamente o marcar una entrega para reintento es
+alcance nuevo -un estado nuevo en el flujo, o un disparador que hoy no
+existe- y el docente pidió decidirlo él mismo, no que se construyera de
+oficio. El informe de calibración lo dice explícitamente, para que quede
+constancia de qué se pidió y qué no se ha construido todavía.
+
+**Arrastra:** `tools/calibrar.py`
+(`ResumenDeConsumo`, `AlertaDePresupuesto`, `_resumen_de_consumo`,
+`_lectura_de_consumo`, `PRESUPUESTO_CALIBRACION`, `UMBRALES_DE_ALERTA_PCT`,
+`PROYECCIONES_DE_ANALISIS`, `--presupuesto-usd`) y
+`tests/tools/test_calibrar.py`.
