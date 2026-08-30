@@ -12,13 +12,20 @@ from backend.analisis.verificacion import (
     ValoracionVerificada,
 )
 from backend.persistencia.modelos import EntregaRegistrada
-from backend.salidas.informe import componer_informe
+from backend.salidas.informe import (
+    calcular_nota_interna,
+    componer_informe,
+    componer_sintesis_provisional,
+    rubrica_pendiente,
+    semaforo_por_valoraciones,
+)
+from backend.salidas.seleccion import SeleccionDePrioridades
 
 
-def _entrega():
+def _entrega(fase="E2"):
     return EntregaRegistrada(
-        id="id-1", codigo_alumno="AF023", ciclo="DAM", fase="E2", version=1,
-        nombre_archivo="AF023/AF023_DAM_E2_20260115_v1.pdf", huella="a" * 64,
+        id="id-1", codigo_alumno="AF023", ciclo="DAM", fase=fase, version=1,
+        nombre_archivo=f"AF023/AF023_DAM_{fase}_20260115_v1.pdf", huella="a" * 64,
         recibida_en=datetime(2026, 1, 15, 10, 0), estado="RECIBIDO",
         motivo_bloqueo=None, version_criterios="v2026-2027",
     )
@@ -129,21 +136,21 @@ def test_un_p1_pone_el_semaforo_en_rojo(criterios_de_analisis: Path) -> None:
     i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
                          _analisis([_v("D05", "P1")]), "simulado")
 
-    assert i.semaforo == "ROJO"
+    assert i.semaforo_propuesto == "ROJO"
 
 
 def test_un_p2_pone_el_semaforo_en_ambar(criterios_de_analisis: Path) -> None:
     i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
                          _analisis([_v("D05", "P2")]), "simulado")
 
-    assert i.semaforo == "AMBAR"
+    assert i.semaforo_propuesto == "AMBAR"
 
 
 def test_sin_prioridades_el_semaforo_es_verde(criterios_de_analisis: Path) -> None:
     i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
                          _analisis([_v("D05", None)]), "simulado")
 
-    assert i.semaforo == "VERDE"
+    assert i.semaforo_propuesto == "VERDE"
 
 
 def test_sin_ninguna_valoracion_el_semaforo_es_gris(
@@ -158,7 +165,7 @@ def test_sin_ninguna_valoracion_el_semaforo_es_gris(
     i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
                          _analisis([]), "simulado")
 
-    assert i.semaforo == "GRIS"
+    assert i.semaforo_propuesto == "GRIS"
     assert i.recomendacion == "Resolver incidencia; no emitir juicio académico automático"
 
 
@@ -183,7 +190,7 @@ def test_si_todas_las_citas_resultaron_inventadas_el_semaforo_es_gris(
         "simulado",
     )
 
-    assert i.semaforo == "GRIS"
+    assert i.semaforo_propuesto == "GRIS"
     assert i.recomendacion == "Resolver incidencia; no emitir juicio académico automático"
     # Pero las valoraciones no desaparecen: el docente las ve enteras.
     assert len(i.valoraciones) == 2
@@ -204,8 +211,8 @@ def test_gris_no_es_lo_mismo_que_verde(criterios_de_analisis: Path) -> None:
         _analisis([_v("D05", None, localizada=True)]), "simulado",
     )
 
-    assert gris.semaforo == "GRIS"
-    assert verde.semaforo == "VERDE"
+    assert gris.semaforo_propuesto == "GRIS"
+    assert verde.semaforo_propuesto == "VERDE"
 
 
 def test_una_valoracion_localizada_basta_aunque_otra_no_lo_este(
@@ -222,7 +229,7 @@ def test_una_valoracion_localizada_basta_aunque_otra_no_lo_este(
         "simulado",
     )
 
-    assert i.semaforo == "AMBAR"
+    assert i.semaforo_propuesto == "AMBAR"
 
 
 def test_la_recomendacion_acompana_al_semaforo_y_no_es_una_nota(
@@ -236,7 +243,7 @@ def test_la_recomendacion_acompana_al_semaforo_y_no_es_una_nota(
     i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
                          _analisis([_v("D05", "P1")]), "simulado")
 
-    assert i.semaforo == "ROJO"
+    assert i.semaforo_propuesto == "ROJO"
     assert i.recomendacion == "Revisión docente y plan de corrección"
 
 
@@ -254,7 +261,7 @@ def test_dimensiones_no_valoradas_quedan_a_la_vista(
         "simulado",
     )
 
-    assert i.semaforo == "VERDE"
+    assert i.semaforo_propuesto == "VERDE"
     assert i.dimensiones_ausentes == ["D01", "D02", "D03"]
 
 
@@ -464,6 +471,312 @@ def test_llamar_seleccionar_prioridades_una_vez_basta(
                      _analisis([_v("D05", "P1")]), "simulado")
 
     assert len(llamadas) == 1
+
+
+# --- Doble semáforo (D-016) -------------------------------------------------
+
+
+def test_semaforo_final_docente_empieza_vacio(criterios_de_analisis: Path) -> None:
+    """Recién analizado, nadie ha cerrado ninguna revisión todavía."""
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
+                         _analisis([_v("D05", "P1")]), "simulado")
+
+    assert i.semaforo_propuesto == "ROJO"
+    assert i.semaforo_final_docente is None
+
+
+def test_semaforo_por_valoraciones_coincide_con_el_semaforo_propuesto(
+    criterios_de_analisis: Path,
+) -> None:
+    """`semaforo_por_valoraciones` es la función que `revisar()`
+    (`backend/api/analisis.py`) reutiliza para comprobar la compatibilidad
+    del semáforo final: tiene que dar el mismo resultado que
+    `semaforo_propuesto` cuando se le pasa exactamente el mismo conjunto de
+    valoraciones con el que se compuso el informe."""
+    valoraciones = [_v("D05", "P1"), _v("D06", "P2")]
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega(), None,
+                         _analisis(valoraciones), "simulado")
+
+    assert semaforo_por_valoraciones(valoraciones) == i.semaforo_propuesto == "ROJO"
+
+
+def test_semaforo_por_valoraciones_ignora_lo_no_localizado() -> None:
+    """Mismo criterio que `_semaforo`, extraído a función pública: un P1
+    cuya cita no se localizó no puede sostener un ROJO."""
+    assert semaforo_por_valoraciones([_v("D05", "P1", localizada=False)]) == "GRIS"
+
+
+def test_semaforo_por_valoraciones_sin_nada_da_gris() -> None:
+    assert semaforo_por_valoraciones([]) == "GRIS"
+
+
+# --- Nota interna (D-015) ---------------------------------------------------
+
+
+def test_sin_rubrica_la_nota_esta_pendiente(criterios_de_analisis: Path) -> None:
+    """Hoy no hay rúbrica oficial -`rubrica` y `ponderaciones` siguen en
+    `docs/PENDIENTE_OFICIAL.md` del repositorio real, y la fixture
+    `criterios_de_analisis` ni siquiera copia `docs/`, así que
+    `rubrica_pendiente` tampoco encuentra el fichero-: el estado es
+    `pendiente_de_rubrica` y no hay ningún número."""
+    i = componer_informe(criterios_de_analisis, "v2026-2027", _entrega("E2"), None,
+                         _analisis([_v("D05", "P1")]), "simulado")
+
+    assert i.estado_nota == "pendiente_de_rubrica"
+    assert i.nota_propuesta_sistema is None
+    assert i.version_rubrica is None
+    assert i.ponderaciones_nota is None
+    assert i.nota_final_docente is None
+
+
+def test_fases_sin_nota_de_informe_son_no_aplicable(
+    criterios_de_analisis: Path,
+) -> None:
+    """TEMA no puntúa como entrega y DEFENSA se valora a mano (§6.5): las
+    dos quedan `no_aplicable`, no `pendiente_de_rubrica` -no es que falte un
+    dato, es que este cálculo no les corresponde-."""
+    for fase in ("TEMA", "DEFENSA"):
+        i = componer_informe(
+            criterios_de_analisis, "v2026-2027", _entrega(fase), None,
+            _analisis([_v("D05", "P1")]), "simulado",
+        )
+        assert i.estado_nota == "no_aplicable", fase
+        assert i.nota_propuesta_sistema is None, fase
+
+
+def test_rubrica_pendiente_sin_fichero_da_true(tmp_path: Path) -> None:
+    """Mismo criterio que `proteccion_datos_pendiente`: sin
+    `docs/PENDIENTE_OFICIAL.md`, la duda no se resuelve a favor de inventar
+    una nota."""
+    assert rubrica_pendiente(tmp_path) is True
+
+
+def test_rubrica_pendiente_si_las_dos_entradas_siguen_en_el_fichero(
+    tmp_path: Path,
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PENDIENTE_OFICIAL.md").write_text(
+        "- **rubrica** — pendiente.\n- **ponderaciones** — pendiente.\n",
+        encoding="utf-8",
+    )
+
+    assert rubrica_pendiente(tmp_path) is True
+
+
+def test_rubrica_pendiente_si_solo_una_de_las_dos_se_resuelve(
+    tmp_path: Path,
+) -> None:
+    """No basta con cerrar `rubrica` sin cerrar `ponderaciones`, ni al
+    revés: `criteria/v2026-2027/ponderaciones.yaml` declara con sus propias
+    palabras que bloquea `nota_final` y `nota_propuesta`, así que sin las
+    dos a la vez no hay con qué calcular nada."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PENDIENTE_OFICIAL.md").write_text(
+        "- **ponderaciones** — pendiente.\n", encoding="utf-8",
+    )
+
+    assert rubrica_pendiente(tmp_path) is True
+
+
+def test_rubrica_pendiente_falso_cuando_las_dos_se_resuelven(
+    tmp_path: Path,
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PENDIENTE_OFICIAL.md").write_text(
+        "Ya no queda nada pendiente sobre calificación.\n", encoding="utf-8",
+    )
+
+    assert rubrica_pendiente(tmp_path) is False
+
+
+def _raiz_con_rubrica(tmp_path: Path) -> Path:
+    """Una raíz de prueba con la rúbrica ya resuelta: la vía por la que
+    entrará una rúbrica real cuando `docs/PENDIENTE_OFICIAL.md` deje de
+    nombrarla. Los números de aquí son de prueba, no una rúbrica oficial:
+    ese fichero no existe todavía en el repositorio real, y esta función
+    vive solo en `tests/`.
+    """
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PENDIENTE_OFICIAL.md").write_text(
+        "Nada pendiente sobre calificación en esta copia de prueba.\n",
+        encoding="utf-8",
+    )
+    criterios = tmp_path / "criteria" / "v2026-2027"
+    criterios.mkdir(parents=True)
+    (criterios / "rubrica.yaml").write_text(
+        "version: v2026-2027-prueba\n"
+        "ponderaciones:\n"
+        "  D05: 0.5\n"
+        "  D06: 0.5\n"
+        "escala:\n"
+        "  SOLIDO: 10.0\n"
+        "  ADECUADO: 7.5\n"
+        "  EN_DESARROLLO: 5.0\n"
+        "  INSUFICIENTE: 2.5\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_con_rubrica_cargada_se_calcula_la_nota_propuesta(tmp_path: Path) -> None:
+    raiz = _raiz_con_rubrica(tmp_path)
+    valoraciones = [
+        ValoracionVerificada(
+            dimension="D05", nivel="SOLIDO", prioridad=None,
+            evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="5"),
+            observacion="obs", evidencia_localizada=True,
+        ),
+        ValoracionVerificada(
+            dimension="D06", nivel="EN_DESARROLLO", prioridad="P2",
+            evidencia=Evidencia(cita="Otra cita bastante larga del trabajo.", apartado="6"),
+            observacion="obs", evidencia_localizada=True,
+        ),
+    ]
+
+    nota, estado, version_rubrica, ponderaciones = calcular_nota_interna(
+        raiz, "v2026-2027", "E2", valoraciones,
+    )
+
+    # (10.0 * 0.5 + 5.0 * 0.5) / (0.5 + 0.5) = 7.5
+    assert nota == 7.5
+    assert estado == "propuesta"
+    assert version_rubrica == "v2026-2027-prueba"
+    assert ponderaciones == {"D05": 0.5, "D06": 0.5}
+
+
+def test_la_nota_propuesta_solo_cuenta_lo_localizado(tmp_path: Path) -> None:
+    """Misma defensa que el semáforo: una valoración cuya cita no se
+    localizó no puede pesar en un número que el docente va a auditar."""
+    raiz = _raiz_con_rubrica(tmp_path)
+    valoraciones = [
+        ValoracionVerificada(
+            dimension="D05", nivel="SOLIDO", prioridad=None,
+            evidencia=Evidencia(cita="Una cita bastante larga del trabajo.", apartado="5"),
+            observacion="obs", evidencia_localizada=True,
+        ),
+        ValoracionVerificada(
+            dimension="D06", nivel="INSUFICIENTE", prioridad="P1",
+            evidencia=Evidencia(cita="Cita que no se localizó en el documento.", apartado="6"),
+            observacion="obs", evidencia_localizada=False,
+        ),
+    ]
+
+    nota, estado, _, ponderaciones = calcular_nota_interna(
+        raiz, "v2026-2027", "E2", valoraciones,
+    )
+
+    assert nota == 10.0  # solo D05 cuenta
+    assert estado == "propuesta"
+    assert ponderaciones == {"D05": 0.5}
+
+
+def test_la_nota_propuesta_via_componer_informe(tmp_path: Path) -> None:
+    """El mismo cálculo, pero pasando por `componer_informe`, para
+    comprobar que el informe entero lo recoge, no solo la función suelta."""
+    raiz = _raiz_con_rubrica(tmp_path)
+    i = componer_informe(
+        raiz, "v2026-2027", _entrega("E2"), None,
+        _analisis([_v("D05", None)]), "simulado",
+    )
+
+    assert i.estado_nota == "propuesta"
+    assert i.nota_propuesta_sistema is not None
+    assert i.nota_final_docente is None
+
+
+# --- Síntesis provisional (D-017) -------------------------------------------
+
+
+def test_la_sintesis_provisional_tiene_varias_lineas(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v("D05", "P1")], dimensiones_ausentes=["D01"],
+                  reparos=[Reparo(regla="x", detalle="Algo.")]),
+        "simulado",
+    )
+
+    lineas = i.sintesis_provisional.splitlines()
+    assert 4 <= len(lineas) <= 6
+
+
+def test_la_sintesis_nombra_las_dimensiones_y_las_prioridades(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v("D05", "P1"), _v("D06", "P2")]), "simulado",
+    )
+
+    assert "D05 (P1)" in i.sintesis_provisional
+    assert "D06 (P2)" in i.sintesis_provisional
+
+
+def test_la_sintesis_incluye_las_fortalezas_fiables(
+    criterios_de_analisis: Path,
+) -> None:
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()], fortalezas=[_fortaleza("La estructura es clara.")]),
+        "simulado",
+    )
+
+    assert "La estructura es clara." in i.sintesis_provisional
+
+
+def test_la_sintesis_no_incluye_una_fortaleza_sin_localizar(
+    criterios_de_analisis: Path,
+) -> None:
+    """La misma defensa que ya protege a `resumen`: una fortaleza cuya cita
+    no se localizó no puede aparecer en un texto que el docente va a
+    convertir en la síntesis que entrega -sería exactamente el problema de
+    la cita inventada que D-011 cerró, reabierto en un campo nuevo."""
+    fortaleza_inventada = _fortaleza(
+        "Esta fortaleza tiene la cita inventada por el motor.", localizada=False,
+    )
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v()], fortalezas=[fortaleza_inventada]),
+        "simulado",
+    )
+
+    assert "inventada" not in i.sintesis_provisional
+    assert "Ninguna fortaleza verificada." in i.sintesis_provisional
+
+
+def test_el_resumen_y_la_sintesis_provisional_conviven(
+    criterios_de_analisis: Path,
+) -> None:
+    """D-017 no sustituye a `resumen` -D-011 solo señalaba un hueco, no
+    pedía borrar el recuento factual-: los dos campos existen a la vez y
+    dicen cosas relacionadas pero no idénticas."""
+    i = componer_informe(
+        criterios_de_analisis, "v2026-2027", _entrega(), None,
+        _analisis([_v("D05", "P1")]), "simulado",
+    )
+
+    assert i.resumen
+    assert i.sintesis_provisional
+    assert i.resumen != i.sintesis_provisional
+    assert "Semáforo propuesto: ROJO" in i.resumen
+    assert "Semáforo propuesto: ROJO" in i.sintesis_provisional
+
+
+def test_componer_sintesis_provisional_es_pura_y_reutilizable() -> None:
+    """Público, como `componer_resumen`: no hay motivo para que solo
+    `componer_informe` pueda llamarla."""
+    seleccion = SeleccionDePrioridades(elegidas=[], descartadas=[])
+
+    texto = componer_sintesis_provisional("VERDE", seleccion, [], [], [])
+
+    assert texto == componer_sintesis_provisional("VERDE", seleccion, [], [], [])
+    assert "Ninguna prioridad verificada para la devolución." in texto
+    assert "Ninguna fortaleza verificada." in texto
 
 
 # --- cabecera: modalidad y fecha (§17.1, decisión del docente) -------------

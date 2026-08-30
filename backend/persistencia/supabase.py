@@ -502,7 +502,22 @@ class AlmacenSupabase:
             "entrega_id": entrega_id,
             "version_criterios": informe.identificacion.get("criterios") or "",
             "resumen_ejecutivo": informe.resumen,
-            "semaforo_propuesto": informe.semaforo,
+            "semaforo_propuesto": informe.semaforo_propuesto,
+            # `semaforo_aprobado` ya existía en el esquema inicial, sin usar
+            # -D-016 (`docs/decisions.md`) es lo primero que lo rellena-.
+            # `nota_propuesta`, `nota_aprobada`, `aprobada_en` y
+            # `aprobada_por` siguen sin tocarse a propósito: la migración
+            # exige `aprobada_en`/`aprobada_por` en cuanto hay
+            # `nota_aprobada` (constraint `aprobacion_con_firma`), y este
+            # sistema todavía no tiene ninguna identidad de docente que
+            # escribir ahí -no hay autenticación-. Escribir un valor
+            # inventado en `aprobada_por` para poder rellenar esas columnas
+            # sería inventar un dato, y R6/R3 lo prohíben igual que
+            # cualquier otro. La nota interna entera -`nota_propuesta_
+            # sistema`, `estado_nota`, `nota_final_docente` y el resto- vive
+            # por ahora solo dentro de la columna `informe`, que sí se relee
+            # entera en `correccion_de`.
+            "semaforo_aprobado": informe.semaforo_final_docente,
             "accion_recomendada": informe.recomendacion,
             "informe": informe.model_dump(mode="json"),
             "devolucion": (

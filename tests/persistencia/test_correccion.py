@@ -38,10 +38,12 @@ from backend.persistencia.correccion import (
     LIMITE_DE_CITA,
     LIMITE_DE_DUDA,
     LIMITE_DE_LINEA_DE_DEVOLUCION,
+    LIMITE_DE_MOTIVO_NOTA,
     LIMITE_DE_OBSERVACION,
     LIMITE_DE_OBSERVACION_DOCENTE,
     LIMITE_DE_REPARO,
     LIMITE_DE_RESUMEN,
+    LIMITE_DE_SINTESIS,
     TextoFueraDeLimite,
     validar_textos_acotados,
 )
@@ -57,9 +59,14 @@ _IDENTIFICACION = {
 def _informe(**cambios) -> Informe:
     datos = dict(
         identificacion=_IDENTIFICACION, control_administrativo=[],
-        resumen="Resumen.", valoraciones=[], fortalezas=[], prioridades=[],
+        resumen="Resumen.", sintesis_provisional="Síntesis provisional.",
+        valoraciones=[], fortalezas=[], prioridades=[],
         prioridades_descartadas=[], dudas=[], indicios=[], reparos=[],
-        dimensiones_ausentes=[], semaforo="GRIS", recomendacion=None,
+        dimensiones_ausentes=[], semaforo_propuesto="GRIS",
+        semaforo_final_docente=None, recomendacion=None,
+        nota_propuesta_sistema=None, estado_nota="pendiente_de_rubrica",
+        version_rubrica=None, ponderaciones_nota=None,
+        nota_final_docente=None, motivo_modificacion_nota=None,
         motor="simulado",
     )
     datos.update(cambios)
@@ -222,6 +229,10 @@ def test_sin_pasar_limite_de_observacion_se_usa_el_del_motor_por_omision() -> No
 _CASOS_DE_PROSA = [
     ("resumen", LIMITE_DE_RESUMEN,
      lambda texto: (_informe(resumen=texto), None)),
+    ("sintesis_provisional", LIMITE_DE_SINTESIS,
+     lambda texto: (_informe(sintesis_provisional=texto), None)),
+    ("motivo_modificacion_nota", LIMITE_DE_MOTIVO_NOTA,
+     lambda texto: (_informe(motivo_modificacion_nota=texto), None)),
     ("observacion_de_valoracion", LIMITE_DE_OBSERVACION,
      lambda texto: (_informe(valoraciones=[_valoracion(observacion=texto)]), None)),
     ("observacion_de_prioridad", LIMITE_DE_OBSERVACION,

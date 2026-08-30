@@ -38,6 +38,9 @@ const RESULTADO: ResultadoAnalisis = {
     },
     control_administrativo: [],
     resumen: "El trabajo cubre la mayoría de los apartados exigidos.",
+    sintesis_provisional:
+      "Semáforo propuesto: AMBAR.\n2 prioridades verificadas para la " +
+      "devolución: D01 (P1), D02 (P2).",
     valoraciones: [
       {
         dimension: "D01", nivel: "INSUFICIENTE", prioridad: "P1",
@@ -135,8 +138,15 @@ const RESULTADO: ResultadoAnalisis = {
       },
     ],
     continuidad_nota: null,
-    semaforo: "AMBAR",
+    semaforo_propuesto: "AMBAR",
+    semaforo_final_docente: null,
     recomendacion: "Aplicar cambios antes de cerrar la siguiente fase",
+    nota_propuesta_sistema: null,
+    estado_nota: "pendiente_de_rubrica",
+    version_rubrica: null,
+    ponderaciones_nota: null,
+    nota_final_docente: null,
+    motivo_modificacion_nota: null,
     motor: "gpt-ejemplo",
   },
   // Dos acciones, en el mismo orden que `informe.prioridades`: así
@@ -353,6 +363,14 @@ describe("Revision", () => {
         { dimension: "D03", decision: "ACEPTADA", texto: null },
         { dimension: "D04", decision: "ACEPTADA", texto: null },
       ] satisfies Decision[],
+      // Los cuatro campos nuevos de D-015, D-016 y D-017 viajan siempre,
+      // con lo que ya tenía el informe -nada de esto se tocó en el test-:
+      // `null` en los tres primeros (nadie ha confirmado nada todavía) y la
+      // síntesis provisional tal como la compuso el análisis.
+      semaforo_final_docente: null,
+      nota_final_docente: null,
+      motivo_modificacion_nota: null,
+      sintesis_provisional: RESULTADO.informe.sintesis_provisional,
     })
   })
 
@@ -395,22 +413,160 @@ describe("Revision", () => {
     expect(screen.queryByText(/^guardado\.$/i)).not.toBeInTheDocument()
   })
 
-  it("no hay ningún control de nota, semáforo editable ni botón de aprobar", () => {
-    const { container } = render(
-      <Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />,
-    )
+  it("no hay ningún botón de aprobar, y el semáforo propuesto se sigue sin poder editar", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
 
+    // D-015/D-016 dan un control nuevo para el semáforo FINAL y para la
+    // nota, pero ninguno de los dos es un botón de «aprobar»: la única
+    // acción que guarda algo sigue siendo «Guardar la revisión», la misma
+    // de siempre.
     expect(screen.queryByRole("button", { name: /aprobar/i })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/nota/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/^nota$/i)).not.toBeInTheDocument()
-    // El semáforo se lee, no se elige: ni un <select> ni un <input> a su
-    // alrededor.
+
+    // El propuesto se sigue leyendo, no eligiendo: ni un <select> ni un
+    // <input> a su alrededor.
     const seccionSemaforo = screen.getByRole("heading", {
-      name: /semáforo propuesto/i,
+      name: /^semáforo propuesto$/i,
     }).closest("section")!
     expect(seccionSemaforo.querySelector("select")).toBeNull()
     expect(seccionSemaforo.querySelector("input")).toBeNull()
-    expect(container.querySelector("select")).toBeNull()
+  })
+
+  it("hay un selector para el semáforo final, aparte del propuesto", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    const seccionFinal = screen.getByRole("heading", {
+      name: /^semáforo final$/i,
+    }).closest("section")!
+    const selector = within(seccionFinal).getByLabelText(/semáforo final/i)
+    expect(selector.tagName).toBe("SELECT")
+    // Sin confirmar todavía: `RESULTADO.informe.semaforo_final_docente` es
+    // `null`.
+    expect((selector as HTMLSelectElement).value).toBe("")
+  })
+
+  it("elegir un semáforo final compatible y guardar lo envía al servidor", async () => {
+    const usuario = (await import("@testing-library/user-event")).default
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    await usuario.selectOptions(
+      screen.getByLabelText(/semáforo final/i), "AMBAR",
+    )
+    fireEvent.click(screen.getByRole("button", { name: /guardar la revisión/i }))
+    await screen.findByText(/guardado/i)
+
+    const cuerpo = vi.mocked(api.revisar).mock.calls[0][1]
+    expect(cuerpo.semaforo_final_docente).toBe("AMBAR")
+  })
+
+  it("avisa, sin bloquear, si el semáforo final elegido ya no cuadra con lo aprobado", async () => {
+    // D01 sigue aprobada (P1): el mínimo sigue siendo ROJO. Elegir VERDE es
+    // incompatible, y la pantalla lo dice antes de que el docente llegue a
+    // guardar -el servidor es quien de verdad lo rechazaría, pero el aviso
+    // aquí ahorra el viaje-.
+    const usuario = (await import("@testing-library/user-event")).default
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    await usuario.selectOptions(screen.getByLabelText(/semáforo final/i), "VERDE")
+
+    expect(
+      screen.getByText(/el color mínimo es «rojo»/i),
+    ).toBeInTheDocument()
+  })
+
+  it("el servidor puede rechazar un semáforo final incompatible, y el aviso se ve", async () => {
+    vi.mocked(api.revisar).mockRejectedValueOnce(
+      new Error(
+        "No se puede cerrar con el semáforo final «VERDE»: las " +
+        "observaciones que siguen aprobadas en esta revisión no bajan de " +
+        "«ROJO».",
+      ),
+    )
+    const usuario = (await import("@testing-library/user-event")).default
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    await usuario.selectOptions(screen.getByLabelText(/semáforo final/i), "VERDE")
+    fireEvent.click(screen.getByRole("button", { name: /guardar la revisión/i }))
+
+    expect(
+      await screen.findByText(/no se puede cerrar con el semáforo final/i),
+    ).toBeInTheDocument()
+  })
+
+  it("sin rúbrica no hay ningún control de nota, solo la explicación", () => {
+    // `RESULTADO.informe.estado_nota` es `pendiente_de_rubrica`.
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    expect(screen.queryByLabelText(/nota final/i)).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/pendiente de rúbrica oficial/i),
+    ).toBeInTheDocument()
+  })
+
+  it("con una nota propuesta aparece el control para aprobarla o modificarla", () => {
+    const CON_RUBRICA = {
+      ...RESULTADO,
+      informe: {
+        ...RESULTADO.informe,
+        estado_nota: "propuesta" as const,
+        nota_propuesta_sistema: 7.25,
+        version_rubrica: "v2026-2027-prueba",
+      },
+    }
+    render(<Revision id="id-1" inicial={CON_RUBRICA} alVolver={vi.fn()} />)
+
+    expect(screen.getByText(/7\.25/)).toBeInTheDocument()
+    expect(screen.getByText(/v2026-2027-prueba/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^nota final$/i)).toBeInTheDocument()
+  })
+
+  it("escribir una nota distinta de la propuesta enseña el campo de motivo", async () => {
+    const usuario = (await import("@testing-library/user-event")).default
+    const CON_RUBRICA = {
+      ...RESULTADO,
+      informe: {
+        ...RESULTADO.informe,
+        estado_nota: "propuesta" as const,
+        nota_propuesta_sistema: 7,
+      },
+    }
+    render(<Revision id="id-1" inicial={CON_RUBRICA} alVolver={vi.fn()} />)
+
+    expect(screen.queryByLabelText(/motivo del cambio/i)).not.toBeInTheDocument()
+
+    await usuario.clear(screen.getByLabelText(/^nota final$/i))
+    await usuario.type(screen.getByLabelText(/^nota final$/i), "6")
+
+    expect(screen.getByLabelText(/motivo del cambio/i)).toBeInTheDocument()
+    // El texto pedido es sobre el criterio, nunca sobre el alumno.
+    expect(screen.getByText(/no circunstancias del alumno/i)).toBeInTheDocument()
+  })
+
+  it("hay una síntesis provisional editable, rotulada para revisión docente", () => {
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    expect(
+      screen.getByRole("heading", { name: /síntesis provisional para revisión docente/i }),
+    ).toBeInTheDocument()
+    const campo = screen.getByLabelText(
+      /síntesis provisional para revisión docente/i,
+    ) as HTMLTextAreaElement
+    expect(campo.tagName).toBe("TEXTAREA")
+    expect(campo.value).toBe(RESULTADO.informe.sintesis_provisional)
+  })
+
+  it("editar la síntesis provisional y guardar la envía tal cual", async () => {
+    const usuario = (await import("@testing-library/user-event")).default
+    render(<Revision id="id-1" inicial={RESULTADO} alVolver={vi.fn()} />)
+
+    const campo = screen.getByLabelText(/síntesis provisional para revisión docente/i)
+    await usuario.clear(campo)
+    await usuario.type(campo, "Mi propia lectura del conjunto.")
+
+    fireEvent.click(screen.getByRole("button", { name: /guardar la revisión/i }))
+    await screen.findByText(/guardado/i)
+
+    const cuerpo = vi.mocked(api.revisar).mock.calls[0][1]
+    expect(cuerpo.sintesis_provisional).toBe("Mi propia lectura del conjunto.")
   })
 
   it("un análisis con el informe válido y el borrador fallido no se presenta como un error", () => {

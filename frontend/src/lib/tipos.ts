@@ -314,11 +314,33 @@ export interface ContinuidadFeedback {
   estado: "APLICADO" | "PARCIALMENTE_APLICADO" | "PENDIENTE" | "NO_VERIFICABLE"
   motivo: string
 }
+// Los cinco estados de `Informe.estado_nota` (D-015, `docs/decisions.md`):
+// nace `pendiente_de_rubrica` -o `no_aplicable`, en TEMA y DEFENSA, que
+// nunca llevan nota de corrección- y solo pasa a `propuesta` cuando existe
+// una rúbrica oficial cargada y versionada de la que calcular un número.
+// `aprobada` y `modificada` son la decisión del docente en `revisar()`:
+// nunca las pone el motor, y nunca hay una sin que antes exista una
+// `propuesta` sobre la que decidir.
+export const ESTADOS_NOTA = [
+  "pendiente_de_rubrica", "propuesta", "modificada", "aprobada", "no_aplicable",
+] as const
+export type EstadoNota = (typeof ESTADOS_NOTA)[number]
+
+export const CODIGOS_SEMAFORO = ["VERDE", "AMBAR", "ROJO", "GRIS"] as const
+export type CodigoDeSemaforo = (typeof CODIGOS_SEMAFORO)[number]
 
 export interface Informe {
   identificacion: Record<string, string>
   control_administrativo: string[]
   resumen: string
+  /**
+   * La síntesis provisional de D-017: cinco o seis líneas compuestas por el
+   * sistema a partir de piezas ya verificadas, para que el docente las
+   * reescriba en la lectura del conjunto que el §17.1 y el §11.1 describen.
+   * Nunca se cierra sola: `revisar()` la guarda tal cual la deje el
+   * docente, editada o no.
+   */
+  sintesis_provisional: string
   valoraciones: ValoracionVerificada[]
   fortalezas: FortalezaVerificada[]
   /** Como mucho las que fija la economía pedagógica (hoy, cuatro). */
@@ -334,8 +356,41 @@ export interface Informe {
   continuidad: ContinuidadFeedback[]
   /** Por qué `continuidad` está vacía, cuando lo está. `null` si no lo está. */
   continuidad_nota: string | null
-  semaforo: string
+  /**
+   * El que propone el sistema al analizar (D-016). Inalterable después de
+   * ese momento -ni siquiera `revisar()` lo recalcula-: es la prueba de
+   * auditoría de lo que se propuso antes de que nadie revisara nada.
+   */
+  semaforo_propuesto: string
+  /**
+   * El que el docente confirma al cerrar la revisión, o `null` mientras no
+   * lo haya hecho. No puede ser un color menos severo del que sostienen
+   * las observaciones que siguen aprobadas -`revisar()` lo rechaza antes de
+   * guardar nada si lo es-.
+   */
+  semaforo_final_docente: string | null
   recomendacion: string | null
+  /**
+   * La estimación interna del sistema (D-015). `null` mientras
+   * `estado_nota` sea `pendiente_de_rubrica` o `no_aplicable`: no hay
+   * número que enseñar cuando no hay de qué calcularlo. Nunca la propone
+   * el motor -el contrato del motor sigue sin admitir ningún campo de
+   * nota-, la calcula el sistema a partir de una rúbrica oficial.
+   */
+  nota_propuesta_sistema: number | null
+  estado_nota: EstadoNota
+  /** De qué rúbrica salió `nota_propuesta_sistema`, o `null` sin rúbrica. */
+  version_rubrica: string | null
+  /** El peso de cada dimensión en el cálculo, o `null` sin rúbrica. */
+  ponderaciones_nota: Record<string, number> | null
+  /** Lo que el docente aprueba o modifica en `revisar()` (§13). */
+  nota_final_docente: number | null
+  /**
+   * Opcional. Sobre el criterio de corrección -qué pesó en el cambio-,
+   * nunca sobre el alumno: no hay ningún campo de este sistema donde una
+   * circunstancia personal tenga sitio.
+   */
+  motivo_modificacion_nota: string | null
   motor: string
 }
 
@@ -370,7 +425,20 @@ export interface Decision {
   texto?: string | null
 }
 
-/** El cuerpo de `POST /entregas/{id}/revision`. */
+/**
+ * El cuerpo de `POST /entregas/{id}/revision`.
+ *
+ * Los cuatro campos nuevos comparten un criterio con el backend
+ * (`Revision` en `backend/api/analisis.py`): omitirlos -o mandar `null`- no
+ * borra nada, conserva lo que ya hubiera guardado. Solo `decisiones` es
+ * obligatorio; el resto son opcionales a propósito, para que una petición
+ * que no toca ninguno de los tres siga funcionando igual que antes de esta
+ * tarea.
+ */
 export interface PeticionRevision {
   decisiones: Decision[]
+  semaforo_final_docente?: string | null
+  nota_final_docente?: number | null
+  motivo_modificacion_nota?: string | null
+  sintesis_provisional?: string | null
 }

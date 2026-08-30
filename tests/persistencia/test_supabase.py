@@ -633,10 +633,15 @@ def _informe_de_prueba(valoraciones: list[ValoracionVerificada]) -> Informe:
             "archivo": "AF023_DAM_E2_20260115_v1.pdf", "criterios": "v2026-2027",
         },
         control_administrativo=[], resumen="Resumen.",
+        sintesis_provisional="Síntesis provisional.",
         valoraciones=valoraciones, fortalezas=[], prioridades=[],
         prioridades_descartadas=[], dudas=[], indicios=[], reparos=[],
-        dimensiones_ausentes=[], semaforo="AMBAR",
+        dimensiones_ausentes=[], semaforo_propuesto="AMBAR",
+        semaforo_final_docente=None,
         recomendacion="Aplicar cambios antes de cerrar la siguiente fase",
+        nota_propuesta_sistema=None, estado_nota="pendiente_de_rubrica",
+        version_rubrica=None, ponderaciones_nota=None,
+        nota_final_docente=None, motivo_modificacion_nota=None,
         motor="simulado",
     )
 

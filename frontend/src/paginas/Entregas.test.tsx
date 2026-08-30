@@ -30,6 +30,7 @@ const REGISTRADA = {
   nombre_archivo: "AF023_DAM_E1_20251201_v1.pdf", huella: "a".repeat(64),
   recibida_en: "2026-08-20T09:00:00", estado: "RECIBIDO",
   motivo_bloqueo: null, version_criterios: "v2026-2027",
+ modalidad: null,
 }
 
 const ENTORNO = {

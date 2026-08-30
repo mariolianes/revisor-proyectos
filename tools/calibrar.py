@@ -277,9 +277,9 @@ def evaluar(caso: CasoDeCalibracion, informe: Informe) -> ResultadoDeCaso:
     return ResultadoDeCaso(
         codigo=caso.codigo,
         semaforo_esperado=caso.semaforo_esperado,
-        semaforo_obtenido=informe.semaforo,
-        acierta_semaforo=(informe.semaforo == caso.semaforo_esperado),
-        direccion=_direccion(caso.semaforo_esperado, informe.semaforo),
+        semaforo_obtenido=informe.semaforo_propuesto,
+        acierta_semaforo=(informe.semaforo_propuesto == caso.semaforo_esperado),
+        direccion=_direccion(caso.semaforo_esperado, informe.semaforo_propuesto),
         debe_encontrar_hallado=hallado,
         debe_encontrar_ausente=ausente,
         no_debe_hallado=no_debe_hallado,

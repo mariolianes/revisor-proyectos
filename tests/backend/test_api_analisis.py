@@ -196,10 +196,17 @@ def _informe_de_prueba(**cambios) -> Informe:
             "alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": "1",
             "archivo": "AF023_DAM_E2_20260115_v1.pdf", "criterios": "v2026-2027",
         },
-        control_administrativo=[], resumen="Resumen.", valoraciones=[],
+        control_administrativo=[], resumen="Resumen.",
+        sintesis_provisional="Síntesis provisional.",
+        valoraciones=[],
         fortalezas=[], prioridades=[], prioridades_descartadas=[], dudas=[],
-        indicios=[], reparos=[], dimensiones_ausentes=[], semaforo="AMBAR",
-        recomendacion=None, motor="simulado",
+        indicios=[], reparos=[], dimensiones_ausentes=[],
+        semaforo_propuesto="AMBAR", semaforo_final_docente=None,
+        recomendacion=None,
+        nota_propuesta_sistema=None, estado_nota="pendiente_de_rubrica",
+        version_rubrica=None, ponderaciones_nota=None,
+        nota_final_docente=None, motivo_modificacion_nota=None,
+        motor="simulado",
     )
     datos.update(cambios)
     return Informe(**datos)
@@ -428,9 +435,14 @@ def test_el_aviso_del_borrador_incompleto_no_reenvia_el_texto_de_dominio(
     )
     informe = Informe(
         identificacion={}, control_administrativo=[], resumen="r",
+        sintesis_provisional="s",
         valoraciones=[], fortalezas=[], prioridades=[],
         prioridades_descartadas=[], dudas=[], indicios=[], reparos=[],
-        dimensiones_ausentes=[], semaforo="GRIS", recomendacion=None,
+        dimensiones_ausentes=[], semaforo_propuesto="GRIS",
+        semaforo_final_docente=None, recomendacion=None,
+        nota_propuesta_sistema=None, estado_nota="pendiente_de_rubrica",
+        version_rubrica=None, ponderaciones_nota=None,
+        nota_final_docente=None, motivo_modificacion_nota=None,
         motor="simulado",
     )
 
@@ -837,9 +849,9 @@ def test_revisar_recompone_el_resumen(
     prioridades con una sola entrada y ningún P1 -exactamente lo que este
     test reproduce y comprueba que ya no pasa-.
 
-    El semáforo no se recalcula -no es una de las piezas que el docente
-    edita aquí-, así que la primera frase del resumen sigue diciendo lo
-    mismo que el campo `semaforo`, sin tocar.
+    `semaforo_propuesto` no se recalcula -D-016 lo declara inalterable
+    después del análisis-, así que la primera frase del resumen sigue
+    diciendo lo mismo que ese campo, sin tocar.
     """
     escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
                  [["1. Introduccion", "Texto suficiente del trabajo."]])
@@ -855,7 +867,7 @@ def test_revisar_recompone_el_resumen(
     informe = _informe_de_prueba(
         valoraciones=[p1, p2],
         prioridades=[p1, p2],
-        semaforo="ROJO",
+        semaforo_propuesto="ROJO",
         resumen=(
             "Semáforo propuesto: ROJO. 2 prioridades verificadas para la "
             "devolución (1 P1, 1 P2)."
@@ -877,9 +889,10 @@ def test_revisar_recompone_el_resumen(
     assert "1 P1" not in resumen
     assert "1 prioridad verificada" in resumen
     assert "1 P2" in resumen
-    # El semáforo no lo toca la revisión: la primera frase del resumen
-    # sigue de acuerdo con el campo `semaforo`, sin recalcular.
-    assert cuerpo["informe"]["semaforo"] == "ROJO"
+    # El semáforo propuesto no lo toca la revisión (D-016: inalterable): la
+    # primera frase del resumen sigue de acuerdo con ese campo, sin
+    # recalcular.
+    assert cuerpo["informe"]["semaforo_propuesto"] == "ROJO"
     assert "Semáforo propuesto: ROJO" in resumen
 
     # Lo guardado coincide con lo devuelto: una recarga de la ficha no
@@ -1218,3 +1231,352 @@ def test_la_entrega_revierte_falle_el_almacen_como_falle(
     # reintentar desde la pantalla.
     entrega = next(e for e in c.get("/api/entregas").json() if e["id"] == ident)
     assert entrega["estado"] == "RECIBIDO"
+
+
+# --- Doble semáforo (D-016) -------------------------------------------------
+
+
+def test_revisar_acepta_un_semaforo_final_compatible(cliente) -> None:
+    """`cliente` analiza una única observación P2 (AMBAR). Confirmar el
+    final con el mismo color -o uno más severo- no tropieza con nada."""
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [], "semaforo_final_docente": "AMBAR",
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["semaforo_propuesto"] == "AMBAR"
+    assert r.json()["informe"]["semaforo_final_docente"] == "AMBAR"
+
+
+def test_revisar_acepta_un_semaforo_final_mas_severo_que_el_minimo(cliente) -> None:
+    """Ir más allá del mínimo -ROJO sobre un AMBAR justificado- es
+    prudencia del docente, no una incompatibilidad: D-016 solo impide
+    quedarse corto, nunca pasarse."""
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [], "semaforo_final_docente": "ROJO",
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["semaforo_final_docente"] == "ROJO"
+
+
+def test_revisar_rechaza_un_semaforo_final_menos_severo_que_el_minimo(
+    cliente,
+) -> None:
+    """La observación P2 sigue aprobada -no se descarta-, así que el color
+    mínimo sigue siendo AMBAR: cerrar en VERDE lo esconde."""
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [], "semaforo_final_docente": "VERDE",
+    })
+
+    assert r.status_code == 400
+    detalle = r.json()["detail"]
+    assert "«VERDE»" in detalle
+    assert "«AMBAR»" in detalle
+    assert "No se ha guardado ningún cambio" in detalle
+
+    # Nada de esta petición se ha guardado: ni siquiera el semáforo final
+    # queda marcado, y sigue sin haber ninguna decisión aplicada.
+    guardado = cliente.get(f"/api/entregas/{cliente.identificador}/analisis").json()
+    assert guardado["informe"]["semaforo_final_docente"] is None
+
+
+def test_revisar_rechaza_un_color_que_no_existe(cliente) -> None:
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [], "semaforo_final_docente": "AZUL",
+    })
+
+    assert r.status_code == 400
+    assert "«AZUL»" in r.json()["detail"]
+
+
+def test_revisar_evalua_la_compatibilidad_sobre_las_decisiones_de_esta_peticion(
+    criterios_de_analisis, entregas, escribir_pdf,
+) -> None:
+    """Descartar la única observación crítica en la misma petición baja el
+    mínimo exigible: pedir un color acorde con lo que queda (AMBAR) tiene
+    que aceptarse, y pedir uno más benévolo que ni siquiera eso (VERDE)
+    tiene que seguir rechazándose -la comprobación corre sobre las
+    decisiones YA aplicadas de esta misma petición, no sobre el semáforo
+    propuesto original."""
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf",
+                 [["1. Introduccion", "Texto suficiente del trabajo."]])
+    c = _crear_cliente(criterios_de_analisis, entregas, ProveedorSimulado())
+    ident = _confirmar(c)
+
+    p1 = _valoracion_de_prueba("D06", "Carencia crítica.", prioridad="P1")
+    p2 = _valoracion_de_prueba("D05", "Mejora pendiente.", prioridad="P2")
+    informe = _informe_de_prueba(
+        valoraciones=[p1, p2], prioridades=[p1, p2],
+        semaforo_propuesto="ROJO",
+    )
+    c.app.state.almacen.guardar_correccion(ident, informe, None, "simulado")
+
+    friendly = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [{"dimension": "D06", "decision": "DESCARTADA", "texto": None}],
+        "semaforo_final_docente": "VERDE",
+    })
+    assert friendly.status_code == 400
+    assert "«AMBAR»" in friendly.json()["detail"]
+
+    acorde = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [{"dimension": "D06", "decision": "DESCARTADA", "texto": None}],
+        "semaforo_final_docente": "AMBAR",
+    })
+    assert acorde.status_code == 200
+    assert acorde.json()["informe"]["semaforo_final_docente"] == "AMBAR"
+    # El propuesto -D-016, inalterable- sigue diciendo ROJO: es la prueba de
+    # auditoría de lo que el sistema propuso antes de que nadie revisara
+    # nada, y no cambia porque el docente haya descartado una observación.
+    assert acorde.json()["informe"]["semaforo_propuesto"] == "ROJO"
+
+
+def test_revisar_sin_tocar_el_semaforo_final_no_lo_fuerza(cliente) -> None:
+    """No confirmar ningún color final es una revisión válida -«todavía no
+    he decidido»-, no un error."""
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [],
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["semaforo_final_docente"] is None
+
+
+# --- Nota interna (D-015) ---------------------------------------------------
+
+
+def test_revisar_rechaza_una_nota_final_sin_rubrica(cliente) -> None:
+    """`criterios_de_analisis` no trae `docs/`, así que la rúbrica sigue
+    pendiente: no hay número del sistema que aprobar ni modificar."""
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [], "nota_final_docente": 7.0,
+    })
+
+    assert r.status_code == 400
+    assert "no hay rúbrica oficial" in r.json()["detail"].lower()
+
+    guardado = cliente.get(f"/api/entregas/{cliente.identificador}/analisis").json()
+    assert guardado["informe"]["nota_final_docente"] is None
+    assert guardado["informe"]["estado_nota"] == "pendiente_de_rubrica"
+
+
+def test_revisar_sin_rubrica_ignora_una_nota_final_ausente(cliente) -> None:
+    """No mandar `nota_final_docente` -o mandarlo a `None`- nunca es un
+    error, haya o no rúbrica: solo se rechaza cuando de verdad se intenta
+    fijar un valor."""
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [],
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["estado_nota"] == "pendiente_de_rubrica"
+
+
+def _con_rubrica_resuelta(raiz: Path) -> Path:
+    """Una copia de `criterios_de_analisis` con la rúbrica ya cargada -de
+    prueba, no la oficial: ese fichero no existe todavía en el repositorio
+    real-. Sirve para probar la vía por la que entrará una rúbrica real sin
+    inventar sus valores en el código de producción."""
+    docs = raiz / "docs"
+    docs.mkdir()
+    (docs / "PENDIENTE_OFICIAL.md").write_text(
+        "Nada pendiente sobre calificación en esta copia de prueba.\n",
+        encoding="utf-8",
+    )
+    (raiz / "criteria" / "v2026-2027" / "rubrica.yaml").write_text(
+        "version: v2026-2027-prueba\n"
+        "ponderaciones:\n  D05: 1.0\n"
+        "escala:\n  EN_DESARROLLO: 5.0\n",
+        encoding="utf-8",
+    )
+    return raiz
+
+
+def test_revisar_aprueba_la_nota_cuando_coincide_con_la_propuesta(
+    criterios_de_analisis, entregas, escribir_pdf,
+) -> None:
+    raiz = _con_rubrica_resuelta(criterios_de_analisis)
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    c = _crear_cliente(raiz, entregas, ProveedorSimulado(respuestas=[_analisis(), _devolucion()]))
+    ident = _confirmar(c)
+
+    analizado = c.post(f"/api/entregas/{ident}/analisis",
+                        json={"confirmo_datos_reales": True})
+    propuesta = analizado.json()["informe"]["nota_propuesta_sistema"]
+    assert propuesta == 5.0
+    assert analizado.json()["informe"]["estado_nota"] == "propuesta"
+
+    r = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [], "nota_final_docente": propuesta,
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["estado_nota"] == "aprobada"
+    assert r.json()["informe"]["nota_final_docente"] == propuesta
+    assert r.json()["informe"]["motivo_modificacion_nota"] is None
+
+
+def test_revisar_marca_modificada_una_nota_distinta_con_su_motivo(
+    criterios_de_analisis, entregas, escribir_pdf,
+) -> None:
+    raiz = _con_rubrica_resuelta(criterios_de_analisis)
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    c = _crear_cliente(raiz, entregas, ProveedorSimulado(respuestas=[_analisis(), _devolucion()]))
+    ident = _confirmar(c)
+    c.post(f"/api/entregas/{ident}/analisis", json={"confirmo_datos_reales": True})
+
+    r = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [], "nota_final_docente": 6.0,
+        "motivo_modificacion_nota": "El desarrollo pesa más que lo que reflejaba el nivel.",
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["estado_nota"] == "modificada"
+    assert r.json()["informe"]["nota_final_docente"] == 6.0
+    assert (
+        r.json()["informe"]["motivo_modificacion_nota"]
+        == "El desarrollo pesa más que lo que reflejaba el nivel."
+    )
+
+
+def test_revisar_rechaza_una_nota_final_fuera_de_rango(
+    criterios_de_analisis, entregas, escribir_pdf,
+) -> None:
+    raiz = _con_rubrica_resuelta(criterios_de_analisis)
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    c = _crear_cliente(raiz, entregas, ProveedorSimulado(respuestas=[_analisis(), _devolucion()]))
+    ident = _confirmar(c)
+    c.post(f"/api/entregas/{ident}/analisis", json={"confirmo_datos_reales": True})
+
+    r = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [], "nota_final_docente": 11,
+    })
+
+    assert r.status_code == 400
+    assert "entre 0 y 10" in r.json()["detail"]
+
+
+def test_una_nota_aprobada_no_lleva_motivo_aunque_se_mande_uno(
+    criterios_de_analisis, entregas, escribir_pdf,
+) -> None:
+    """Aprobar tal cual no justifica ningún cambio: un motivo aquí sería
+    ruido, así que se descarta aunque el docente lo mande por error."""
+    raiz = _con_rubrica_resuelta(criterios_de_analisis)
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    c = _crear_cliente(raiz, entregas, ProveedorSimulado(respuestas=[_analisis(), _devolucion()]))
+    ident = _confirmar(c)
+    analizado = c.post(f"/api/entregas/{ident}/analisis",
+                        json={"confirmo_datos_reales": True})
+    propuesta = analizado.json()["informe"]["nota_propuesta_sistema"]
+
+    r = c.post(f"/api/entregas/{ident}/revision", json={
+        "decisiones": [], "nota_final_docente": propuesta,
+        "motivo_modificacion_nota": "Esto no debería guardarse.",
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["estado_nota"] == "aprobada"
+    assert r.json()["informe"]["motivo_modificacion_nota"] is None
+
+
+# --- Síntesis provisional (D-017) -------------------------------------------
+
+
+def test_analizar_compone_una_sintesis_provisional(cliente) -> None:
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                      json={"confirmo_datos_reales": True})
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["sintesis_provisional"]
+    assert r.json()["informe"]["sintesis_provisional"] != r.json()["informe"]["resumen"]
+
+
+def test_revisar_guarda_la_sintesis_provisional_editada_por_el_docente(
+    cliente,
+) -> None:
+    cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                 json={"confirmo_datos_reales": True})
+
+    texto_del_docente = (
+        "El proyecto avanza razonablemente. La arquitectura necesita más "
+        "justificación antes de cerrar la fase."
+    )
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [], "sintesis_provisional": texto_del_docente,
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["sintesis_provisional"] == texto_del_docente
+
+
+def test_revisar_sin_tocar_la_sintesis_la_conserva(cliente) -> None:
+    """No mandar `sintesis_provisional` no la borra ni la recompone: la
+    síntesis es del docente en cuanto se compone, a diferencia del
+    `resumen`, que sí se recalcula en cada revisión."""
+    analizado = cliente.post(
+        f"/api/entregas/{cliente.identificador}/analisis",
+        json={"confirmo_datos_reales": True},
+    )
+    original = analizado.json()["informe"]["sintesis_provisional"]
+
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/revision", json={
+        "decisiones": [],
+    })
+
+    assert r.status_code == 200
+    assert r.json()["informe"]["sintesis_provisional"] == original
+
+
+# --- Ninguna nota llega jamás al alumno -------------------------------------
+
+
+def test_la_devolucion_nunca_lleva_nota_ni_sintesis_ni_estado_de_nota(
+    cliente,
+) -> None:
+    """La nota interna entera vive en `informe`, nunca en `devolucion`
+    -lo único que de verdad llega al alumno-. Este test no confía en que
+    nadie se acuerde de no tocar `Devolucion`: lo comprueba mirando las
+    claves reales de la respuesta."""
+    r = cliente.post(f"/api/entregas/{cliente.identificador}/analisis",
+                      json={"confirmo_datos_reales": True})
+
+    claves = set(r.json()["devolucion"].keys())
+    assert claves == {"apertura", "fortalezas", "acciones", "cierre"}
+    for prohibida in (
+        "nota", "nota_propuesta_sistema", "nota_final_docente", "estado_nota",
+        "sintesis_provisional", "semaforo_final_docente", "semaforo_propuesto",
+    ):
+        assert prohibida not in claves

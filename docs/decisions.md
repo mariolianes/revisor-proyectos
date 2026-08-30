@@ -238,13 +238,17 @@ cambio, con su documento `docs/changes/2026-08-29-el-texto-se-envia-integro.md`.
 
 ## D-011 · El resumen del informe interno es un recuento verificado, no la síntesis del §17.1
 
-**Fecha:** 2026-08-29 · **Estado:** Provisional, a la espera de que Marcos la
-valide · **Propuesta desde la implementación**
+**Fecha:** 2026-08-29 · **Estado:** Resuelta el 2026-08-30 (ver D-017) ·
+**Propuesta desde la implementación**
 
 > A diferencia de las anteriores, esta decisión no la ha tomado el docente:
-> se propone desde la implementación al corregir un defecto, y se registra
-> aquí para que él la vea y decida. Mientras siga *Provisional*, lo que
-> gobierna es lo que dice el §17.1, no esta entrada.
+> se propuso desde la implementación al corregir un defecto, y se registró
+> aquí para que él la viera y decidiera. La decidió: D-017 pide la síntesis
+> provisional que esta entrada dejaba pendiente, y con eso el hueco que
+> sigue describiendo el resto de esta entrada queda cerrado, no vigente. Lo
+> que sigue se conserva tal cual se escribió -por qué `resumen` no podía ser
+> esa síntesis- porque la razón sigue siendo cierta; lo que cambia es que ya
+> no hace falta esperar a que el docente decida: ya lo hizo.
 
 `backend/salidas/informe.py` componía el «Resumen» del Anexo C con
 `analisis.fortalezas[0].descripcion` -la primera fortaleza que hubiera, sin
@@ -449,3 +453,236 @@ precios.py`, `config/precios_openai.yaml`,
 `supabase/migrations/20260830090000_registro_de_consumo.sql`, y
 `ConsumoDeLlamada`/`numero_de_llamadas`/`modelo` en
 `backend/analisis/proveedor.py` y `backend/analisis/openai.py`.
+
+**Resuelta por D-017**, que añade `sintesis_provisional` sin tocar
+`resumen`: los dos campos conviven, tal como pedía el párrafo «Sigue en
+pie» de arriba.
+
+## D-015 · La nota interna es una estimación que calcula el sistema a partir de una rúbrica oficial, nunca una que propone el motor
+
+**Fecha:** 2026-08-30 · **Estado:** Validada · **Responsable:** Marcos
+
+Hasta esta decisión, «no existe la nota en ninguna parte» era literal: ni en
+el formulario que rellena el motor (`backend/analisis/contrato.py`), ni en
+el informe (`backend/salidas/informe.py`), ni en la pantalla de revisión.
+El §13 reserva al profesor «aprobar o modificar cualquier calificación»
+(`maestro#13-reservas-del-profesor`), y la forma de respetarlo era que la
+operación no existiera.
+
+El docente pide ahora que el sistema proponga una nota. No es una
+contradicción con lo anterior -el §13 reserva *aprobar y modificar*, no
+*calcular*-, pero exige una distinción que el código tiene que sostener, no
+solo la prosa: la nota no la propone el motor -eso seguiría siendo R3 y R7
+rotos, un modelo de lenguaje inventando un juicio sin evidencia
+verificable-, la calcula el sistema, de forma determinista, a partir de la
+rúbrica oficial cuando existe. `backend/analisis/contrato.py` no cambia:
+`AnalisisDelMotor` sigue con `extra="forbid"` y sin ningún campo de nota, y
+si el motor devolviera una, `esquema_estricto()` y la validación de Pydantic
+la siguen rechazando antes de que nadie la vea. Esto se ha comprobado
+rompiendo la regla a propósito -ver el informe de esta tarea en
+`.superpowers/sdd/2026-08-30-respuesta-del-docente/`- y viendo caer
+`tests/analisis/test_contrato.py::test_el_analisis_no_admite_campos_de_mas`.
+
+Los campos nuevos, todos en `Informe` (`backend/salidas/informe.py`):
+
+- `nota_propuesta_sistema`: el número, o `None`.
+- `estado_nota`: `pendiente_de_rubrica` / `propuesta` / `modificada` /
+  `aprobada` / `no_aplicable`. Nace `no_aplicable` en TEMA y DEFENSA -no
+  llevan nota de corrección por este camino: TEMA no puntúa como entrega, y
+  DEFENSA se valora a mano por el §6.5-, y `pendiente_de_rubrica` en el
+  resto mientras no haya rúbrica. Solo pasa a `propuesta` cuando
+  `calcular_nota_interna` calcula un número, y a `aprobada` o `modificada`
+  cuando el docente decide en `revisar()`.
+- `version_rubrica` y `ponderaciones_nota`: de qué rúbrica salió el número y
+  con qué peso por dimensión, para que se pueda auditar sin adivinar.
+- `nota_final_docente`: lo que el docente aprueba o modifica. Nunca lo
+  escribe el motor -no hay ninguna vía por la que un valor del motor llegue
+  a este campo-, y `revisar()` lo rechaza si `estado_nota` no admite
+  ninguna decisión todavía (`pendiente_de_rubrica`, `no_aplicable`).
+- `motivo_modificacion_nota`: opcional, y solo tiene sentido cuando la nota
+  queda `modificada`, nunca cuando queda `aprobada` tal cual -un motivo ahí
+  sería ruido, y `revisar()` lo descarta aunque llegue-.
+
+**Hoy no hay rúbrica oficial**: `rubrica` y `ponderaciones` siguen
+`PENDIENTE_OFICIAL` en `docs/PENDIENTE_OFICIAL.md`, y
+`criteria/v2026-2027/ponderaciones.yaml` ya declara con sus propias
+palabras que bloquea `nota_final` y `nota_propuesta`
+(`bloquea: [nota_final, nota_propuesta]`). `rubrica_pendiente()`
+(`backend/salidas/informe.py`) comprueba las dos entradas -no basta con
+cerrar una sola-, con el mismo patrón que
+`tools.calibrar.proteccion_datos_pendiente`. Mientras siga así,
+`estado_nota` no puede valer otra cosa que `pendiente_de_rubrica` -o
+`no_aplicable`- y `nota_propuesta_sistema` se queda en `None`: R3 impide
+inventar la rúbrica, así que el sistema informa de la ausencia y no rellena
+un valor razonable. Lo que se ha construido en esta tarea es la estructura
+completa y la vía por la que entrará una rúbrica real -`calcular_nota_interna`
+lee `criteria/<version>/rubrica.yaml` si existe, con una forma de ejemplo
+documentada en el propio código, no un valor inventado-, probada con una
+rúbrica de prueba en `tests/salidas/test_informe.py`, nunca con la oficial,
+que no existe.
+
+**Sobre el motivo de modificación.** El docente lo pidió «opcional y no
+sensible», que es él avisando de que ahí no deben acabar datos personales
+del alumno -circunstancias familiares, salud, lo que sea-. El sistema no
+puede impedirlo del todo -es texto libre, y ninguna comprobación automática
+distingue un criterio académico de una circunstancia personal-, pero puede
+no invitarlo: el campo se pide explícitamente sobre «qué criterio de
+corrección pesó en el cambio», nunca sobre el alumno, tanto en el docstring
+de `Revision.motivo_modificacion_nota` (`backend/api/analisis.py`) como en
+el texto que ve el docente junto al campo en
+`frontend/src/paginas/Revision.tsx`. Ni el nombre del campo ni su
+descripción mencionan al alumno en ningún momento, a propósito: la
+prudencia depende de quien escribe, pero el sistema no le da ninguna razón
+para pensar que ahí cabe otra cosa. R6 sigue aplicando igual que a
+cualquier otro campo de texto libre del repositorio.
+
+**No se ha necesitado ninguna migración de esquema.** La migración inicial
+(`supabase/migrations/20260827120000_esquema_inicial.sql`) ya declaraba
+`nota_propuesta`, `nota_aprobada`, `aprobada_en` y `aprobada_por` en la
+tabla `correccion`, sin usar. Esta tarea no las rellena: la nota interna
+entera vive en la columna `informe` (`jsonb`), que ya se relee entera en
+`correccion_de` (`backend/persistencia/supabase.py`). No se escribe en las
+columnas estructuradas porque la restricción `aprobacion_con_firma` exige
+`aprobada_por` en cuanto hay `nota_aprobada`, y este sistema no tiene
+todavía ninguna identidad de docente que escribir ahí -no hay
+autenticación-: inventar un valor para poder rellenar esas columnas sería
+inventar un dato, y R3/R6 lo prohíben igual que cualquier otro. Cuando
+exista autenticación, una migración futura puede empezar a escribirlas de
+verdad, con su propio documento de cambio.
+
+**Arrastra:** `backend/analisis/contrato.py` (sin tocar, a propósito),
+`backend/salidas/informe.py` (`calcular_nota_interna`, `rubrica_pendiente`),
+`backend/api/analisis.py` (`Revision`, `revisar()`),
+`backend/persistencia/correccion.py` (`LIMITE_DE_MOTIVO_NOTA`) y
+`frontend/src/paginas/Revision.tsx`.
+
+## D-016 · Doble semáforo: propuesto, inalterable, y final del docente, que no puede quedar por debajo de lo aprobado
+
+**Fecha:** 2026-08-30 · **Estado:** Validada · **Responsable:** Marcos
+
+Antes de esta decisión, `Informe` llevaba un único campo, `semaforo`: el
+que calculaba `_semaforo` al analizar, y `revisar()` no lo tocaba nunca -el
+comentario que lo decía ya existía-, pero tampoco había ningún campo donde
+constara que el docente lo hubiera confirmado. El docente pide ahora dos
+campos distintos, y los dos guardan algo que el otro no puede: `semaforo_
+propuesto` -el mismo cálculo de siempre, renombrado, y ahora explícitamente
+inalterable después del análisis, útil para auditoría- y
+`semaforo_final_docente` -el que confirma al cerrar la revisión, `None`
+mientras no lo haga-.
+
+La parte difícil no es guardar dos campos: es qué hacer cuando el docente
+intenta cerrar con un color que ya no cuadra con lo que sigue aprobado.
+Tres reglas, tal como las pidió:
+
+1. **`semaforo_propuesto` no se recalcula nunca**, ni siquiera en
+   `revisar()`. Es la prueba de auditoría de lo que el sistema propuso antes
+   de que nadie revisara nada, y recalcularlo confundiría «lo que se
+   propuso» con «lo que queda después de editar», que es justo la distinción
+   que este campo existe para conservar.
+2. **No se modifica nada en silencio.** Si el docente descarta la única
+   observación crítica, `semaforo_final_docente` no cambia solo: sigue
+   valiendo lo que el docente puso, y es la interfaz -no el backend- quien
+   avisa de que el color mínimo compatible puede haber cambiado
+   (`colorMinimo` en `frontend/src/paginas/Revision.tsx`, recalculado en
+   cada render sobre las decisiones actuales).
+3. **No se puede cerrar con un semáforo incompatible con lo aprobado.**
+
+La tercera es la que exigía decidir qué cuenta como «incompatible» y qué
+hace el sistema entonces, y la pista que dio el docente -bloquear sin
+explicar es lo peor de ambos mundos- fija el criterio: **incompatible es
+proponer un color menos severo del que sostienen las observaciones fiables
+que siguen aprobadas**, nunca al revés. `semaforo_por_valoraciones`
+(`backend/salidas/informe.py`, la misma función que ya usaba `_semaforo`,
+ahora pública y reutilizada) calcula ese color mínimo sobre las valoraciones
+que quedan tras aplicar la decisión de esta misma petición de `revisar()`.
+Ir más allá del mínimo -cerrar en ROJO cuando bastaría AMBAR- es prudencia
+del docente y se acepta siempre: nadie pierde nada por ser más cauto que el
+sistema. Quedarse corto -VERDE cuando queda un P1 aprobado- se rechaza con
+un 400 que nombra el color mínimo y las dos salidas reales: descartar lo que
+ya no se sostiene, o elegir un color acorde
+(`_mensaje_semaforo_incompatible`, `backend/api/analisis.py`). No se guarda
+nada de esa petición, ni siquiera las decisiones sobre observaciones que sí
+eran válidas: es la misma garantía de todo-o-nada que ya tenía
+`TextoFueraDeLimite`.
+
+GRIS entra en la misma escala de severidad, no aparte: `SEVERIDAD_SEMAFORO`
+lo pone por debajo de VERDE. Eso tiene dos efectos, los dos deliberados: si
+no queda ninguna valoración fiable, cualquier color final es compatible -el
+docente está ejerciendo un juicio que el sistema no pudo verificar, y eso es
+exactamente lo que el §13 le reserva-, pero si sí queda algo fiable y
+aprobado, cerrar en GRIS -«no evaluable»- también se rechaza: no se puede
+esconder una observación real detrás de una incidencia que ya no existe.
+
+Se ha comprobado rompiendo la comparación a propósito -invirtiendo el
+operador en `revisar()`- y viendo caer tres tests de golpe:
+`test_revisar_acepta_un_semaforo_final_mas_severo_que_el_minimo`,
+`test_revisar_rechaza_un_semaforo_final_menos_severo_que_el_minimo` y
+`test_revisar_evalua_la_compatibilidad_sobre_las_decisiones_de_esta_peticion`
+(`tests/backend/test_api_analisis.py`).
+
+**Arrastra:** `backend/salidas/informe.py` (`semaforo_por_valoraciones`,
+`CODIGOS_SEMAFORO`, `SEVERIDAD_SEMAFORO`), `backend/api/analisis.py`
+(`Revision.semaforo_final_docente`, la comprobación en `revisar()`,
+`_mensaje_semaforo_incompatible`), `backend/persistencia/supabase.py`
+(columna `semaforo_aprobado`, ya prevista sin usar en el esquema inicial) y
+`frontend/src/paginas/Revision.tsx` (la sección «Semáforo final» y el
+aviso de `colorMinimo`).
+
+## D-017 · La síntesis provisional la compone el sistema desde piezas verificadas; nunca se cierra sola
+
+**Fecha:** 2026-08-30 · **Estado:** Validada · **Responsable:** Marcos
+
+D-011 dejó constancia de un hueco: el §17.1 pide un «Resumen» de «estado
+general en cinco o seis líneas», y el §11.1 un «resumen ejecutivo», y los
+dos piden una síntesis interpretativa -no solo enumerar lo verificado, sino
+decir qué significa en su conjunto- que un sistema que se detiene antes de
+interpretar no puede dar sin, o bien inventar una lectura que nadie ha
+verificado, o bien pedírsela de nuevo al motor y reabrir el problema de la
+fortaleza con la cita inventada que ese mismo cambio cerró.
+
+El docente responde pidiendo la síntesis, pero **provisional y editable**,
+«rotulada como síntesis provisional para revisión docente», y «nunca cerrar
+automáticamente». Eso cambia el equilibrio que describía D-011: un texto que
+el docente va a revisar y reescribir no es lo mismo que un texto que se da
+por bueno, y D-011 razonaba sobre lo segundo. Pero el criterio de fondo de
+D-011 no se abandona: **si la redactara el motor, volvería el problema de
+las citas inventadas** -una síntesis con una lectura que suena bien y no
+está sostenida por ninguna otra pieza del informe sería tan peligrosa como
+la fortaleza sin cita que abrió esta discusión-. La solución no es pedirle
+al motor un texto libre nuevo: es que el sistema componga, desde las mismas
+piezas ya verificadas que usa `componer_resumen`, un borrador más largo y
+más explícito -`componer_sintesis_provisional`,
+`backend/salidas/informe.py`-, con una línea por bloque (semáforo,
+prioridades nombradas con su código y su gravedad, lo descartado por el
+límite, las fortalezas fiables, las dimensiones sin valorar, los reparos).
+Sale rígido, pero es cierto: cada línea se puede contrastar con otro bloque
+del mismo informe, igual que ya podía hacerse con `resumen`. Sobre eso
+escribe el docente la lectura que el sistema no puede dar por sí mismo.
+
+**El recuento factual se conserva.** `resumen` no desaparece ni se fusiona
+con la síntesis: sigue siendo el campo fijo, de una frase, que permite
+comprobar la síntesis provisional de un vistazo -si la síntesis dice algo
+que `resumen` no sostiene, hay algo que revisar-. `revisar()` sigue
+recomponiendo `resumen` en cada revisión, exactamente como antes.
+
+**`sintesis_provisional` no se recompone en `revisar()`.** Es la diferencia
+de fondo con `resumen`: en cuanto el sistema la compone por primera vez, es
+del docente. `revisar()` la guarda tal cual la envíe -reescrita entera, a
+medias, o sin tocar-, y si la petición no la incluye, conserva la que ya
+hubiera. Recalcularla ahí borraría cualquier edición que el docente ya
+hubiera hecho, que es justo la clase de modificación silenciosa que D-016
+prohíbe para el semáforo y que aquí se evita por el mismo motivo. Que nunca
+se cierre sola no es un estado que el sistema imponga -no hay ningún
+`estado_sintesis` que pase a «cerrada»-: es, sencillamente, que no existe
+ninguna operación que la marque como definitiva. El rótulo «síntesis
+provisional para revisión docente» vive en la pantalla
+(`frontend/src/paginas/Revision.tsx`), no en el texto compuesto, con el
+mismo criterio que ya usan «Semáforo propuesto» o «Resumen»: la etiqueta es
+del encabezado, no del contenido.
+
+**Arrastra:** `backend/salidas/informe.py` (`Informe.sintesis_provisional`,
+`componer_sintesis_provisional`), `backend/api/analisis.py`
+(`Revision.sintesis_provisional`, `revisar()`),
+`backend/persistencia/correccion.py` (`LIMITE_DE_SINTESIS`) y
+`frontend/src/paginas/Revision.tsx` (la sección «Síntesis provisional para
+revisión docente»).

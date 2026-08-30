@@ -142,7 +142,14 @@ from backend.persistencia.correccion import (
 from backend.persistencia.modelos import EntregaRegistrada
 from backend.persistencia.supabase import ErrorDeAlmacen
 from backend.salidas.borrador import BorradorNoValido, Devolucion
-from backend.salidas.informe import Informe, componer_resumen
+from backend.salidas.informe import (
+    CODIGOS_SEMAFORO,
+    SEVERIDAD_SEMAFORO,
+    Informe,
+    calcular_nota_interna,
+    componer_resumen,
+    semaforo_por_valoraciones,
+)
 from backend.salidas.seleccion import SeleccionDePrioridades
 from backend.servicios.analisis_de_entrega import InformeSinBorrador, analizar_entrega
 from tools.calibrar import proteccion_datos_pendiente
@@ -201,7 +208,55 @@ class Decision(BaseModel):
 
 
 class Revision(BaseModel):
+    """Lo que el docente decide al revisar un análisis ya guardado.
+
+    Cuatro campos son nuevos desde la decisión del docente del 2026-08-30
+    (D-015, D-016 y D-017 en `docs/decisions.md`), y los cuatro comparten el
+    mismo criterio: `None` significa «esta petición no toca este campo», no
+    «bórralo». `revisar()` conserva lo que ya hubiera guardado cuando llega
+    `None`, con el mismo criterio que ya usaba con `devolucion`, `motor` y
+    `aviso`. Así, una petición que solo manda `decisiones` -como manda hoy
+    toda la batería de pruebas anterior a esta tarea- se sigue comportando
+    exactamente igual que antes.
+
+    `semaforo_final_docente`: el color que el docente confirma al cerrar la
+    revisión (D-016), o `None` mientras no lo confirme -no es lo mismo que
+    limpiarlo: no hay ninguna vía para volver a poner un semáforo final ya
+    confirmado en blanco, porque no hace falta ninguna: basta con confirmar
+    otro color-. `revisar()` lo rechaza si es un color menos severo del que
+    sostienen las observaciones que siguen aprobadas en esta misma petición.
+
+    `nota_final_docente`: la nota que el docente aprueba o modifica (§13),
+    siempre sobre `nota_propuesta_sistema` -nunca hay nota que aprobar
+    mientras `estado_nota` sea `pendiente_de_rubrica` o `no_aplicable`, y
+    `revisar()` rechaza este campo si se manda entonces-. Comparado con la
+    propuesta ya recalculada sobre las decisiones de esta misma petición: si
+    coincide, la nota queda `aprobada`; si no, `modificada`.
+
+    `motivo_modificacion_nota`: opcional, y solo tiene sentido cuando la
+    nota queda `modificada`. Se pide sobre el criterio de corrección, no
+    sobre el alumno: «qué pesó en el cambio», nunca «por qué se le trata
+    distinto». El campo no puede impedir que alguien escriba algo que no
+    debería -es texto libre, y ninguna comprobación automática distingue un
+    criterio académico de una circunstancia personal-, así que la prudencia
+    la pone quien lo redacta; lo único que este sistema puede hacer es no
+    invitarla, y por eso ni el nombre del campo ni su descripción mencionan
+    al alumno en ningún momento. R6 sigue aplicando igual que en cualquier
+    otro campo de texto libre del repositorio: nada personal entra aquí.
+
+    `sintesis_provisional`: la síntesis provisional de D-017, tal como la
+    deja el docente -reescrita entera, a medias, o sin tocar-. Se guarda tal
+    cual, sin recomponerla: a diferencia de `resumen`, que sigue
+    recalculándose en cada `revisar()` porque es un recuento automático, la
+    síntesis es del docente en cuanto se compone por primera vez, y
+    recalcularla aquí le borraría cualquier edición que ya hubiera hecho.
+    """
+
     decisiones: list[Decision]
+    semaforo_final_docente: str | None = None
+    nota_final_docente: float | None = None
+    motivo_modificacion_nota: str | None = None
+    sintesis_provisional: str | None = None
 
 
 class EstadoDelMotor(BaseModel):
@@ -317,6 +372,56 @@ def _mensaje_de_desbordamiento_del_motor(fallo: TextoFueraDeLimite) -> str:
         "alumno: es del motor. No se ha guardado nada de este análisis; la "
         "entrega sigue disponible para volver a analizarla, y la respuesta "
         "del motor puede ser distinta la próxima vez."
+    )
+
+
+def _mensaje_semaforo_incompatible(elegido: str, minimo: str) -> str:
+    """El aviso que ve el docente cuando el semáforo final que elige -o que
+    ya tenía confirmado de una revisión anterior- no lo sostienen las
+    observaciones que siguen aprobadas en esta petición.
+
+    D-016 pide dos cosas a la vez y en tensión: no cerrar en silencio con un
+    color que ya no cuadra, pero tampoco bloquear sin decir qué pasa. Este
+    mensaje nombra el color mínimo que sí cuadra -no solo dice «no vale»- y
+    las dos salidas reales: descartar lo que ya no se sostiene, o elegir un
+    color acorde con lo que sigue aprobado. `minimo` puede ser más severo
+    que `elegido` -el caso típico, un P1 que sigue aprobado y el docente
+    intenta cerrar en VERDE- o el propio GRIS, si ninguna valoración que
+    queda es fiable: elegir cualquier color «evaluado» sobre un GRIS
+    calculado también es incompatible, por la misma razón contraria.
+    """
+    return (
+        f"No se puede cerrar con el semáforo final «{elegido}»: las "
+        f"observaciones que siguen aprobadas en esta revisión no bajan de "
+        f"«{minimo}». No se ha guardado ningún cambio de esta revisión. "
+        f"Para cerrar con «{elegido}», descarta antes las observaciones que "
+        f"lo impiden; si las mantienes, cierra con «{minimo}» o un color "
+        "más severo, o guarda sin fijar todavía el semáforo final."
+    )
+
+
+def _mensaje_nota_no_disponible(estado: str) -> str:
+    """El aviso que ve el docente si intenta fijar `nota_final_docente` -o
+    dejar un motivo de modificación- cuando todavía no hay ninguna
+    propuesta del sistema sobre la que decidir.
+
+    Dos motivos posibles, y el mensaje los distingue: que la fase no lleva
+    nota de corrección (TEMA, DEFENSA) o que falta la rúbrica oficial
+    (`docs/PENDIENTE_OFICIAL.md`). Los dos comparten la misma consecuencia
+    -nada que aprobar ni modificar-, pero no la misma causa, y el docente
+    necesita saber cuál de las dos es para saber si hay algo que esperar.
+    """
+    if estado == "no_aplicable":
+        motivo = "esta fase no lleva una nota calculada por el sistema."
+    else:
+        motivo = (
+            "no hay rúbrica oficial cargada y versionada todavía "
+            "(docs/PENDIENTE_OFICIAL.md): sin ella, el sistema no calcula "
+            "ninguna nota que aprobar o modificar."
+        )
+    return (
+        f"No se puede fijar una nota final aquí: {motivo} No se ha guardado "
+        "ningún cambio de esta revisión."
     )
 
 
@@ -552,7 +657,16 @@ def revisar(
 
     Solo lo aprobado se conserva. Es lo que el §13 llama revisión docente, y
     es la única vía por la que una observación llega a considerarse válida.
+
+    Desde el 2026-08-30 también es donde se cierran las otras dos decisiones
+    del docente sobre esta misma pantalla -D-015 y D-016 en
+    `docs/decisions.md`-: el semáforo final y la nota final. Las dos se
+    validan ANTES de tocar `guardar_correccion`, con el mismo criterio que
+    ya usaba `TextoFueraDeLimite`: si algo no cuadra, no se guarda nada de
+    esta petición, ni siquiera las decisiones sobre las observaciones que sí
+    eran válidas.
     """
+    raiz = peticion.app.state.raiz
     almacen = peticion.app.state.almacen
     guardada = _correccion_guardada(almacen, identificador)
     if guardada is None:
@@ -604,10 +718,93 @@ def revisar(
                 aplicada.append(resuelta)
         return aplicada
 
+    nuevas_valoraciones = _aplicar(guardada.informe.valoraciones)
     nuevas_prioridades = _aplicar(guardada.informe.prioridades)
     nuevas_descartadas = _aplicar(guardada.informe.prioridades_descartadas)
+
+    # --- Semáforo final (D-016): se valida antes de guardar nada. ---
+    #
+    # `None` -no lo toca esta petición- conserva lo que ya hubiera, con el
+    # mismo criterio que el resto de campos nuevos de `Revision`. Pero
+    # «conservado» no es «sin comprobar»: si las decisiones de ESTA petición
+    # dejan un semáforo final ya confirmado incompatible con lo que queda
+    # aprobado, se avisa igual que si lo acabara de elegir ahora mismo. Es
+    # justo el caso que describe el docente -descartar la única observación
+    # crítica sin que la interfaz lo note en silencio-, y la comprobación
+    # tiene que alcanzar tanto al valor nuevo como al ya guardado.
+    semaforo_final_docente = (
+        cuerpo.semaforo_final_docente
+        if cuerpo.semaforo_final_docente is not None
+        else guardada.informe.semaforo_final_docente
+    )
+    if semaforo_final_docente is not None:
+        if semaforo_final_docente not in CODIGOS_SEMAFORO:
+            raise HTTPException(
+                status_code=400,
+                detail=f"«{semaforo_final_docente}» no es un color del "
+                       "semáforo. Son: " + ", ".join(CODIGOS_SEMAFORO) + ".",
+            )
+        color_minimo = semaforo_por_valoraciones(nuevas_valoraciones)
+        if SEVERIDAD_SEMAFORO[semaforo_final_docente] < SEVERIDAD_SEMAFORO[color_minimo]:
+            raise HTTPException(
+                status_code=400,
+                detail=_mensaje_semaforo_incompatible(semaforo_final_docente, color_minimo),
+            )
+
+    # --- Nota interna (D-015): se recalcula sobre lo que queda aprobado. ---
+    #
+    # `calcular_nota_interna` es pura y barata -lee, como mucho, un YAML-,
+    # así que no hay motivo para no volver a llamarla aquí, sobre
+    # `nuevas_valoraciones`: si el docente descarta la observación que
+    # sostenía un nivel bajo en una dimensión con peso, la propuesta tiene
+    # que dejar de contarla, igual que ya hace `resumen` con sus recuentos.
+    version_criterios = guardada.informe.identificacion.get("criterios") or ""
+    nota_propuesta, estado_base, version_rubrica, ponderaciones_nota = (
+        calcular_nota_interna(raiz, version_criterios, entrega.fase, nuevas_valoraciones)
+    )
+
+    if estado_base in ("pendiente_de_rubrica", "no_aplicable"):
+        if cuerpo.nota_final_docente is not None or cuerpo.motivo_modificacion_nota:
+            raise HTTPException(
+                status_code=400,
+                detail=_mensaje_nota_no_disponible(estado_base),
+            )
+        nota_final_docente = None
+        motivo_modificacion_nota = None
+        estado_nota = estado_base
+    else:
+        nota_final_docente = (
+            cuerpo.nota_final_docente
+            if cuerpo.nota_final_docente is not None
+            else guardada.informe.nota_final_docente
+        )
+        if nota_final_docente is None:
+            motivo_modificacion_nota = None
+            estado_nota = "propuesta"
+        else:
+            if not (0 <= nota_final_docente <= 10):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"«{nota_final_docente}» no es una nota válida: "
+                           "tiene que estar entre 0 y 10.",
+                )
+            nota_final_docente = round(nota_final_docente, 2)
+            if nota_propuesta is not None and round(nota_propuesta, 2) == nota_final_docente:
+                # Aprobar tal cual no necesita justificar ningún cambio: un
+                # motivo aquí sería ruido, así que se descarta aunque venga
+                # en la petición.
+                estado_nota = "aprobada"
+                motivo_modificacion_nota = None
+            else:
+                estado_nota = "modificada"
+                motivo_modificacion_nota = (
+                    cuerpo.motivo_modificacion_nota
+                    if cuerpo.motivo_modificacion_nota is not None
+                    else guardada.informe.motivo_modificacion_nota
+                )
+
     informe = guardada.informe.model_copy(update={
-        "valoraciones": _aplicar(guardada.informe.valoraciones),
+        "valoraciones": nuevas_valoraciones,
         "prioridades": nuevas_prioridades,
         "prioridades_descartadas": nuevas_descartadas,
         # El resumen es un recuento de estas mismas piezas -ver
@@ -621,19 +818,35 @@ def revisar(
         # `prioridades` decía tras el `_aplicar` de arriba-. Recomponerlo
         # aquí no cuesta una llamada al motor: `componer_resumen` es una
         # función pura sobre piezas que esta petición ya tiene en la mano.
-        # El semáforo no se recalcula -no es una de las piezas que el
-        # docente edita aquí, sigue siendo el de `guardada.informe.semaforo`
-        # tras el `model_copy`- y por eso se pasa tal cual, para que la
-        # primera frase del resumen («Semáforo propuesto: …») siga diciendo
-        # lo mismo que el campo `semaforo` del informe.
+        # `semaforo_propuesto` no se recalcula -D-016 lo declara
+        # inalterable después del análisis, útil para auditoría- y por eso
+        # se pasa tal cual, para que la primera frase del resumen
+        # («Semáforo propuesto: …») siga diciendo lo mismo que ese campo.
         "resumen": componer_resumen(
-            guardada.informe.semaforo,
+            guardada.informe.semaforo_propuesto,
             SeleccionDePrioridades(
                 elegidas=nuevas_prioridades, descartadas=nuevas_descartadas,
             ),
             guardada.informe.dimensiones_ausentes,
             guardada.informe.reparos,
         ),
+        # La síntesis provisional (D-017) no se recompone aquí -a
+        # diferencia del resumen, es del docente en cuanto se compone por
+        # primera vez-: se guarda tal cual la envíe, o se conserva si esta
+        # petición no la toca. Ver el docstring de
+        # `Revision.sintesis_provisional`.
+        "sintesis_provisional": (
+            cuerpo.sintesis_provisional
+            if cuerpo.sintesis_provisional is not None
+            else guardada.informe.sintesis_provisional
+        ),
+        "semaforo_final_docente": semaforo_final_docente,
+        "nota_propuesta_sistema": nota_propuesta,
+        "estado_nota": estado_nota,
+        "version_rubrica": version_rubrica,
+        "ponderaciones_nota": ponderaciones_nota,
+        "nota_final_docente": nota_final_docente,
+        "motivo_modificacion_nota": motivo_modificacion_nota,
     })
     # Sustituye la corrección entera: mismo método que guarda un análisis,
     # mismo criterio de «la segunda sustituye a la primera». La devolución y
