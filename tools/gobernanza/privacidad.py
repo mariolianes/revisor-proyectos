@@ -64,6 +64,11 @@ EXENTOS = {
     # Comprueba que la CLI agrega la infraccion R6, y para ello necesita un
     # DNI de ejemplo en su cuerpo.
     "tests/gobernanza/test_cli.py",
+    # Comprueba que la minimizacion (backend/privacidad/minimizacion.py)
+    # retira un DNI, un correo y un telefono con las MISMAS expresiones que
+    # esta regla: para probar que de verdad los reconoce, necesita ejemplos
+    # con esa forma en su cuerpo, igual que test_privacidad.py de arriba.
+    "tests/privacidad/test_minimizacion.py",
 }
 PREFIJOS_EXENTOS = ("docs/superpowers/",)
 

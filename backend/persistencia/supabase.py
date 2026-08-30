@@ -17,6 +17,7 @@ from pathlib import Path
 import httpx
 import yaml
 
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     Correccion,
@@ -572,3 +573,17 @@ class AlmacenSupabase:
             motor=informe.motor,
             aviso=fila.get("aviso"),
         )
+
+    def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
+        """Escribe una fila en `ejecucion_motor`
+        (`supabase/migrations/20260830090000_registro_de_consumo.sql`).
+
+        No hay nada que deshacer si falla: a diferencia de
+        `guardar_correccion`, esta es una única escritura, sin tablas
+        dependientes que puedan quedar huérfanas. Si `_pedir` levanta
+        `ErrorDeAlmacen`, quien llama decide qué hacer -ver
+        `backend/servicios/analisis_de_entrega.py`, que la trata como
+        telemetría best-effort y no deja que un fallo aquí tumbe un análisis
+        que sí se completó-.
+        """
+        self._pedir("POST", "ejecucion_motor", json=registro.model_dump(mode="json"))

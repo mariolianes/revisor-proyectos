@@ -64,6 +64,29 @@ class ErrorDelProveedor(Exception):
         return str(self)
 
 
+class ConsumoDeLlamada(BaseModel):
+    """Lo que ha costado, en tokens, la última llamada real de un proveedor.
+
+    Solo lo rellena un proveedor que de verdad habla con un servicio de
+    pago -`ProveedorOpenAI`-: no es parte del `Protocol` de abajo, y
+    `ProveedorSimulado` no lo tiene, a propósito, porque no cuesta nada. Lo
+    que lo lee (`backend/servicios/analisis_de_entrega.py`) lo comprueba con
+    `getattr(proveedor, "ultimo_consumo", None)` y no cuenta nada cuando no
+    está: la ausencia del atributo ES el dato -«esta llamada no ha costado
+    dinero real»-, no un fallo que ocultar.
+
+    Los tokens cacheados son un subconjunto de los de entrada, no una
+    cantidad aparte: `tokens_entrada` es el total que cuenta la API, y
+    `tokens_entrada_cacheados` la parte de ese total que se facturó a precio
+    reducido por reutilizar contexto ya visto. `backend/analisis/precios.py`
+    calcula el coste con esa relación.
+    """
+
+    tokens_entrada: int
+    tokens_salida: int
+    tokens_entrada_cacheados: int = 0
+
+
 class RespuestaNoValida(ErrorDelProveedor):
     """El proveedor respondió, pero lo devuelto no encaja en el formulario.
 

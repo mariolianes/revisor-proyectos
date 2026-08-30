@@ -357,7 +357,217 @@ def test_el_texto_del_alumno_no_viaja_en_la_correccion(
     assert texto_completo not in c.model_dump_json()
 
 
-# --- cabecera: modalidad y fecha (§17.1) ------------------------------------
+@pytest.fixture
+def entregas_con_pdf_y_nombre(tmp_path: Path, escribir_pdf):
+    """Como `entregas_con_pdf`, pero con el nombre del alumno escrito en el
+    trabajo -como aparecería en una portada real-, para probar la
+    minimización antes de la llamada al motor."""
+    carpeta = tmp_path / "entregas"
+    carpeta.mkdir()
+    escribir_pdf(carpeta / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion",
+        "Trabajo presentado por Nombre Apellido para el modulo de FCT.",
+        "5. Presupuesto",
+        "El presupuesto inicial asciende a 4.500 euros en total.",
+    ]])
+    return carpeta
+
+
+class _ListadoFalso:
+    """Un `ListadoLocal` de mentira, sin tocar disco."""
+
+    def __init__(self, nombres: dict[str, str]) -> None:
+        self._nombres = nombres
+
+    def nombre_de(self, codigo: str) -> str | None:
+        return self._nombres.get(codigo)
+
+
+class _ProveedorRealDePrueba:
+    """Como `ProveedorSimulado`, pero con un `nombre` que no es "simulado".
+
+    El aviso de privacidad se calla a propósito cuando el proveedor es el
+    simulado -no sale nada hacia ningún sitio, así que avisar sería ruido
+    sobre un envío que no ocurre (ver `analizar_entrega`)-. Para probar que
+    el aviso SÍ aparece cuando de verdad haría falta, hace falta un
+    proveedor cuyo nombre no sea literalmente "simulado".
+    """
+
+    def __init__(self, respuestas) -> None:
+        self._interno = ProveedorSimulado(respuestas=respuestas)
+
+    @property
+    def nombre(self) -> str:
+        return "real-de-prueba"
+
+    @property
+    def llamadas(self):
+        return self._interno.llamadas
+
+    def analizar(self, instruccion: str, texto: str, formato):
+        return self._interno.analizar(instruccion, texto, formato)
+
+
+def test_el_nombre_del_alumno_no_llega_al_motor_si_el_listado_lo_conoce(
+    criterios_de_analisis, entregas_con_pdf_y_nombre
+) -> None:
+    """El caso central que pide el docente: antes de la llamada externa, el
+    nombre se sustituye por el marcador de minimización."""
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf_y_nombre)
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        _devolucion(),
+    ])
+    listado = _ListadoFalso({"AF023": "Nombre Apellido"})
+
+    analizar_entrega(criterios_de_analisis, entregas_con_pdf_y_nombre, "v2026-2027",
+                     almacen, proveedor, entrega, listado)
+
+    for _, texto_enviado in proveedor.llamadas:
+        assert "Nombre Apellido" not in texto_enviado
+    _, primera_llamada = proveedor.llamadas[0]
+    assert "[ALUMNO]" in primera_llamada
+
+
+def test_sin_listado_el_nombre_llega_tal_cual_pero_el_aviso_lo_dice(
+    criterios_de_analisis, entregas_con_pdf_y_nombre
+) -> None:
+    """Lo que hace el sistema cuando NO puede comprobar que el nombre se
+    retiró: no lo esconde ni promete lo que no puede garantizar. Sigue
+    analizando -son datos propios, en una prueba-, pero lo dice."""
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf_y_nombre)
+    proveedor = _ProveedorRealDePrueba([
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        _devolucion(),
+    ])
+
+    c = analizar_entrega(criterios_de_analisis, entregas_con_pdf_y_nombre, "v2026-2027",
+                         almacen, proveedor, entrega, None)
+
+    _, texto_enviado = proveedor.llamadas[0]
+    assert "Nombre Apellido" in texto_enviado
+    assert "listado local" in c.aviso_privacidad
+
+
+def test_el_proveedor_simulado_no_genera_aviso_de_privacidad(
+    criterios_de_analisis, entregas_con_pdf_y_nombre
+) -> None:
+    """Con el proveedor simulado no sale nada hacia ningún sitio: avisar de
+    que el nombre podría no haberse retirado sería ruido."""
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf_y_nombre)
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        _devolucion(),
+    ])
+
+    c = analizar_entrega(criterios_de_analisis, entregas_con_pdf_y_nombre, "v2026-2027",
+                         almacen, proveedor, entrega, None)
+
+    assert c.aviso_privacidad == ""
+
+
+class _ConsumoFalso:
+    def __init__(self, tokens_entrada: int, tokens_salida: int,
+                 tokens_entrada_cacheados: int = 0) -> None:
+        self.tokens_entrada = tokens_entrada
+        self.tokens_salida = tokens_salida
+        self.tokens_entrada_cacheados = tokens_entrada_cacheados
+
+
+class _ProveedorConConsumo:
+    """Un proveedor de prueba que sí deja huella de consumo -`nombre` real,
+    `numero_de_llamadas`, `ultimo_consumo`, `modelo`-, para probar el
+    registro de consumo sin hablar con OpenAI de verdad."""
+
+    def __init__(self, respuestas, consumos=None, fallos=None) -> None:
+        self._interno = ProveedorSimulado(respuestas=respuestas, fallos=fallos)
+        self._consumos = list(consumos or [])
+        self.numero_de_llamadas = 0
+        self.ultimo_consumo = None
+        self.modelo = "modelo-de-prueba"
+
+    @property
+    def nombre(self) -> str:
+        return "proveedor-de-prueba"
+
+    @property
+    def llamadas(self):
+        return self._interno.llamadas
+
+    def analizar(self, instruccion: str, texto: str, formato):
+        self.numero_de_llamadas += 1
+        self.ultimo_consumo = self._consumos.pop(0) if self._consumos else None
+        return self._interno.analizar(instruccion, texto, formato)
+
+
+def test_se_registra_el_consumo_de_una_ejecucion_completa(
+    criterios_de_analisis, entregas_con_pdf
+) -> None:
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf)
+    proveedor = _ProveedorConConsumo(
+        respuestas=[_analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+                    _devolucion()],
+        consumos=[_ConsumoFalso(1000, 200), _ConsumoFalso(500, 100)],
+    )
+
+    analizar_entrega(criterios_de_analisis, entregas_con_pdf, "v2026-2027",
+                     almacen, proveedor, entrega)
+
+    registros = almacen.consumos()
+    assert len(registros) == 1
+    registro = registros[0]
+    assert registro.entrega_id == entrega.id
+    assert registro.modelo == "proveedor-de-prueba"
+    assert registro.estado == "OK"
+    assert registro.intentos == 2
+    assert registro.tokens_entrada == 1500
+    assert registro.tokens_salida == 300
+    assert registro.paginas is not None
+    assert registro.caracteres_texto is not None
+    # "modelo-de-prueba" no está en config/precios_openai.yaml: el coste no
+    # se inventa, se deja como no calculable.
+    assert registro.coste_estimado_usd is None
+    assert registro.tarifa_aplicada is None
+
+
+def test_se_registra_el_consumo_aunque_el_motor_falle(
+    criterios_de_analisis, entregas_con_pdf
+) -> None:
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf)
+    proveedor = _ProveedorConConsumo(
+        respuestas=[], fallos=[ErrorDelProveedor("la cuota se ha agotado")],
+    )
+
+    with pytest.raises(ErrorDelProveedor):
+        analizar_entrega(criterios_de_analisis, entregas_con_pdf, "v2026-2027",
+                         almacen, proveedor, entrega)
+
+    registros = almacen.consumos()
+    assert len(registros) == 1
+    assert registros[0].estado == "ERROR"
+    assert "cuota" in registros[0].causa_error
+
+
+def test_el_proveedor_simulado_no_deja_registro_de_consumo(
+    criterios_de_analisis, entregas_con_pdf
+) -> None:
+    """No cuesta nada: no hay nada que registrar."""
+    almacen = AlmacenEnMemoria()
+    entrega = _registrar(almacen, entregas_con_pdf)
+    proveedor = ProveedorSimulado(respuestas=[
+        _analisis_bueno("El presupuesto inicial asciende a 4.500 euros"),
+        _devolucion(),
+    ])
+
+    analizar_entrega(criterios_de_analisis, entregas_con_pdf, "v2026-2027",
+                     almacen, proveedor, entrega)
+
+    assert almacen.consumos() == []
 
 
 def test_la_cabecera_lleva_modalidad_y_fecha(
@@ -402,16 +612,6 @@ def test_la_cabecera_lleva_la_modalidad_declarada_al_confirmar(
                          almacen, proveedor, entrega)
 
     assert c.informe.identificacion["modalidad"] == "PROFESIONAL"
-
-
-# --- continuidad (§17.1, D-012) ---------------------------------------------
-#
-# El bloque «Continuidad» compara el último feedback guardado -las
-# prioridades de la corrección anterior- con el texto de esta entrega. Estas
-# pruebas ejercitan el recorrido entero, con PDFs reales, no con un
-# `Informe` montado a mano: es la única forma de comprobar que
-# `analizar_entrega` de verdad recupera la entrega y la corrección
-# anteriores y se las pasa a `componer_informe`.
 
 
 @pytest.fixture

@@ -111,3 +111,22 @@ def test_estado_devuelve_las_infracciones_enteras(cliente: TestClient, repo: Pat
 def test_pendientes_lee_el_documento(cliente: TestClient):
     datos = cliente.get("/api/pendientes").json()
     assert [p["clave"] for p in datos] == ["rubrica"]
+
+
+def test_sin_datos_locales_configurados_no_hay_listado(repo: Path):
+    from backend.configuracion import Configuracion
+
+    app = crear_app(repo, configuracion=Configuracion())
+
+    assert app.state.listado_local is None
+
+
+def test_con_datos_locales_configurados_se_monta_el_listado(repo: Path, tmp_path: Path):
+    from backend.configuracion import Configuracion
+    from backend.privacidad.listado_local import ListadoLocal
+
+    datos_locales = tmp_path / "datos_locales"
+    datos_locales.mkdir()
+    app = crear_app(repo, configuracion=Configuracion(datos_locales=datos_locales))
+
+    assert isinstance(app.state.listado_local, ListadoLocal)

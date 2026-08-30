@@ -27,11 +27,23 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
     from backend.persistencia import crear_almacen
     from backend.persistencia.supabase import ChoqueDeAlmacen, ErrorDeAlmacen
 
+    from backend.privacidad.listado_local import ListadoLocal
+
     app = FastAPI(title="Revisor de proyectos", docs_url=None, redoc_url=None)
     app.state.raiz = raiz
     app.state.configuracion = configuracion or cargar(raiz)
     app.state.almacen = almacen or crear_almacen(app.state.configuracion)
     app.state.proveedor = proveedor or crear_proveedor(app.state.configuracion)
+    # `None` si no hay REVISOR_DATOS_LOCALES configurado (o la ruta no
+    # sirve): sin listado, la minimización sigue retirando DNI, correos y
+    # teléfonos, pero no puede buscar ni sustituir el nombre del alumno. Ver
+    # `backend/privacidad/listado_local.py` y `backend/servicios/
+    # analisis_de_entrega.py`.
+    app.state.listado_local = (
+        ListadoLocal(app.state.configuracion.datos_locales)
+        if app.state.configuracion.datos_locales is not None
+        else None
+    )
     # El candado que impide que un segundo clic sobre la misma entrega
     # lance una segunda llamada al motor mientras la primera sigue en
     # marcha. Ver el docstring de `backend/api/analisis.py`.

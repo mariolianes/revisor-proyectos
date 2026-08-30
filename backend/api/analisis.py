@@ -469,14 +469,19 @@ def analizar(
             ))
         en_curso.add(identificador)
 
+    listado = getattr(peticion.app.state, "listado_local", None)
+
     try:
         try:
             correccion = analizar_entrega(
                 raiz, configuracion.carpeta_entregas,
                 configuracion.version_criterios, almacen, proveedor, entrega,
+                listado,
             )
         except InformeSinBorrador as fallo:
-            aviso = _aviso_de_borrador_incompleto(fallo)
+            aviso = " ".join(
+                filter(None, (_aviso_de_borrador_incompleto(fallo), fallo.aviso_privacidad))
+            )
             resultado = ResultadoAnalisis(
                 entrega=fallo.entrega, informe=fallo.informe, devolucion=None,
                 motor=proveedor.nombre, aviso=aviso,
@@ -498,7 +503,8 @@ def analizar(
 
     resultado = ResultadoAnalisis(
         entrega=correccion.entrega, informe=correccion.informe,
-        devolucion=correccion.devolucion, motor=correccion.motor, aviso=None,
+        devolucion=correccion.devolucion, motor=correccion.motor,
+        aviso=correccion.aviso_privacidad or None,
     )
     _guardar_o_fallar(
         almacen, identificador, resultado.informe, resultado.devolucion,
