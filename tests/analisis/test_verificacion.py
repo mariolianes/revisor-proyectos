@@ -168,6 +168,122 @@ def test_un_indicio_con_evidencia_inventada_se_marca(criterios_de_analisis: Path
     )
 
 
+# --- Defensa 1, refinada: el recorte de una cita parcial ---
+#
+# Nace de la calibración del 2026-08-30: subir del 50 % al 69 % de citas
+# localizadas reforzando la instrucción no bastó, y lo que queda son citas
+# con un prefijo real al que el motor le añade algo que no está -viñetas,
+# un "..." que salta de sitio-, no citas inventadas del todo. `recortar_cita`
+# se prueba a fondo en test_verificacion_recorte.py; aquí solo se comprueba
+# que `verificar()` la usa: que la observación sobrevive con la cita
+# recortada, que queda un reparo que avisa del recorte, y que una cita sin
+# ningún prefijo real -el límite que separa esto de hacer trampa- se sigue
+# descartando igual que antes.
+
+_PREFIJO_REAL_EN_TRABAJO = (
+    "El presente proyecto describe la implantación de un sistema de "
+    "reservas para"
+)
+
+
+def test_una_cita_con_prefijo_real_se_recorta_y_se_marca(criterios_de_analisis: Path) -> None:
+    """El motor cita bien el principio y añade viñetas que no están: la
+    observación no se descarta, se conserva con la cita recortada."""
+    cita_del_motor = (
+        f"{_PREFIJO_REAL_EN_TRABAJO}\n"
+        "• Con notificaciones push en tiempo real\n"
+        "• Con integración de pagos online"
+    )
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis([_val(cita=cita_del_motor)]),
+    )
+
+    assert v.valoraciones[0].evidencia_localizada is True
+    assert v.valoraciones[0].evidencia.cita == _PREFIJO_REAL_EN_TRABAJO
+    assert any(r.regla == "cita_recortada" for r in v.reparos)
+    assert not any(r.regla == "evidencia_localizable" for r in v.reparos)
+
+
+def test_el_reparo_de_recorte_deja_ver_la_cita_original_y_la_recortada(
+    criterios_de_analisis: Path,
+) -> None:
+    """El profesor tiene que poder distinguir una cita que el motor copió
+    bien de una que el sistema tuvo que acortar: el reparo lleva las dos."""
+    cita_del_motor = (
+        f"{_PREFIJO_REAL_EN_TRABAJO}\n• Un tramo que no está en el trabajo en absoluto"
+    )
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis([_val(cita=cita_del_motor)]),
+    )
+
+    reparo = next(r for r in v.reparos if r.regla == "cita_recortada")
+    assert cita_del_motor in reparo.detalle
+    assert _PREFIJO_REAL_EN_TRABAJO in reparo.detalle
+
+
+def test_una_cita_sin_ningun_prefijo_real_se_sigue_descartando(criterios_de_analisis: Path) -> None:
+    """El límite del recorte: una observación que describe una ausencia -en
+    vez de citar algo que exista- no tiene ningún prefijo que recortar y se
+    descarta exactamente igual que antes de que existiera el recorte."""
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis([_val(
+            cita="No se localizan referencias a la incorporación de "
+                 "feedback o evolución entre versiones."
+        )]),
+    )
+
+    assert v.valoraciones[0].evidencia_localizada is False
+    assert not any(r.regla == "cita_recortada" for r in v.reparos)
+    assert any(r.regla == "evidencia_localizable" for r in v.reparos)
+
+
+def test_un_patron_con_prefijo_real_tambien_se_recorta(criterios_de_analisis: Path) -> None:
+    """El recorte no es exclusivo de las valoraciones: los cuatro canales
+    pasan por el mismo `_evidencia_o_recorte`."""
+    cita_del_motor = f"{_PREFIJO_REAL_EN_TRABAJO}\n• Algo que no figura en el trabajo"
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis([_val()], patrones=[_patron(cita=cita_del_motor)]),
+    )
+
+    assert v.patrones[0].evidencia_localizada is True
+    assert v.patrones[0].evidencia.cita == _PREFIJO_REAL_EN_TRABAJO
+    assert v.patrones[0].evidencia.apartado == "5. Presupuesto y viabilidad"
+    assert any(r.regla == "cita_recortada" and "patrón" in r.detalle for r in v.reparos)
+
+
+def test_una_fortaleza_con_prefijo_real_tambien_se_recorta(criterios_de_analisis: Path) -> None:
+    cita_del_motor = f"{_PREFIJO_REAL_EN_TRABAJO}\n• Algo que no figura en el trabajo"
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis([_val()], fortalezas=[_fortaleza(cita=cita_del_motor)]),
+    )
+
+    assert v.fortalezas[0].evidencia_localizada is True
+    assert v.fortalezas[0].evidencia.cita == _PREFIJO_REAL_EN_TRABAJO
+    assert any(r.regla == "cita_recortada" and "fortaleza" in r.detalle for r in v.reparos)
+
+
+def test_un_indicio_con_prefijo_real_tambien_se_recorta(criterios_de_analisis: Path) -> None:
+    cita_del_motor = f"{_PREFIJO_REAL_EN_TRABAJO}\n• Algo que no figura en el trabajo"
+    v = verificar(
+        criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
+        _analisis([_val()], indicios_de_autoria=[_indicio(cita=cita_del_motor)]),
+    )
+
+    assert v.indicios_de_autoria[0].evidencia_localizada is True
+    assert v.indicios_de_autoria[0].evidencia.cita == _PREFIJO_REAL_EN_TRABAJO
+    assert any(
+        r.regla == "cita_recortada" and "indicio de autoría" in r.detalle
+        for r in v.reparos
+    )
+    # El aviso del §13 sigue siendo incondicional, recorte o no.
+    assert any(r.regla == "autoria_es_indicio" for r in v.reparos)
+
+
 # --- Defensa 2: ni una dimensión de más ni de menos ---
 
 def test_una_dimension_que_no_toca_en_esa_fase_se_descarta(criterios_de_analisis: Path) -> None:

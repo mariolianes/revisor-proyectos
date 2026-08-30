@@ -14,6 +14,7 @@ from backend.analisis.verificacion import (
     ValoracionVerificada,
 )
 from backend.salidas.borrador import (
+    PETICION_DEL_BORRADOR,
     BorradorNoValido,
     Devolucion,
     componer,
@@ -371,3 +372,31 @@ def test_el_motor_no_puede_anadir_acciones_de_su_cosecha(
                  _analisis([_v("D05", "P2")]))
 
     assert len(d.acciones) == 1
+
+
+def test_el_borrador_no_se_pide_con_el_texto_vacio(criterios_de_analisis) -> None:
+    """La API de OpenAI responde 400 si el campo del texto llega vacío, y así
+    estaba: el borrador no se generó nunca contra el motor real.
+
+    No lo cazó ningún test porque todos usan `ProveedorSimulado`, que acepta
+    cualquier cosa —el mismo punto ciego que dejó pasar la prioridad «P1»
+    contra el enum de la base de datos—. Se vio ejecutando el flujo entero
+    contra el servicio de verdad, y este test es lo que impide que vuelva:
+    comprueba lo que se le pide al proveedor, no lo que el proveedor
+    responde.
+
+    Lo que sigue importando, y por eso se mira aparte: en ese hueco no puede
+    ir el trabajo del alumno. La instrucción ya lleva las prioridades
+    verificadas con sus citas; el documento no viaja dos veces.
+    """
+    proveedor = ProveedorSimulado(respuestas=[_devolucion()])
+    analisis = _analisis([_v()])
+
+    componer(criterios_de_analisis, "v2026-2027", proveedor, analisis)
+
+    _, texto = proveedor.llamadas[0]
+    assert texto.strip(), "el proveedor recibió el texto vacío y la API real lo rechaza"
+    assert texto == PETICION_DEL_BORRADOR
+    # Y no es el trabajo: ninguna cita del análisis viaja en ese hueco.
+    for v in analisis.valoraciones:
+        assert v.evidencia.cita not in texto

@@ -85,7 +85,7 @@ def _comparable(valor):
     return (
         valor.codigo_alumno, valor.ciclo, valor.fase, valor.version,
         valor.nombre_archivo, valor.huella, valor.estado,
-        valor.motivo_bloqueo, valor.version_criterios,
+        valor.motivo_bloqueo, valor.version_criterios, valor.modalidad,
     )
 
 
@@ -239,6 +239,63 @@ def test_el_ciclo_es_del_alumno_y_manda_el_primero_en_los_dos(
 
     assert memoria == supabase
     assert memoria == ["DAM", ["DAM", "DAM"]]
+
+
+# --- la modalidad es del proyecto -------------------------------------------
+
+
+def test_sin_declarar_modalidad_las_dos_entregas_quedan_sin_ella(
+    dos_almacenes,
+) -> None:
+    memoria, supabase = _los_dos(
+        dos_almacenes, lambda a: a.registrar(_entrega("E1"))
+    )
+
+    assert memoria == supabase
+    assert memoria[-1] is None
+
+
+def test_la_modalidad_declarada_al_crear_el_proyecto_se_guarda_en_los_dos(
+    dos_almacenes,
+) -> None:
+    memoria, supabase = _los_dos(
+        dos_almacenes,
+        lambda a: a.registrar(_entrega("E1", modalidad="profesional")),
+    )
+
+    assert memoria == supabase
+    assert memoria[-1] == "PROFESIONAL"
+
+
+def test_la_modalidad_es_del_proyecto_y_manda_la_primera_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """En la base de datos la modalidad la tiene `proyecto`, con la misma
+    clave (alumno_id, version_criterios) que ya usa `_proyecto` para el
+    ciclo. Con el mismo alumno declarando dos modalidades, la primera que
+    se fijó tiene que mandar en los dos almacenes, igual que el ciclo."""
+    def guion(almacen):
+        almacen.registrar(_entrega("E1", modalidad="PROFESIONAL"))
+        segunda = almacen.registrar(_entrega("E2", modalidad="INVESTIGACION"))
+        return [segunda.modalidad, [e.modalidad for e in almacen.listar()]]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria == ["PROFESIONAL", ["PROFESIONAL", "PROFESIONAL"]]
+
+
+def test_una_entrega_sin_modalidad_no_borra_la_ya_fijada_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        almacen.registrar(_entrega("E1", modalidad="REVISION"))
+        segunda = almacen.registrar(_entrega("E2"))
+        return segunda.modalidad
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase == "REVISION"
 
 
 # --- anterior_de -----------------------------------------------------------
@@ -475,12 +532,20 @@ def _informe(**cambios) -> Informe:
         },
         control_administrativo=["2 páginas en total."],
         resumen="Resumen del análisis.",
+        sintesis_provisional="Síntesis provisional del análisis.",
         valoraciones=[_valoracion()],
         fortalezas=[], prioridades=[_valoracion()], prioridades_descartadas=[],
         dudas=["¿El presupuesto incluye impuestos?"], indicios=[], reparos=[],
         dimensiones_ausentes=[],
-        semaforo="AMBAR",
+        semaforo_propuesto="AMBAR",
+        semaforo_final_docente=None,
         recomendacion="Aplicar cambios antes de cerrar la siguiente fase",
+        nota_propuesta_sistema=None,
+        estado_nota="pendiente_de_rubrica",
+        version_rubrica=None,
+        ponderaciones_nota=None,
+        nota_final_docente=None,
+        motivo_modificacion_nota=None,
         motor="simulado",
     )
     datos.update(cambios)

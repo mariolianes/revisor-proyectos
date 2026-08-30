@@ -72,7 +72,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from backend.analisis.proveedor import ErrorDelProveedor, RespuestaNoValida
+from backend.analisis.proveedor import ConsumoDeLlamada, ErrorDelProveedor, RespuestaNoValida
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -118,6 +118,47 @@ def _construir_fallo(clase: type[Exception], mensaje: str, fallo: Exception) -> 
     return clase(mensaje)
 
 
+def _consumo_de(uso) -> ConsumoDeLlamada | None:
+    """El consumo de tokens de una respuesta de OpenAI, o `None` si la
+    respuesta no trae `usage` -pasa con los dobles de prueba que no lo
+    simulan, y en teoría con cualquier respuesta que el SDK no rellene-.
+
+    Los tokens cacheados viven en `usage.input_tokens_details.cached_tokens`
+    -la API los separa porque se facturan a otra tarifa-, y ese campo anidado
+    no siempre está: se lee con `getattr` en cada nivel, sin asumir la forma
+    exacta del objeto, porque este módulo no controla qué versión del SDK
+    hay instalada ni cómo cambia esa forma entre versiones.
+    """
+    if uso is None:
+        return None
+    detalles = getattr(uso, "input_tokens_details", None)
+    return ConsumoDeLlamada(
+        tokens_entrada=getattr(uso, "input_tokens", 0) or 0,
+        tokens_salida=getattr(uso, "output_tokens", 0) or 0,
+        tokens_entrada_cacheados=getattr(detalles, "cached_tokens", 0) or 0,
+    )
+
+
+# Familias de modelos que fijan su propia temperatura y rechazan el
+# parámetro. Se enumeran por prefijo y no por nombre exacto porque salen
+# versiones nuevas -`o3-2025-04-16`, `o4-mini-...`- que se comportan igual.
+# Si aparece una familia nueva que tampoco lo admita, se añade aquí: es
+# preferible a descubrirlo con un 400 en mitad de una corrección.
+_SIN_TEMPERATURA = ("o1", "o3", "o4")
+
+
+def admite_temperatura(modelo: str) -> bool:
+    """Si a este modelo se le puede pedir `temperature=0`.
+
+    Importa más de lo que parece. El sistema pide temperatura cero para que
+    el mismo trabajo no reciba dos juicios distintos; con un modelo que no
+    la admite, esa garantía desaparece y dos ejecuciones pueden dar
+    resultados diferentes. No es motivo para no usarlo -un modelo de
+    razonamiento puede juzgar mejor- pero sí para saberlo y comprobarlo.
+    """
+    return not modelo.startswith(_SIN_TEMPERATURA)
+
+
 class ProveedorOpenAI:
     """Pide el análisis a OpenAI y devuelve el formulario ya validado."""
 
@@ -145,12 +186,34 @@ class ProveedorOpenAI:
             # por omisión del cliente.
             cliente = OpenAI(api_key=clave, timeout=ESPERA, max_retries=0)
         self._cliente = cliente
+        # El registro de consumo (`backend/servicios/analisis_de_entrega.py`)
+        # necesita distinguir «se hizo una llamada real que no dejó usage
+        # legible» de «no se ha hecho ninguna llamada desde que se miró por
+        # última vez». `ultimo_consumo` sola no basta para eso: si se dejara
+        # tal cual estaba tras un intento sin usage, un intento posterior
+        # que tampoco lo trajera parecería que reutiliza el de antes.
+        # `numero_de_llamadas` sube en cada intento, tenga o no éxito, así
+        # que comparar su valor antes y después de una operación dice con
+        # certeza cuántas llamadas reales hizo, sin depender de que
+        # `ultimo_consumo` cambie.
+        self.numero_de_llamadas = 0
+        self.ultimo_consumo: "ConsumoDeLlamada | None" = None
 
     @property
     def nombre(self) -> str:
         """Queda guardado en el informe: dentro de un año importará con qué
         modelo se hizo cada análisis."""
         return f"openai:{self._modelo}"
+
+    @property
+    def modelo(self) -> str:
+        """El identificador de modelo tal como lo configuró el docente, sin
+        el prefijo `openai:` de `nombre`. Es la clave con la que
+        `backend/analisis/precios.py` busca la tarifa vigente: la tabla de
+        precios habla en el vocabulario del proveedor (`gpt-4.1`), no en el
+        de este sistema (`openai:gpt-4.1`).
+        """
+        return self._modelo
 
     def analizar(self, instruccion: str, texto: str, formato: type[T]) -> T:
         from openai import (
@@ -159,6 +222,9 @@ class ProveedorOpenAI:
             AuthenticationError,
             RateLimitError,
         )
+
+        self.numero_de_llamadas += 1
+        self.ultimo_consumo = None
 
         # Se construye aquí dentro, si hace falta, y se lanza más abajo,
         # fuera de todo `except`: ver el porqué en el docstring del módulo
@@ -172,7 +238,25 @@ class ProveedorOpenAI:
                 input=texto,
                 text_format=formato,
                 # Un juicio que cambia cada vez que se pulsa no es un juicio.
-                temperature=0,
+                # No todos los modelos lo admiten: los de razonamiento -o3,
+                # o4-mini- responden 400 «Unsupported parameter» si se les
+                # manda, porque fijan su propia temperatura. Mandarlo a
+                # ciegas ataba el sistema a una familia de modelos sin que
+                # nada lo dijera, en un puerto que existe justamente para
+                # poder cambiar de proveedor. Con esos modelos no hay forma
+                # de pedir determinismo, y eso es una diferencia que el
+                # docente debe conocer antes de elegir uno: ver
+                # `admite_temperatura`.
+                **({"temperature": 0} if admite_temperatura(self._modelo) else {}),
+                # El profesor lo pidió expresamente: que OpenAI no conserve
+                # un objeto persistente de esta llamada en su lado. Sin
+                # `store=False`, la API de Responses guarda la conversación
+                # por omisión -pensada para poder encadenar turnos con
+                # `previous_response_id`, algo que este sistema no hace
+                # nunca-, y eso dejaría el trabajo del alumno, ya minimizado
+                # o no, retenido en un servicio externo más tiempo del que
+                # dura esta petición.
+                store=False,
             )
         except AuthenticationError as fallo:
             fallo_a_propagar = _construir_fallo(
@@ -249,6 +333,14 @@ class ProveedorOpenAI:
 
         if fallo_a_propagar is not None:
             raise fallo_a_propagar
+
+        # El consumo se lee de la respuesta cruda, antes de mirar si
+        # `output_parsed` encajó: OpenAI factura los tokens generados aunque
+        # el JSON no encaje en el formulario -es justo el caso de
+        # `RespuestaNoValida`, dos líneas más abajo-, así que no leer el
+        # consumo aquí perdería el coste real de un intento que sí costó
+        # dinero, no solo de los que tuvieron éxito.
+        self.ultimo_consumo = _consumo_de(getattr(respuesta, "usage", None))
 
         analisis = getattr(respuesta, "output_parsed", None)
         if analisis is None:

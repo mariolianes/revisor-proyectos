@@ -36,6 +36,21 @@ LIMITE_DE_REPARO = 500
 LIMITE_DE_APERTURA_O_CIERRE = 600
 LIMITE_DE_LINEA_DE_DEVOLUCION = 400
 
+# La síntesis provisional de D-017 (`docs/decisions.md`) es varias líneas,
+# no una frase -`resumen` cabe en 500-, y el docente la reescribe a mano en
+# `revisar()`: más margen que `LIMITE_DE_OBSERVACION_DOCENTE` (2.400) no
+# haría falta, y menos la dejaría corta antes de que empezara a interpretar
+# nada.
+LIMITE_DE_SINTESIS = 2400
+
+# «Breve», tal como lo pidió el docente para el motivo de modificar una
+# nota: un límite corto no es solo higiene de campo -como el resto de esta
+# lista-, es parte de cómo se pide el dato. Ver
+# `Informe.motivo_modificacion_nota` en `backend/salidas/informe.py` y
+# `Revision.motivo_modificacion_nota` en `backend/api/analisis.py` para la
+# razón completa.
+LIMITE_DE_MOTIVO_NOTA = 300
+
 # El límite de una observación cuando quien la escribe es el docente, no el
 # motor -aplicado al guardar una revisión (`revisar()`,
 # `backend/api/analisis.py`), nunca al guardar el resultado de un análisis-.
@@ -110,14 +125,19 @@ def validar_textos_acotados(
     guarda, los conserva-, así que no hay ninguna cita de patrón que este
     módulo pueda llegar a persistir.
 
-    El resto de la prosa -el resumen, la observación de cada valoración, las
-    dudas para el docente, el detalle de cada reparo, y si se guarda una
-    devolución, su apertura, su cierre y cada fortaleza y acción- lleva su
-    propio límite, más generoso que el de una cita porque es prosa y no una
-    transcripción literal, pero acotado igual: sin límite, un motor
+    El resto de la prosa -el resumen, la síntesis provisional (D-017), la
+    observación de cada valoración, las dudas para el docente, el detalle de
+    cada reparo, el motivo de modificar una nota si lo hay, y si se guarda
+    una devolución, su apertura, su cierre y cada fortaleza y acción- lleva
+    su propio límite, más generoso que el de una cita porque es prosa y no
+    una transcripción literal, pero acotado igual: sin límite, un motor
     verboso podría reconstruir el trabajo del alumno por un campo que no es
     la cita, y el límite de D-001 dejaría de significar lo que el §19 del
-    Documento Maestro dice que significa.
+    Documento Maestro dice que significa. La síntesis provisional y el
+    motivo de modificación de la nota los escribe el docente, no el motor,
+    pero el límite protege lo mismo que protege en el resto de campos que sí
+    puede escribir él a mano -ver `LIMITE_DE_OBSERVACION_DOCENTE`, más
+    abajo-: que ningún campo de este módulo quede sin fondo.
 
     `limite_de_observacion` es la única excepción a que cada campo tenga un
     único límite fijo: por omisión es `LIMITE_DE_OBSERVACION` (el del motor,
@@ -152,11 +172,20 @@ def validar_textos_acotados(
             "La cita de un indicio de autoría",
         )
     _validar_longitud(informe.resumen, LIMITE_DE_RESUMEN, "El resumen del informe")
+    _validar_longitud(
+        informe.sintesis_provisional, LIMITE_DE_SINTESIS,
+        "La síntesis provisional",
+    )
     for duda in informe.dudas:
         _validar_longitud(duda, LIMITE_DE_DUDA, "Una duda para el docente")
     for reparo in informe.reparos:
         _validar_longitud(
             reparo.detalle, LIMITE_DE_REPARO, "El detalle de un reparo"
+        )
+    if informe.motivo_modificacion_nota:
+        _validar_longitud(
+            informe.motivo_modificacion_nota, LIMITE_DE_MOTIVO_NOTA,
+            "El motivo de modificación de la nota",
         )
 
     if devolucion is not None:

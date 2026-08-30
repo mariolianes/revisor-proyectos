@@ -567,6 +567,118 @@ def test_el_ciclo_escrito_con_espacios_o_en_minusculas_no_avisa(
     assert "ciclo" not in ficha["aviso"]
 
 
+# --- modalidad: del proyecto, no de la entrega ------------------------------
+
+
+def test_confirmar_sin_declarar_modalidad_no_bloquea_ni_avisa(cliente) -> None:
+    """No existe todavía una pantalla de validación de tema (§3.2): dejarla
+    en blanco tiene que ser el camino normal, no un error."""
+    respuesta = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    })
+
+    assert respuesta.status_code == 200
+    ficha = respuesta.json()
+    assert ficha["entrega"]["modalidad"] is None
+    assert ficha["aviso"] == ""
+
+
+def test_confirmar_con_una_modalidad_que_no_existe_da_400(cliente) -> None:
+    respuesta = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+        "modalidad": "EXPERIMENTAL",
+    })
+
+    assert respuesta.status_code == 400
+    assert "no es una modalidad" in respuesta.json()["detail"]
+
+
+def test_la_modalidad_declarada_queda_en_la_ficha(cliente) -> None:
+    respuesta = cliente.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+        "modalidad": "profesional",
+    })
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["entrega"]["modalidad"] == "PROFESIONAL"
+
+
+def test_declarar_otra_modalidad_para_el_mismo_proyecto_se_avisa(
+    cliente_dos_archivos,
+) -> None:
+    """La modalidad es del proyecto y manda la primera. Callarlo sería
+    dejar que el sistema decidiera en silencio un cambio que el §3.2 y el
+    §13 reservan al profesor."""
+    cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+        "modalidad": "PROFESIONAL",
+    })
+
+    respuesta = cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260220_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+        "modalidad": "INVESTIGACION",
+    })
+
+    assert respuesta.status_code == 200
+    ficha = respuesta.json()
+    # Es un aviso, no un error: la entrega queda registrada, con la
+    # modalidad que ya tenía el proyecto.
+    assert ficha["entrega"]["modalidad"] == "PROFESIONAL"
+
+    aviso = ficha["aviso"]
+    assert "INVESTIGACION" in aviso
+    assert "PROFESIONAL" in aviso
+    assert "AF023" in aviso
+    assert "§3.2" in aviso
+
+    listadas = cliente_dos_archivos.get("/api/entregas").json()
+    assert {e["modalidad"] for e in listadas} == {"PROFESIONAL"}
+
+
+def test_con_la_misma_modalidad_no_hay_aviso_de_modalidad(
+    cliente_dos_archivos,
+) -> None:
+    cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+        "modalidad": "PROFESIONAL",
+    })
+
+    ficha = cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260220_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+        "modalidad": "profesional",
+    }).json()
+
+    assert "modalidad" not in ficha["aviso"]
+
+
+def test_no_declarar_modalidad_en_una_entrega_posterior_no_avisa(
+    cliente_dos_archivos,
+) -> None:
+    """No repetir la modalidad en cada entrega no es una discrepancia: es
+    el caso normal, y el aviso solo tiene sentido cuando se declara algo
+    distinto de lo ya fijado."""
+    cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E1_20260115_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E1", "version": 1,
+        "modalidad": "PROFESIONAL",
+    })
+
+    ficha = cliente_dos_archivos.post("/api/entregas", json={
+        "nombre_archivo": "AF023_DAM_E2_20260220_v1.pdf",
+        "codigo_alumno": "AF023", "ciclo": "DAM", "fase": "E2", "version": 1,
+    }).json()
+
+    assert "modalidad" not in ficha["aviso"]
+    assert ficha["entrega"]["modalidad"] == "PROFESIONAL"
+
+
 def test_el_editor_de_criterios_sigue_funcionando(cliente) -> None:
     """La app es una sola: añadir entregas no rompe lo que ya había."""
     assert cliente.get("/api/salud").status_code == 200

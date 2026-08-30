@@ -37,8 +37,32 @@ verificar sus citas- y no entra en `Correccion`, ni en `Informe` ni en
 tipos tiene un campo para él, siguiendo el mismo criterio que ya cerró esto
 en la Parte A -`Medidas.texto_plano` va con `exclude=True`, no es el
 endpoint el que lo esconde.
+
+Antes de que ese texto salga hacia `proveedor.analizar`, pasa por
+`backend.privacidad.minimizacion.minimizar`: sustituye el nombre del alumno
+-si `listado` lo conoce- y retira DNI, correos y teléfonos con las mismas
+expresiones de R6. A partir de ahí, `texto` dentro de esta función YA es el
+texto minimizado, no el original: se usa así tanto para pedir el análisis
+como para verificar sus citas (`verificar()`, más abajo), porque el motor
+nunca vio el original y sus citas se refieren a lo que sí vio. Ver el
+docstring de `backend.privacidad.minimizacion` para por qué esto es
+minimización de mejor esfuerzo, no una garantía de anonimización, y qué le
+dice el sistema al docente cuando no puede comprobar que quedó limpio -el
+`aviso_privacidad` de `Correccion`, más abajo-.
+
+Esta función también deja constancia de lo que ha costado la ejecución -
+`backend.persistencia.consumo.RegistroDeConsumo`, vía `almacen.
+registrar_consumo`-, en los tres desenlaces posibles. Es telemetría, no
+parte del resultado: si registrar el consumo falla, se avisa por el log
+-nunca con el texto ni la instrucción, solo tipo de fallo e identificador de
+entrega- y el análisis sigue su curso, porque un profesor que ya ha pagado
+la llamada no debería perder el resultado por un fallo al escribir cuánto
+costó.
 """
 
+import logging
+import time
+from datetime import date
 from pathlib import Path
 from typing import Callable, TypeVar
 
@@ -46,10 +70,14 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.analisis.contrato import AnalisisDelMotor
 from backend.analisis.instruccion import construir
+from backend.analisis.precios import estimar_coste
 from backend.analisis.proveedor import ErrorDelProveedor, ProveedorAnalisis, RespuestaNoValida
 from backend.analisis.verificacion import verificar
 from backend.extraccion.lectura import PdfIlegible
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.modelos import Almacen, EntregaRegistrada
+from backend.privacidad.listado_local import ListadoLocal
+from backend.privacidad.minimizacion import minimizar
 from backend.salidas.borrador import BorradorNoValido, Devolucion, componer
 from backend.salidas.informe import Informe, componer_informe
 from backend.servicios.lectura_objetiva import leer
@@ -57,6 +85,8 @@ from backend.servicios.lectura_objetiva import leer
 _T = TypeVar("_T")
 
 ANALIZADO = "ANALIZADO"
+
+logger = logging.getLogger(__name__)
 
 
 class Correccion(BaseModel):
@@ -68,6 +98,13 @@ class Correccion(BaseModel):
     informe: Informe
     devolucion: Devolucion
     motor: str
+    # Lo que la minimización no pudo comprobar antes de enviar el texto al
+    # motor -típicamente, que el listado local no tenía nombre para este
+    # código de alumno-. Cadena vacía cuando no hay nada que decir, nunca
+    # `None`: así compone igual que `FichaDeLectura.aviso`
+    # (`backend/servicios/lectura_objetiva.py`), sin que quien lo muestre
+    # tenga que distinguir los dos casos.
+    aviso_privacidad: str = ""
 
 
 class InformeSinBorrador(Exception):
@@ -81,10 +118,17 @@ class InformeSinBorrador(Exception):
     la redacción otra vez, escribirla a mano-; eso es de quien la llama.
     """
 
-    def __init__(self, mensaje: str, entrega: EntregaRegistrada, informe: Informe) -> None:
+    def __init__(
+        self,
+        mensaje: str,
+        entrega: EntregaRegistrada,
+        informe: Informe,
+        aviso_privacidad: str = "",
+    ) -> None:
         super().__init__(mensaje)
         self.entrega = entrega
         self.informe = informe
+        self.aviso_privacidad = aviso_privacidad
 
 
 def _con_un_reintento(accion: Callable[[], _T]) -> _T:
@@ -103,6 +147,147 @@ def _con_un_reintento(accion: Callable[[], _T]) -> _T:
         return accion()
 
 
+class MedidorDeConsumo:
+    """Lo que ha costado, en tokens y en tiempo, una ejecución de análisis
+    entera -hasta dos llamadas reales al proveedor, cada una con hasta dos
+    intentos-.
+
+    `registrar_intento` se llama alrededor de cada llamada a `proveedor.
+    analizar` (directa, o dentro de `salidas.borrador.componer`), tanto si
+    tuvo éxito como si no: la duración y el intento cuentan siempre que se
+    hizo una llamada real, y los tokens se suman solo cuando el proveedor
+    deja consumo legible (`getattr(proveedor, "ultimo_consumo", None)`).
+
+    Distinguir «se hizo una llamada que no dejó tokens legibles» de «no se
+    hizo ninguna llamada» exige más que mirar `ultimo_consumo`: `componer()`
+    (`backend/salidas/borrador.py`) puede devolver una `Devolucion` vacía
+    sin llegar a llamar al proveedor -cuando no hay ni fortalezas ni
+    prioridades de las que redactar nada-, y en ese caso `ultimo_consumo`
+    seguiría teniendo el valor de la llamada ANTERIOR (la del análisis), no
+    `None`. Por eso se compara `proveedor.numero_de_llamadas` antes y
+    después: solo si sube de verdad hubo una llamada real que contar.
+    """
+
+    def __init__(self, paginas: int, caracteres_texto: int) -> None:
+        self.paginas = paginas
+        self.caracteres_texto = caracteres_texto
+        self.intentos = 0
+        self.duracion_ms = 0
+        self.tokens_entrada = 0
+        self.tokens_salida = 0
+        self.tokens_entrada_cacheados = 0
+        self._hay_tokens = False
+
+    def registrar_intento(self, proveedor: ProveedorAnalisis, duracion_ms: int) -> None:
+        self.intentos += 1
+        self.duracion_ms += duracion_ms
+        consumo = getattr(proveedor, "ultimo_consumo", None)
+        if consumo is not None:
+            self._hay_tokens = True
+            self.tokens_entrada += consumo.tokens_entrada
+            self.tokens_salida += consumo.tokens_salida
+            self.tokens_entrada_cacheados += consumo.tokens_entrada_cacheados
+
+    @property
+    def hay_tokens(self) -> bool:
+        return self._hay_tokens
+
+
+def _medir(medidor: MedidorDeConsumo, proveedor: ProveedorAnalisis, funcion: Callable[[], _T]) -> _T:
+    """Ejecuta `funcion` -una llamada directa a `proveedor.analizar`, o
+    `salidas.borrador.componer`, que puede o no llamarlo por dentro- y
+    cuenta, si de verdad hizo una llamada real, cuánto tardó y cuántos
+    tokens dejó.
+
+    Cuenta la llamada tanto si `funcion` termina bien como si levanta una
+    excepción -un `RespuestaNoValida` también costó dinero-, por eso se mide
+    en un `finally` y no solo en el camino feliz.
+    """
+    llamadas_antes = getattr(proveedor, "numero_de_llamadas", None)
+    inicio = time.monotonic()
+    try:
+        return funcion()
+    finally:
+        duracion_ms = int((time.monotonic() - inicio) * 1000)
+        llamadas_despues = getattr(proveedor, "numero_de_llamadas", None)
+        hubo_llamada_real = (
+            llamadas_antes is not None
+            and llamadas_despues is not None
+            and llamadas_despues > llamadas_antes
+        )
+        if hubo_llamada_real:
+            medidor.registrar_intento(proveedor, duracion_ms)
+
+
+def _registrar_consumo(
+    raiz: Path,
+    almacen: Almacen,
+    medidor: MedidorDeConsumo,
+    proveedor: ProveedorAnalisis,
+    entrega: EntregaRegistrada,
+    estado: str,
+    causa_error: str | None,
+) -> None:
+    """Deja constancia del gasto de esta ejecución, si hubo alguno que
+    contar. Nunca deja que ese registro tumbe el análisis: ver el docstring
+    del módulo.
+    """
+    if medidor.intentos == 0:
+        # `proveedor.nombre == "simulado"` no hace ninguna llamada real -y
+        # tampoco tiene `numero_de_llamadas`-, así que `medidor.intentos`
+        # se queda en 0: no hay nada que registrar, ni dinero que contar.
+        return
+
+    registrar = getattr(almacen, "registrar_consumo", None)
+    if registrar is None:
+        # Un almacén -o un doble de prueba- que no implementa esta
+        # capacidad opcional. No es un `Protocol` obligatorio (ver el
+        # docstring de `backend/persistencia/consumo.py`): degradar en
+        # silencio aquí es preferible a que cada doble de prueba existente
+        # tenga que aprender un método nuevo para poder seguir analizando.
+        return
+
+    coste_estimado_usd: float | None = None
+    tarifa_aplicada: str | None = None
+    if medidor.hay_tokens:
+        modelo_para_tarifa = getattr(proveedor, "modelo", None) or proveedor.nombre
+        coste_estimado_usd, tarifa_aplicada = estimar_coste(
+            raiz, modelo_para_tarifa, medidor.tokens_entrada, medidor.tokens_salida,
+            medidor.tokens_entrada_cacheados, fecha=date.today(),
+        )
+
+    registro = RegistroDeConsumo(
+        entrega_id=entrega.id,
+        modelo=proveedor.nombre,
+        tokens_entrada=medidor.tokens_entrada if medidor.hay_tokens else None,
+        tokens_salida=medidor.tokens_salida if medidor.hay_tokens else None,
+        tokens_entrada_cacheados=(
+            medidor.tokens_entrada_cacheados if medidor.hay_tokens else None
+        ),
+        coste_estimado_usd=coste_estimado_usd,
+        tarifa_aplicada=tarifa_aplicada,
+        duracion_ms=medidor.duracion_ms,
+        estado=estado,
+        intentos=medidor.intentos,
+        causa_error=causa_error,
+        paginas=medidor.paginas,
+        caracteres_texto=medidor.caracteres_texto,
+        reutilizado=False,
+    )
+    try:
+        registrar(registro)
+    except Exception:
+        # A propósito, sin volver a lanzar: el análisis ya se completó (o ya
+        # ha fallado por su cuenta, y esa excepción sigue su camino aparte).
+        # `logger.exception` no incluye ni el texto ni la instrucción -no
+        # están en el alcance de esta función, y `entrega.id` es el único
+        # dato que identifica de qué se trata, el mismo código anónimo de
+        # siempre-.
+        logger.exception(
+            "No se ha podido registrar el consumo de la entrega %s", entrega.id
+        )
+
+
 def analizar_entrega(
     raiz: Path,
     carpeta: Path,
@@ -110,8 +295,9 @@ def analizar_entrega(
     almacen: Almacen,
     proveedor: ProveedorAnalisis,
     entrega: EntregaRegistrada,
+    listado: ListadoLocal | None = None,
 ) -> Correccion:
-    """Lee, analiza, verifica, compone y guarda.
+    """Lee, minimiza, analiza, verifica, compone y guarda.
 
     Si el archivo no se puede leer, no llega al motor: `leer` ya deja la
     entrega en BLOQUEADO con su motivo, y pedir un análisis sin texto solo
@@ -119,6 +305,13 @@ def analizar_entrega(
     análisis útil -ni a la primera ni al reintento-, no se guarda nada y la
     entrega sigue en el estado en el que estaba: un estado que miente es
     peor que un estado atrasado.
+
+    `listado` es la correspondencia local nombre-código
+    (`backend.privacidad.listado_local.ListadoLocal`). Puede ser `None` -no
+    hay carpeta de datos locales configurada, o no se ha importado ningún
+    listado todavía-, y en ese caso el nombre del alumno no se puede buscar
+    ni sustituir; el resto de la minimización (DNI, correo, teléfono) sigue
+    aplicándose igual, porque no depende del listado.
     """
     ficha = leer(raiz, carpeta, version, almacen, entrega)
     if ficha.medidas is None:
@@ -126,27 +319,83 @@ def analizar_entrega(
             ficha.entrega.motivo_bloqueo or "No se ha podido leer el archivo."
         )
 
-    texto = ficha.medidas.texto_plano
+    nombre_conocido = (
+        listado.nombre_de(entrega.codigo_alumno) if listado is not None else None
+    )
+    minimizacion = minimizar(ficha.medidas.texto_plano, nombre_conocido)
+    texto = minimizacion.texto
     instruccion = construir(raiz, version, entrega.fase)
 
-    crudo = _con_un_reintento(
-        lambda: proveedor.analizar(instruccion, texto, AnalisisDelMotor)
+    # Para el bloque «Continuidad» del informe (§17.1, D-012 en
+    # `docs/decisions.md`). `leer()` ya consulta `anterior_de` por su cuenta
+    # -para la comparación de texto que deja en `ficha.evolucion`-, pero no
+    # devuelve la entrega anterior en sí, así que se vuelve a pedir aquí: es
+    # una segunda consulta al almacén, no una llamada al motor, y mantiene
+    # `componer_informe` sin depender de `Almacen` para nada más que lo que
+    # ya recibe. Sin corrección anterior guardada, `prioridades_anteriores`
+    # queda en `None` -no en una lista vacía-, para que el informe pueda
+    # distinguir «no hay análisis anterior» de «lo había y no dejó
+    # prioridades».
+    anterior = almacen.anterior_de(entrega.codigo_alumno, entrega.fase, entrega.version)
+    correccion_anterior = almacen.correccion_de(anterior.id) if anterior is not None else None
+    prioridades_anteriores = (
+        correccion_anterior.informe.prioridades if correccion_anterior is not None else None
     )
+
+    # El aviso de la minimización solo importa cuando de verdad sale algo
+    # hacia fuera: con el proveedor simulado no se envía nada a ningún
+    # sitio (`ProveedorSimulado` no habla con ningún servicio), así que
+    # avisar de que el nombre podría no haberse retirado sería ruido sobre
+    # un envío que no ocurre -el mismo criterio que ya aplica
+    # `proveedor.nombre != "simulado"` en la guarda de protección de datos
+    # de `backend/api/analisis.py`-.
+    aviso_privacidad = minimizacion.aviso if proveedor.nombre != "simulado" else ""
+
+    medidor = MedidorDeConsumo(
+        paginas=len(ficha.medidas.paginas), caracteres_texto=len(texto)
+    )
+
+    try:
+        crudo = _con_un_reintento(
+            lambda: _medir(
+                medidor, proveedor,
+                lambda: proveedor.analizar(instruccion, texto, AnalisisDelMotor),
+            )
+        )
+    except ErrorDelProveedor as fallo:
+        _registrar_consumo(
+            raiz, almacen, medidor, proveedor, entrega, "ERROR", str(fallo)
+        )
+        raise
+
     analisis = verificar(raiz, version, entrega.fase, texto, crudo)
-    informe = componer_informe(raiz, version, entrega, ficha, analisis, proveedor.nombre)
+    informe = componer_informe(
+        raiz, version, entrega, ficha, analisis, proveedor.nombre,
+        hay_entrega_anterior=anterior is not None,
+        prioridades_anteriores=prioridades_anteriores,
+    )
 
     try:
         devolucion = _con_un_reintento(
-            lambda: componer(raiz, version, proveedor, analisis)
+            lambda: _medir(
+                medidor, proveedor,
+                lambda: componer(raiz, version, proveedor, analisis),
+            )
         )
     except (ErrorDelProveedor, BorradorNoValido) as fallo:
         actualizada = almacen.cambiar_estado(entrega.id, ANALIZADO, None) or entrega
+        _registrar_consumo(
+            raiz, almacen, medidor, proveedor, entrega, "PARCIAL", str(fallo)
+        )
         raise InformeSinBorrador(
             f"El informe se ha generado y ha quedado guardado, pero el "
             f"borrador de devolución no se ha podido completar: {fallo}",
             entrega=actualizada,
             informe=informe,
+            aviso_privacidad=aviso_privacidad,
         ) from fallo
+
+    _registrar_consumo(raiz, almacen, medidor, proveedor, entrega, "OK", None)
 
     actualizada = almacen.cambiar_estado(entrega.id, ANALIZADO, None) or entrega
     return Correccion(
@@ -154,4 +403,5 @@ def analizar_entrega(
         informe=informe,
         devolucion=devolucion,
         motor=proveedor.nombre,
+        aviso_privacidad=aviso_privacidad,
     )

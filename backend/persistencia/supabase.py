@@ -17,6 +17,7 @@ from pathlib import Path
 import httpx
 import yaml
 
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     Correccion,
@@ -254,21 +255,34 @@ class AlmacenSupabase:
         )
         return creado[0]["id"], creado[0].get("ciclo") or ciclo
 
-    def _proyecto(self, alumno_id: str, version_criterios: str) -> str:
+    def _proyecto(
+        self, alumno_id: str, version_criterios: str, modalidad: str | None
+    ) -> tuple[str, str | None]:
+        """El identificador del proyecto y su modalidad, la que ya tuviera.
+
+        Mismo criterio que `_alumno` con el ciclo: si el proyecto ya existe,
+        se devuelve SU modalidad, no la que se acaba de declarar -cambiarla
+        es una decisión expresa del profesor (§3.2) que esta función no toma
+        por su cuenta-. Solo al crear el proyecto por primera vez se escribe
+        la modalidad declarada, que puede ser `None` si todavía no se ha
+        fijado.
+        """
         existente = self._uno(
             "proyecto",
             alumno_id=f"eq.{alumno_id}",
             version_criterios=f"eq.{version_criterios}",
         )
         if existente:
-            return existente["id"]
+            return existente["id"], existente.get("modalidad")
         creado = self._pedir("POST", "proyecto", json={
             "alumno_id": alumno_id, "version_criterios": version_criterios,
+            "modalidad": modalidad,
         })
-        return creado[0]["id"]
+        return creado[0]["id"], creado[0].get("modalidad")
 
     def _componer(self, fila: dict) -> EntregaRegistrada:
-        """Una fila de `entrega` más su alumno, tal como la usa el sistema."""
+        """Una fila de `entrega` más su alumno y su proyecto, tal como la
+        usa el sistema."""
         alumno = fila.get("alumno") or {}
         return EntregaRegistrada(
             id=fila["id"],
@@ -282,6 +296,7 @@ class AlmacenSupabase:
             estado=fila["estado"],
             motivo_bloqueo=fila.get("motivo_bloqueo"),
             version_criterios=fila["version_criterios"],
+            modalidad=fila.get("modalidad"),
         )
 
     # PostgREST devuelve el alumno anidado atravesando las dos claves ajenas:
@@ -301,16 +316,17 @@ class AlmacenSupabase:
     # `select`, así que `%21inner` y `!inner` llegan como la misma cadena. Es
     # el comportamiento estándar de cualquier framework HTTP al partir una
     # query string, no una particularidad de PostgREST.
-    SELECCION = "*,proyecto!inner(alumno!inner(codigo,ciclo))"
+    SELECCION = "*,proyecto!inner(modalidad,alumno!inner(codigo,ciclo))"
 
     # La misma lectura, para la representación que devuelve una escritura.
     # Sin cruce interno: ahí no se filtra por ningún campo del embebido, que
     # es lo único para lo que el `!inner` hace falta.
-    SELECCION_AL_ESCRIBIR = "*,proyecto(alumno(codigo,ciclo))"
+    SELECCION_AL_ESCRIBIR = "*,proyecto(modalidad,alumno(codigo,ciclo))"
 
     def _aplanar(self, fila: dict) -> dict:
-        anidado = (fila.get("proyecto") or {}).get("alumno") or {}
-        return {**fila, "alumno": anidado}
+        proyecto = fila.get("proyecto") or {}
+        anidado = proyecto.get("alumno") or {}
+        return {**fila, "alumno": anidado, "modalidad": proyecto.get("modalidad")}
 
     def registrar(self, entrega: EntregaNueva) -> EntregaRegistrada:
         validar(entrega)
@@ -326,7 +342,9 @@ class AlmacenSupabase:
             return ya_estaba
 
         alumno_id, ciclo = self._alumno(entrega.codigo_alumno, entrega.ciclo)
-        proyecto_id = self._proyecto(alumno_id, entrega.version_criterios)
+        proyecto_id, modalidad = self._proyecto(
+            alumno_id, entrega.version_criterios, entrega.modalidad
+        )
         filas = self._pedir("POST", "entrega", json={
             "proyecto_id": proyecto_id,
             "fase": entrega.fase,
@@ -336,10 +354,12 @@ class AlmacenSupabase:
             "version_criterios": entrega.version_criterios,
         })
         fila = filas[0]
-        # El ciclo del alumno guardado, no el declarado ahora: es el que
-        # devolverán `listar` y `por_id` al leer la fila con su alumno
-        # anidado, y la ficha recién confirmada tiene que decir lo mismo.
+        # El ciclo del alumno guardado y la modalidad del proyecto guardada,
+        # no lo declarado ahora: es lo que devolverán `listar` y `por_id` al
+        # leer la fila con su alumno y su proyecto anidados, y la ficha
+        # recién confirmada tiene que decir lo mismo.
         fila["alumno"] = {"codigo": entrega.codigo_alumno, "ciclo": ciclo}
+        fila["modalidad"] = modalidad
         return self._componer(fila)
 
     def listar(self) -> list[EntregaRegistrada]:
@@ -482,7 +502,22 @@ class AlmacenSupabase:
             "entrega_id": entrega_id,
             "version_criterios": informe.identificacion.get("criterios") or "",
             "resumen_ejecutivo": informe.resumen,
-            "semaforo_propuesto": informe.semaforo,
+            "semaforo_propuesto": informe.semaforo_propuesto,
+            # `semaforo_aprobado` ya existía en el esquema inicial, sin usar
+            # -D-016 (`docs/decisions.md`) es lo primero que lo rellena-.
+            # `nota_propuesta`, `nota_aprobada`, `aprobada_en` y
+            # `aprobada_por` siguen sin tocarse a propósito: la migración
+            # exige `aprobada_en`/`aprobada_por` en cuanto hay
+            # `nota_aprobada` (constraint `aprobacion_con_firma`), y este
+            # sistema todavía no tiene ninguna identidad de docente que
+            # escribir ahí -no hay autenticación-. Escribir un valor
+            # inventado en `aprobada_por` para poder rellenar esas columnas
+            # sería inventar un dato, y R6/R3 lo prohíben igual que
+            # cualquier otro. La nota interna entera -`nota_propuesta_
+            # sistema`, `estado_nota`, `nota_final_docente` y el resto- vive
+            # por ahora solo dentro de la columna `informe`, que sí se relee
+            # entera en `correccion_de`.
+            "semaforo_aprobado": informe.semaforo_final_docente,
             "accion_recomendada": informe.recomendacion,
             "informe": informe.model_dump(mode="json"),
             "devolucion": (
@@ -553,3 +588,17 @@ class AlmacenSupabase:
             motor=informe.motor,
             aviso=fila.get("aviso"),
         )
+
+    def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
+        """Escribe una fila en `ejecucion_motor`
+        (`supabase/migrations/20260830090000_registro_de_consumo.sql`).
+
+        No hay nada que deshacer si falla: a diferencia de
+        `guardar_correccion`, esta es una única escritura, sin tablas
+        dependientes que puedan quedar huérfanas. Si `_pedir` levanta
+        `ErrorDeAlmacen`, quien llama decide qué hacer -ver
+        `backend/servicios/analisis_de_entrega.py`, que la trata como
+        telemetría best-effort y no deja que un fallo aquí tumbe un análisis
+        que sí se completó-.
+        """
+        self._pedir("POST", "ejecucion_motor", json=registro.model_dump(mode="json"))

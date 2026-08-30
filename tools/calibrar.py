@@ -43,9 +43,24 @@ ya costó dinero y ya terminó. Esto no es una reanudación automática -una
 pasada interrumpida se relanza entera, no retoma por donde se quedó-, es
 solo que el trabajo pagado quede en disco, no únicamente en la memoria de
 un proceso que puede morir antes del final.
+
+El informe que compone termina con un bloque de capacidad: coste total,
+medio, mediana y máximo de la tanda, tokens medios de entrada y de salida,
+y una proyección -nunca un precio- a 50, 100 y 200 análisis. Sale de
+`almacen.consumos()`, el mismo registro que ya deja `analizar_entrega` por
+cada ejecución real (`backend.persistencia.consumo.RegistroDeConsumo`), así
+que no recalcula nada por su cuenta ni necesita hablar con el proveedor una
+segunda vez. La estimación del curso completo no está aquí: hace falta el
+número real de alumnos y entregas, que nadie ha dado todavía, y este módulo
+no lo inventa. Las alertas de presupuesto al 50 %, 75 % y 90 % que pidió el
+docente están listas para calcularse -`PRESUPUESTO_CALIBRACION`, más
+abajo-, pero el número del presupuesto en sí no lo fija este módulo: se lee
+de fuera, y hasta que llegue, el bloque lo dice sin calcular ningún
+porcentaje sobre un límite que nadie ha puesto.
 """
 
 import argparse
+import statistics
 import sys
 import time
 from datetime import datetime
@@ -69,6 +84,7 @@ from backend.analisis.verificacion import normalizar_para_buscar  # noqa: E402
 from backend.configuracion import VERSION_CRITERIOS_POR_OMISION  # noqa: E402
 from backend.extraccion import medir  # noqa: E402
 from backend.extraccion.lectura import PdfIlegible  # noqa: E402
+from backend.persistencia.consumo import RegistroDeConsumo  # noqa: E402
 from backend.persistencia.memoria import AlmacenEnMemoria  # noqa: E402
 from backend.persistencia.modelos import Almacen, EntregaNueva  # noqa: E402
 from backend.salidas.informe import Informe  # noqa: E402
@@ -93,6 +109,24 @@ CARPETA_CALIBRACION = "REVISOR_CARPETA_CALIBRACION"
 # `EntregaNueva` exige para poder registrar algo con lo que `analizar_entrega`
 # pueda trabajar.
 CICLO_DE_CALIBRACION = "CALIBRACION"
+
+# La variable de entorno del presupuesto contra el que avisar. El docente
+# pidió el mecanismo de alertas al 50 %, 75 % y 90 %, no un número: nadie ha
+# fijado todavía cuánto puede gastar el curso, y este módulo no lo inventa
+# (R3 no distingue entre inventar un criterio de corrección y inventar un
+# límite de gasto). Mismo patrón que CARPETA_CALIBRACION -entorno o .env,
+# vía `_valor_de_entorno`-, con `--presupuesto-usd` como alternativa en la
+# línea de órdenes. Mientras no llegue ningún valor, el bloque de capacidad
+# calcula coste y proyección igual, pero no expresa nada como porcentaje de
+# un presupuesto que no existe.
+PRESUPUESTO_CALIBRACION = "REVISOR_PRESUPUESTO_USD"
+
+# Los umbrales que pidió el docente, tal cual: «por ejemplo al 50 %, 75 % y
+# 90 %». No son un cálculo, son la cita.
+UMBRALES_DE_ALERTA_PCT: tuple[int, ...] = (50, 75, 90)
+
+# «Proyección para 50, 100 y 200 análisis», también tal cual la pidió.
+PROYECCIONES_DE_ANALISIS: tuple[int, ...] = (50, 100, 200)
 
 # El §11.1 del documento de calibración, con su pregunta de control exacta.
 PREGUNTAS_DEL_11_1: dict[str, str] = {
@@ -185,6 +219,76 @@ class IndicadorDeCalibracion(BaseModel):
     lectura: str
 
 
+class AlertaDePresupuesto(BaseModel):
+    """Cuánto de un presupuesto -cuando el docente lo fije- consumiría una
+    proyección, y si ya cruza alguno de los umbrales que pidió (50 %, 75 %,
+    90 %).
+
+    Solo existe cuando hay un presupuesto configurado: sin él no hay nada
+    contra lo que expresar un porcentaje, y `ResumenDeConsumo.alertas` se
+    queda vacía en vez de dividir por un límite inventado.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    analisis_proyectados: int
+    coste_proyectado_usd: float
+    porcentaje_del_presupuesto: float
+    # Los umbrales de UMBRALES_DE_ALERTA_PCT que esta proyección ya supera,
+    # de menor a mayor. Vacía si no supera ninguno -no es lo mismo que "sin
+    # presupuesto configurado": aquí sí hay presupuesto, y esta proyección
+    # simplemente cabe dentro de él.
+    umbrales_superados: list[int]
+
+
+class ResumenDeConsumo(BaseModel):
+    """El bloque de capacidad que pidió el docente: coste y proyección de la
+    tanda, nunca del curso completo.
+
+    Se calcula sobre `almacen.consumos()` -una fila por ejecución que llegó
+    a llamar al proveedor de verdad, con o sin éxito-, no sobre los nueve
+    resultados de calibración: un caso saltado por archivo ilegible nunca
+    llamó al proveedor y no cuesta nada, pero un caso que falló después de
+    gastar tokens sí tiene su fila, con `coste_estimado_usd` puesto o en
+    `None` si el modelo no tiene tarifa vigente. Que la media incluya esos
+    fallos es intencional: «un análisis fallido también consume».
+
+    La mediana viaja siempre junto a la media porque una sola no basta: si
+    la media es muy superior a la mediana, unos pocos trabajos largos están
+    empujando el promedio -y los nueve casos del banco, de 4.000 a 12.600
+    palabras, son justo ese caso-. `lectura` lo dice en prosa; los dos
+    números por separado se dejan aquí para que el docente pueda hacer su
+    propia cuenta.
+
+    `proyeccion_usd` multiplica `coste_medio_usd` por 50, 100 y 200 -lo que
+    pidió el docente-, con la tarifa vigente hoy. No es un precio: es una
+    proyección desde nueve casos con mucha dispersión, y `lectura` lo
+    señala así. La estimación del curso completo no está aquí -hace falta
+    el número real de alumnos y entregas, que nadie ha dado todavía-.
+
+    `alertas` queda vacía mientras `presupuesto_usd` sea `None`:
+    `presupuesto_configurado` es lo que distingue «sin presupuesto» de «con
+    presupuesto, y ninguna proyección lo supera todavía», que de otro modo
+    se leerían igual -una lista vacía- y son dos cosas distintas.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ejecuciones_registradas: int
+    ejecuciones_sin_coste_calculable: int
+    coste_total_usd: float | None
+    coste_medio_usd: float | None
+    coste_mediana_usd: float | None
+    coste_maximo_usd: float | None
+    tokens_entrada_medios: float | None
+    tokens_salida_medios: float | None
+    proyeccion_usd: dict[int, float | None]
+    presupuesto_usd: float | None
+    presupuesto_configurado: bool
+    alertas: list[AlertaDePresupuesto]
+    lectura: str
+
+
 class InformeDeCalibracion(BaseModel):
     """El resultado entero de una pasada del arnés por el banco de casos."""
 
@@ -200,6 +304,7 @@ class InformeDeCalibracion(BaseModel):
     no_comparable: int
     lectura_de_sesgo: str
     indicadores: dict[str, IndicadorDeCalibracion]
+    consumo: ResumenDeConsumo
 
 
 def cargar_casos(fichero: Path) -> list[CasoDeCalibracion]:
@@ -277,9 +382,9 @@ def evaluar(caso: CasoDeCalibracion, informe: Informe) -> ResultadoDeCaso:
     return ResultadoDeCaso(
         codigo=caso.codigo,
         semaforo_esperado=caso.semaforo_esperado,
-        semaforo_obtenido=informe.semaforo,
-        acierta_semaforo=(informe.semaforo == caso.semaforo_esperado),
-        direccion=_direccion(caso.semaforo_esperado, informe.semaforo),
+        semaforo_obtenido=informe.semaforo_propuesto,
+        acierta_semaforo=(informe.semaforo_propuesto == caso.semaforo_esperado),
+        direccion=_direccion(caso.semaforo_esperado, informe.semaforo_propuesto),
         debe_encontrar_hallado=hallado,
         debe_encontrar_ausente=ausente,
         no_debe_hallado=no_debe_hallado,
@@ -473,7 +578,154 @@ def _indicadores(evaluados: list[ResultadoDeCaso]) -> dict[str, IndicadorDeCalib
     }
 
 
-def _componer_informe(resultados: list[ResultadoDeCaso]) -> InformeDeCalibracion:
+def _lectura_de_consumo(
+    ejecuciones: int,
+    con_coste: int,
+    coste_total: float | None,
+    coste_medio: float | None,
+    coste_mediana: float | None,
+    coste_maximo: float | None,
+    tokens_entrada_medios: float | None,
+    tokens_salida_medios: float | None,
+) -> str:
+    """La prosa del bloque de capacidad, con la misma cautela que
+    `_lectura_de_sesgo`: no decide nada por el docente, solo lo dice claro.
+    """
+    if ejecuciones == 0:
+        return (
+            "Ninguna ejecución ha dejado registro de consumo -con el "
+            "proveedor simulado no hay ninguna llamada real que cueste "
+            "dinero-. No hay coste que leer ni proyección posible."
+        )
+    if con_coste == 0:
+        return (
+            f"{ejecuciones} ejecución(es) llamaron al proveedor, pero "
+            "ninguna tiene coste calculable: su modelo no tiene tarifa "
+            "vigente en config/precios_openai.yaml. Ni el coste ni la "
+            "proyección se pueden dar; añade la tarifa que falta antes de "
+            "fiarte de cualquier cifra."
+        )
+
+    lineas = [
+        f"Coste total de la tanda: {coste_total:.4f} USD sobre {ejecuciones} "
+        "ejecución(es) con registro"
+        + (
+            f" ({ejecuciones - con_coste} sin coste calculable)."
+            if ejecuciones > con_coste
+            else "."
+        ),
+        f"Media {coste_medio:.4f} USD, mediana {coste_mediana:.4f} USD, "
+        f"máximo {coste_maximo:.4f} USD.",
+    ]
+    if coste_medio > coste_mediana:
+        lineas.append(
+            "La media supera a la mediana: unos pocos casos concentran el "
+            "gasto -los nueve casos del banco van de 4.000 a 12.600 "
+            "palabras, y esa dispersión es real, no teórica-. Antes de "
+            "fiarte de la proyección de más abajo, mira el máximo, no solo "
+            "la media."
+        )
+    elif coste_medio < coste_mediana:
+        lineas.append(
+            "La media queda por debajo de la mediana: no hay concentración "
+            "de gasto en pocos casos; al contrario, algún caso barato tira "
+            "de la media hacia abajo."
+        )
+    else:
+        lineas.append("Media y mediana coinciden en esta tanda.")
+
+    if tokens_entrada_medios is not None:
+        lineas.append(
+            f"Tokens medios por ejecución: {tokens_entrada_medios:.0f} de "
+            f"entrada, {tokens_salida_medios:.0f} de salida."
+        )
+
+    lineas.append(
+        "La proyección de más abajo multiplica el coste medio de esta "
+        "tanda -nueve casos, no una muestra grande- por 50, 100 y 200 "
+        "análisis; no es un precio ni una promesa de lo que costará el "
+        "curso, es una estimación con la tarifa vigente hoy, que puede "
+        "cambiar. Incluye los intentos que llegaron a llamar al proveedor y "
+        "fallaron después de gastar tokens; no incluye los casos saltados "
+        "por un archivo ilegible o ausente, que nunca llegan a costar nada."
+    )
+    lineas.append(
+        "Cuando se conozca el número real de alumnos y entregas del curso, "
+        "se podrá añadir la estimación del curso completo; con nueve casos "
+        "de calibración no hay base para darla todavía."
+    )
+    return "\n".join(lineas)
+
+
+def _resumen_de_consumo(
+    registros: list[RegistroDeConsumo], presupuesto_usd: float | None
+) -> ResumenDeConsumo:
+    """El bloque de capacidad, compuesto sobre lo que ya registró
+    `analizar_entrega` -nunca una segunda llamada al proveedor-.
+    """
+    costes = [r.coste_estimado_usd for r in registros if r.coste_estimado_usd is not None]
+    tokens_entrada = [r.tokens_entrada for r in registros if r.tokens_entrada is not None]
+    tokens_salida = [r.tokens_salida for r in registros if r.tokens_salida is not None]
+
+    coste_total = round(sum(costes), 6) if costes else None
+    coste_medio = round(statistics.mean(costes), 6) if costes else None
+    coste_mediana = round(statistics.median(costes), 6) if costes else None
+    coste_maximo = round(max(costes), 6) if costes else None
+    tokens_entrada_medios = round(statistics.mean(tokens_entrada), 1) if tokens_entrada else None
+    tokens_salida_medios = round(statistics.mean(tokens_salida), 1) if tokens_salida else None
+
+    proyeccion_usd: dict[int, float | None] = {
+        n: (round(coste_medio * n, 2) if coste_medio is not None else None)
+        for n in PROYECCIONES_DE_ANALISIS
+    }
+
+    # Un presupuesto a cero o en negativo no es un presupuesto: es un dato
+    # roto -de un `.env` mal escrito, o de un `--presupuesto-usd` con un
+    # signo equivocado-, y dividir por él inventaría un porcentaje sin
+    # sentido en vez de señalar que no hay presupuesto usable.
+    presupuesto_valido = (
+        presupuesto_usd if (presupuesto_usd is not None and presupuesto_usd > 0) else None
+    )
+
+    alertas: list[AlertaDePresupuesto] = []
+    if presupuesto_valido is not None:
+        for n in PROYECCIONES_DE_ANALISIS:
+            proyectado = proyeccion_usd[n]
+            if proyectado is None:
+                continue
+            porcentaje = proyectado / presupuesto_valido * 100
+            alertas.append(AlertaDePresupuesto(
+                analisis_proyectados=n,
+                coste_proyectado_usd=proyectado,
+                porcentaje_del_presupuesto=round(porcentaje, 1),
+                umbrales_superados=[u for u in UMBRALES_DE_ALERTA_PCT if porcentaje >= u],
+            ))
+
+    return ResumenDeConsumo(
+        ejecuciones_registradas=len(registros),
+        ejecuciones_sin_coste_calculable=len(registros) - len(costes),
+        coste_total_usd=coste_total,
+        coste_medio_usd=coste_medio,
+        coste_mediana_usd=coste_mediana,
+        coste_maximo_usd=coste_maximo,
+        tokens_entrada_medios=tokens_entrada_medios,
+        tokens_salida_medios=tokens_salida_medios,
+        proyeccion_usd=proyeccion_usd,
+        presupuesto_usd=presupuesto_valido,
+        presupuesto_configurado=presupuesto_valido is not None,
+        alertas=alertas,
+        lectura=_lectura_de_consumo(
+            len(registros), len(costes), coste_total, coste_medio, coste_mediana,
+            coste_maximo, tokens_entrada_medios, tokens_salida_medios,
+        ),
+    )
+
+
+def _componer_informe(
+    resultados: list[ResultadoDeCaso],
+    registros_de_consumo: list[RegistroDeConsumo] | None = None,
+    presupuesto_usd: float | None = None,
+) -> InformeDeCalibracion:
     evaluados = [r for r in resultados if not r.saltado]
     saltados = [r for r in resultados if r.saltado]
     mas_duro = [r for r in evaluados if r.direccion == "MAS_DURO"]
@@ -493,6 +745,7 @@ def _componer_informe(resultados: list[ResultadoDeCaso]) -> InformeDeCalibracion
             evaluados, len(mas_duro), len(mas_blando), len(no_comparable)
         ),
         indicadores=_indicadores(evaluados),
+        consumo=_resumen_de_consumo(registros_de_consumo or [], presupuesto_usd),
     )
 
 
@@ -552,6 +805,7 @@ def ejecutar(
     proveedor: ProveedorAnalisis,
     espera: float = 0.0,
     dormir=time.sleep,
+    presupuesto_usd: float | None = None,
 ) -> InformeDeCalibracion:
     """Recorre los casos del banco contra `proveedor` y compara con el
     docente.
@@ -583,6 +837,22 @@ def ejecutar(
     de la hora, y el arnés no tiene forma de conocerlo.
 
     `dormir` se inyecta para que los tests no esperen de verdad.
+
+    `presupuesto_usd` es el límite contra el que avisar al 50 %, 75 % y
+    90 % en el bloque de capacidad del informe final -ver
+    `PRESUPUESTO_CALIBRACION`-. Es un parámetro explícito, no una lectura
+    del entorno aquí dentro, por el mismo motivo que la versión de
+    criterios: quien llama a `ejecutar` directamente -los tests, sobre
+    todo- fija el presupuesto que quiere probar, y `_resolver` es quien
+    traduce la línea de órdenes o el entorno a este valor antes de llegar
+    aquí.
+
+    El coste de la tanda no se recalcula al final: se lee de
+    `almacen.consumos()`, la misma tabla que ya llena `analizar_entrega` en
+    cada ejecución real (`backend.persistencia.consumo.RegistroDeConsumo`).
+    Por eso el `AlmacenEnMemoria` se crea aquí y no dentro de
+    `_ejecutar_caso`: tiene que ser el mismo objeto durante los nueve casos
+    para que el consumo de todos quede junto al final.
     """
     almacen = AlmacenEnMemoria()
     fichero_de_progreso = _progreso_por_omision(carpeta)
@@ -597,7 +867,7 @@ def ejecutar(
         )
         _registrar_progreso(raiz, fichero_de_progreso, resultado)
         resultados.append(resultado)
-    return _componer_informe(resultados)
+    return _componer_informe(resultados, almacen.consumos(), presupuesto_usd)
 
 
 def proteccion_datos_pendiente(raiz: Path) -> bool:
@@ -610,7 +880,14 @@ def proteccion_datos_pendiente(raiz: Path) -> bool:
     fichero = raiz / "docs" / "PENDIENTE_OFICIAL.md"
     if not fichero.is_file():
         return True
-    return "**proteccion_datos**" in fichero.read_text(encoding="utf-8")
+    texto = fichero.read_text(encoding="utf-8")
+    # Solo cuenta lo que sigue en «Pendientes». El documento conserva las
+    # entradas resueltas en su propia sección -saber que algo estuvo
+    # pendiente, y por qué dejó de estarlo, es parte de la trazabilidad-, y
+    # buscar el nombre en el fichero entero haría que una entrada archivada
+    # siguiera bloqueando para siempre.
+    pendientes = texto.split("## Pendientes", 1)[-1].split(chr(10) + "## ", 1)[0]
+    return "**proteccion_datos**" in pendientes
 
 
 def _dentro_del_repositorio(raiz: Path, ruta: Path) -> bool:
@@ -712,6 +989,67 @@ def _formatear(informe: InformeDeCalibracion) -> str:
         "significar que el motor se ha equivocado, que la referencia era "
         "discutible, o que el caso está mal descrito. Lo decide el docente."
     )
+
+    lineas.append("")
+    lineas.append("Capacidad: coste, tokens y proyección de esta tanda.")
+    for linea_de_lectura in informe.consumo.lectura.split("\n"):
+        lineas.append(f"  {linea_de_lectura}")
+
+    lineas.append("")
+    lineas.append(
+        "Proyección de coste por número de análisis (estimación, no un "
+        "precio):"
+    )
+    for n in PROYECCIONES_DE_ANALISIS:
+        coste_n = informe.consumo.proyeccion_usd.get(n)
+        if coste_n is None:
+            lineas.append(f"  - {n} análisis: no calculable.")
+        else:
+            lineas.append(f"  - {n} análisis: {coste_n:.2f} USD (estimado).")
+
+    lineas.append("")
+    if informe.consumo.presupuesto_configurado:
+        lineas.append(
+            f"Presupuesto configurado: {informe.consumo.presupuesto_usd:.2f} "
+            "USD. Alertas al 50 %, 75 % y 90 %:"
+        )
+        if informe.consumo.alertas:
+            for alerta in informe.consumo.alertas:
+                if alerta.umbrales_superados:
+                    marcados = ", ".join(f"{u} %" for u in alerta.umbrales_superados)
+                    aviso = f" -- supera {marcados}"
+                else:
+                    aviso = ""
+                lineas.append(
+                    f"  - {alerta.analisis_proyectados} análisis: "
+                    f"{alerta.coste_proyectado_usd:.2f} USD, "
+                    f"{alerta.porcentaje_del_presupuesto:.1f} % del "
+                    f"presupuesto{aviso}."
+                )
+        else:
+            lineas.append(
+                "  Sin coste medio calculable en esta tanda: no hay "
+                "porcentaje que dar."
+            )
+    else:
+        lineas.append(
+            "Alertas de presupuesto: sin configurar. El docente no ha "
+            "fijado todavía un límite de gasto, y este informe no inventa "
+            f"uno. El mecanismo está listo: en cuanto exista un número, se "
+            f"lee de {PRESUPUESTO_CALIBRACION} (variable de entorno o "
+            ".env) o de --presupuesto-usd en la línea de órdenes, y este "
+            "mismo bloque calculará el porcentaje consumido y marcará los "
+            "umbrales del 50 %, 75 % y 90 % que ya se superen."
+        )
+
+    lineas.append("")
+    lineas.append(
+        "Nota sobre el límite: hoy, si un análisis falla -por cuota "
+        "agotada o cualquier otro corte del proveedor-, la entrega vuelve a "
+        "RECIBIDO sin perder el PDF ni la ficha, y se puede pedir otra vez "
+        "a mano. Encolarlo o marcarlo para reintento automático es alcance "
+        "nuevo, no construido aquí: queda para que el docente lo decida."
+    )
     return "\n".join(lineas)
 
 
@@ -763,6 +1101,17 @@ def _configurar_argumentos() -> argparse.ArgumentParser:
             "proyecto largo puede acercarse el solo a ese limite, y dos "
             "seguidos lo superan. No es un problema de saldo; no se arregla "
             "esperando a manana, se arregla no mandandolos seguidos."
+        ),
+    )
+    parser.add_argument(
+        "--presupuesto-usd", type=float, default=None, dest="presupuesto_usd",
+        metavar="USD",
+        help=(
+            "Límite de gasto contra el que avisar al 50 %, 75 % y 90 % en "
+            f"el bloque de capacidad. Si se omite, se lee de "
+            f"{PRESUPUESTO_CALIBRACION}, en el entorno o en .env. Sin "
+            "ninguno de los dos, el bloque no calcula ningún porcentaje: "
+            "no hay presupuesto que inventar."
         ),
     )
     parser.add_argument(
@@ -846,7 +1195,24 @@ def _resolver(argv: list[str] | None, raiz: Path | None) -> int:
             "comprueba que el arnés funciona."
         )
 
-    informe = ejecutar(raiz, casos, carpeta, proveedor, args.espera)
+    presupuesto_usd = args.presupuesto_usd
+    if presupuesto_usd is None:
+        valor_presupuesto = _valor_de_entorno(raiz, PRESUPUESTO_CALIBRACION)
+        if valor_presupuesto is not None:
+            try:
+                presupuesto_usd = float(valor_presupuesto)
+            except ValueError:
+                print(
+                    f"{PRESUPUESTO_CALIBRACION} vale «{valor_presupuesto}», "
+                    "que no es un número. Se ignora: el bloque de "
+                    "capacidad no calculará ningún porcentaje de "
+                    "presupuesto."
+                )
+
+    informe = ejecutar(
+        raiz, casos, carpeta, proveedor, args.espera,
+        presupuesto_usd=presupuesto_usd,
+    )
     texto = _formatear(informe)
     print()
     print(texto)

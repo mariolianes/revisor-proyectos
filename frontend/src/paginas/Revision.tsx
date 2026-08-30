@@ -3,7 +3,53 @@ import { useState } from "react"
 import { Observacion } from "../componentes/Observacion"
 import type { EstadoDeLaDecision } from "../componentes/Observacion"
 import { api } from "../lib/api"
-import type { Decision, ResultadoAnalisis, ValoracionVerificada } from "../lib/tipos"
+import { CODIGOS_SEMAFORO } from "../lib/tipos"
+import type {
+  ContinuidadFeedback, Decision, ResultadoAnalisis, ValoracionVerificada,
+} from "../lib/tipos"
+
+// El vocabulario del §17.1 en castellano legible. El backend solo emite
+// PENDIENTE y NO_VERIFICABLE hoy -ver `backend/evolucion/continuidad.py`-,
+// pero las cuatro claves están aquí porque son el contrato del bloque, no
+// una posibilidad futura sin etiqueta.
+const ETIQUETA_DE_CONTINUIDAD: Record<ContinuidadFeedback["estado"], string> = {
+  APLICADO: "Aplicado",
+  PARCIALMENTE_APLICADO: "Parcialmente aplicado",
+  PENDIENTE: "Pendiente",
+  NO_VERIFICABLE: "No verificable",
+}
+
+// La misma severidad que `SEVERIDAD_SEMAFORO` en
+// `backend/salidas/informe.py`: GRIS por debajo de VERDE a propósito, para
+// que la comprobación de aquí -de anticipo, no la que de verdad decide- dé
+// el mismo resultado que dará el servidor al guardar. Ver D-016 en
+// `docs/decisions.md`.
+const SEVERIDAD_SEMAFORO: Record<string, number> = { GRIS: -1, VERDE: 0, AMBAR: 1, ROJO: 2 }
+
+/**
+ * El color mínimo que sostienen las valoraciones fiables que siguen
+ * aprobadas -mismo cálculo que `semaforo_por_valoraciones`
+ * (`backend/salidas/informe.py`)-, para poder avisar en pantalla antes de
+ * que el docente intente guardar un semáforo final que el servidor va a
+ * rechazar. No sustituye esa comprobación: es un anticipo, calculado con la
+ * misma regla, sobre las decisiones que esta pantalla tiene delante ahora
+ * mismo.
+ */
+function colorMinimo(
+  valoraciones: ValoracionVerificada[],
+  estadoDe: (v: ValoracionVerificada) => EstadoDeLaDecision,
+): string {
+  const fiables = valoraciones.filter(
+    (v) => v.evidencia_localizada && estadoDe(v).decision !== "DESCARTADA",
+  )
+  if (fiables.length === 0) return "GRIS"
+  for (const prioridad of ["P1", "P2", "P3"]) {
+    if (fiables.some((v) => v.prioridad === prioridad)) {
+      return prioridad === "P1" ? "ROJO" : "AMBAR"
+    }
+  }
+  return "VERDE"
+}
 
 interface Props {
   id: string
@@ -84,10 +130,22 @@ const estadoDeSalida = (v: ValoracionVerificada): EstadoDeLaDecision => (
  *    del punto 2 son consulta y van sin ella, para que no se convierta en
  *    decoración que deja de leerse.
  *
- * Ninguna nota, en ninguna forma: ni como campo, ni como control, ni como
- * hueco a rellenar. El semáforo y la recomendación se leen -proponen, no
- * deciden-, no llevan `senal` porque no piden localizar nada, y no hay
- * ningún control para cambiarlos: se muestran, no se editan.
+ * Desde la decisión del docente del 2026-08-30 (D-015, D-016, D-017 en
+ * `docs/decisions.md`) hay tres controles nuevos, y los tres siguen la
+ * misma frontera de siempre: lo que aquí se decide es interno, nunca llega
+ * al alumno, y ninguno lo propone el motor.
+ *
+ * - El semáforo propuesto se sigue leyendo, no editando -no hay `<select>`
+ *   a su lado-: es la prueba de auditoría de lo que el sistema propuso.
+ *   Aparte, y solo aparte, hay un semáforo final que el docente sí elige:
+ *   ninguno de los dos puede confundirse con el otro con solo mirar.
+ * - La nota interna solo enseña un control cuando hay algo que decidir
+ *   -`estado_nota` en `propuesta`, `modificada` o `aprobada`-; mientras siga
+ *   `pendiente_de_rubrica` o `no_aplicable`, la pantalla lo dice con texto,
+ *   sin ningún campo que invite a escribir un número que no existe.
+ * - La síntesis provisional es la única prosa larga de esta pantalla que el
+ *   docente edita directamente, y por eso lleva su propio rótulo -«síntesis
+ *   provisional para revisión docente»- en vez de darse por cerrada.
  */
 export function Revision({ id, inicial, alVolver }: Props) {
   const [resultado, setResultado] = useState(inicial)
@@ -102,6 +160,21 @@ export function Revision({ id, inicial, alVolver }: Props) {
   const [guardado, setGuardado] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Los tres controles nuevos de D-015, D-016 y D-017: cada uno empieza con
+  // lo último que guardó el servidor -o lo que compuso el análisis, la
+  // primera vez-, y viaja entero en cada `guardar()`, tal como ya viaja
+  // `decisiones`.
+  const [semaforoFinal, setSemaforoFinal] = useState<string | null>(
+    inicial.informe.semaforo_final_docente,
+  )
+  const [notaFinal, setNotaFinal] = useState<string>(
+    inicial.informe.nota_final_docente != null ? String(inicial.informe.nota_final_docente) : "",
+  )
+  const [motivoNota, setMotivoNota] = useState<string>(
+    inicial.informe.motivo_modificacion_nota ?? "",
+  )
+  const [sintesis, setSintesis] = useState<string>(inicial.informe.sintesis_provisional)
+
   const { informe, devolucion } = resultado
   const motorSimulado = resultado.motor === "simulado"
 
@@ -114,6 +187,26 @@ export function Revision({ id, inicial, alVolver }: Props) {
     // "guardado" sobre unas decisiones que ya no son las guardadas.
     setGuardado(false)
   }
+
+  // El color mínimo que sostienen, ahora mismo, las observaciones fiables
+  // que siguen aprobadas -recalculado en cada render, con las mismas
+  // decisiones que ya gobiernan `prioridadesVivas` más abajo-. Sirve solo
+  // para avisar antes de guardar: la comprobación real, la que de verdad
+  // decide, la hace `revisar()` en el servidor.
+  const colorMinimoActual = colorMinimo(informe.valoraciones, estadoDe)
+  const semaforoFinalIncompatible = (
+    semaforoFinal !== null
+    && SEVERIDAD_SEMAFORO[semaforoFinal] < SEVERIDAD_SEMAFORO[colorMinimoActual]
+  )
+  const semaforoFinalDesactualizado = (
+    semaforoFinal !== null
+    && semaforoFinal !== colorMinimoActual
+    && !semaforoFinalIncompatible
+  )
+
+  const estadosConNota = new Set(["propuesta", "modificada", "aprobada"])
+  const hayNotaQueDecidir = estadosConNota.has(informe.estado_nota)
+  const notaFinalNumero = notaFinal.trim() === "" ? null : Number(notaFinal)
 
   const dimsPrioridad = new Set(informe.prioridades.map((v) => v.dimension))
   const dimsFueraDelLimite = new Set(informe.prioridades_descartadas.map((v) => v.dimension))
@@ -159,6 +252,16 @@ export function Revision({ id, inicial, alVolver }: Props) {
   const guardar = async () => {
     if (guardando) return
     setError(null)
+
+    // Un número mal escrito no llega a pedirse al servidor: `Number("")` da
+    // `0`, no `NaN`, así que la comprobación real es la del `trim()` de
+    // arriba, pero un texto que no es un número sí puede colarse aquí -por
+    // ejemplo, si se pega texto en el campo-, y `NaN` no dice nada útil.
+    if (notaFinal.trim() !== "" && Number.isNaN(notaFinalNumero)) {
+      setError("La nota final tiene que ser un número entre 0 y 10.")
+      return
+    }
+
     setGuardando(true)
     try {
       const decisiones: Decision[] = informe.valoraciones.map((v) => {
@@ -169,8 +272,26 @@ export function Revision({ id, inicial, alVolver }: Props) {
           texto: estado.decision === "EDITADA" ? estado.texto : null,
         }
       })
-      const revisado = await api.revisar(id, { decisiones })
+      const revisado = await api.revisar(id, {
+        decisiones,
+        semaforo_final_docente: semaforoFinal,
+        nota_final_docente: notaFinalNumero,
+        motivo_modificacion_nota: motivoNota.trim() === "" ? null : motivoNota,
+        sintesis_provisional: sintesis,
+      })
       setResultado(revisado)
+      // Lo que de verdad quedó guardado puede no ser exactamente lo que se
+      // mandó -una nota igual a la propuesta vuelve sin motivo, aunque se
+      // hubiera escrito uno (ver `backend/api/analisis.py`)-, así que estos
+      // tres controles se resincronizan con la respuesta, no se dan por
+      // buenos con lo que ya tenían.
+      setSemaforoFinal(revisado.informe.semaforo_final_docente)
+      setNotaFinal(
+        revisado.informe.nota_final_docente != null
+          ? String(revisado.informe.nota_final_docente) : "",
+      )
+      setMotivoNota(revisado.informe.motivo_modificacion_nota ?? "")
+      setSintesis(revisado.informe.sintesis_provisional)
       setGuardado(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -213,7 +334,15 @@ export function Revision({ id, inicial, alVolver }: Props) {
         {informe.identificacion.alumno} · {informe.identificacion.fase} · versión{" "}
         {informe.identificacion.version}
       </h2>
-      <p className="text-[13px] text-gris mb-10">Revisión del análisis</p>
+      {/* La cabecera del §17.1: ciclo, modalidad, fase, fecha y versión de
+          criterios en todas las ejecuciones. La fase y la versión ya están
+          en el titular; aquí va el resto, en la misma línea que antes solo
+          decía "Revisión del análisis". */}
+      <p className="text-[13px] text-gris mb-10">
+        Revisión del análisis · {informe.identificacion.ciclo} ·{" "}
+        {informe.identificacion.modalidad} · {informe.identificacion.fecha} ·
+        {" "}criterios {informe.identificacion.criterios}
+      </p>
 
       {resultado.aviso && (
         // El caso especial: el informe salió bien, solo falló el borrador.
@@ -226,14 +355,117 @@ export function Revision({ id, inicial, alVolver }: Props) {
         <h3 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-3">
           Semáforo propuesto
         </h3>
-        <p className="text-[15px]">{informe.semaforo}</p>
+        <p className="text-[15px]">{informe.semaforo_propuesto}</p>
         {informe.recomendacion && (
           <p className="mt-1 text-[13px] text-gris">{informe.recomendacion}</p>
         )}
         <p className="mt-2 max-w-lectura text-[12px] text-gris">
-          Lo propone el sistema a partir de lo verificado. No es una nota ni
-          se puede cambiar aquí: la valoración final es tuya.
+          Lo propone el sistema a partir de lo verificado, y no cambia
+          después: es la prueba de lo que se propuso antes de que revisaras
+          ninguna observación. No es una nota.
         </p>
+      </section>
+
+      <section className="mb-10">
+        <h3 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-3">
+          Semáforo final
+        </h3>
+        <select
+          aria-label="Semáforo final"
+          className="border border-grisclaro px-2 py-1 text-[13px]"
+          value={semaforoFinal ?? ""}
+          onChange={(e) => {
+            setSemaforoFinal(e.target.value === "" ? null : e.target.value)
+            setGuardado(false)
+          }}
+        >
+          <option value="">— sin confirmar —</option>
+          {CODIGOS_SEMAFORO.map((codigo) => (
+            <option key={codigo} value={codigo}>{codigo}</option>
+          ))}
+        </select>
+        <p className="mt-2 max-w-lectura text-[12px] text-gris">
+          El que confirmas tú al cerrar la revisión. No puede quedar por
+          debajo de lo que sostienen las observaciones que sigan aprobadas:
+          si lo intentas, guardar lo rechaza y te dice cuál es el mínimo.
+        </p>
+        {semaforoFinalIncompatible && (
+          <p className="mt-2 max-w-lectura text-[13px] senal">
+            Con las observaciones que siguen aprobadas ahora mismo, el color
+            mínimo es «{colorMinimoActual}». Guardar con «{semaforoFinal}»
+            lo va a rechazar el servidor.
+          </p>
+        )}
+        {semaforoFinalDesactualizado && (
+          <p className="mt-2 max-w-lectura text-[13px] senal">
+            El color mínimo que sostienen las observaciones que siguen
+            aprobadas ha cambiado a «{colorMinimoActual}» -probablemente al
+            aceptar, editar o descartar alguna-. «{semaforoFinal}» se puede
+            seguir guardando, pero conviene que lo revises antes de cerrar.
+          </p>
+        )}
+      </section>
+
+      <section className="mb-10">
+        <h3 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-3">
+          Nota interna
+        </h3>
+        {!hayNotaQueDecidir ? (
+          <p className="max-w-lectura text-[13px] text-gris">
+            {informe.estado_nota === "no_aplicable"
+              ? "Esta fase no lleva una nota calculada por el sistema."
+              : "Pendiente de rúbrica oficial: el sistema no calcula una " +
+                "nota hasta que exista una rúbrica cargada y versionada."}
+          </p>
+        ) : (
+          <>
+            <p className="text-[13px]">
+              Propuesta del sistema:{" "}
+              {informe.nota_propuesta_sistema != null
+                ? informe.nota_propuesta_sistema.toFixed(2) : "—"}
+              {informe.version_rubrica && (
+                <span className="text-gris"> (rúbrica {informe.version_rubrica})</span>
+              )}
+            </p>
+            <label className="mt-3 block text-[12px] uppercase tracking-[0.08em] text-gris">
+              Nota final
+              <input
+                type="number" min={0} max={10} step={0.25}
+                className="mt-1 block border border-grisclaro px-2 py-1 text-[13px] normal-case tracking-normal"
+                value={notaFinal}
+                onChange={(e) => {
+                  setNotaFinal(e.target.value)
+                  setGuardado(false)
+                }}
+              />
+            </label>
+            <p className="mt-2 max-w-lectura text-[12px] text-gris">
+              No visible para el alumno, y no se convierte en calificación
+              definitiva por guardarla aquí: es una estimación interna que
+              apruebas o modificas tú (§13).
+            </p>
+            {notaFinalNumero !== null && informe.nota_propuesta_sistema !== null
+              && notaFinalNumero !== informe.nota_propuesta_sistema && (
+              <label className="mt-3 block text-[12px] uppercase tracking-[0.08em] text-gris">
+                Motivo del cambio (opcional)
+                <textarea
+                  className="mt-1 block w-full max-w-lectura border border-grisclaro px-2 py-1 text-[13px] normal-case tracking-normal"
+                  rows={2}
+                  value={motivoNota}
+                  onChange={(e) => {
+                    setMotivoNota(e.target.value)
+                    setGuardado(false)
+                  }}
+                />
+                <span className="mt-1 block max-w-lectura text-[12px] text-gris normal-case tracking-normal">
+                  Qué criterio de corrección pesó en el cambio, no
+                  circunstancias del alumno: aquí no tiene sitio ningún dato
+                  personal (§19).
+                </span>
+              </label>
+            )}
+          </>
+        )}
       </section>
 
       {informe.resumen && (
@@ -244,6 +476,66 @@ export function Revision({ id, inicial, alVolver }: Props) {
           <p className="max-w-lectura text-[14px]">{informe.resumen}</p>
         </section>
       )}
+
+      {(informe.continuidad.length > 0 || informe.continuidad_nota) && (
+        <section className="mb-10">
+          <h3 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-3">
+            Continuidad
+          </h3>
+          {informe.continuidad_nota ? (
+            <p className="text-[13px] text-gris">{informe.continuidad_nota}</p>
+          ) : (
+            <>
+              <p className="max-w-lectura text-[12px] text-gris mb-3">
+                Lo que se le señaló al alumno en la fase anterior, contrastado
+                con esta entrega. Solo dice PENDIENTE cuando el fragmento
+                señalado sigue igual, literal, en el texto nuevo: en
+                cualquier otro caso el sistema no tiene con qué afirmar que
+                se aplicó, se aplicó a medias o se dejó pendiente, y lo dice
+                como NO VERIFICABLE en vez de adivinarlo.
+              </p>
+              <ul className="space-y-3">
+                {informe.continuidad.map((c, i) => (
+                  <li
+                    key={i}
+                    className={`max-w-lectura text-[13px] ${
+                      c.estado === "NO_VERIFICABLE" ? "senal" : ""
+                    }`}
+                  >
+                    <span className="block text-[11px] uppercase tracking-[0.08em] text-gris">
+                      {c.dimension} · {ETIQUETA_DE_CONTINUIDAD[c.estado]}
+                    </span>
+                    {c.observacion_anterior}
+                    <span className="block mt-1 text-[12px] text-gris">
+                      {c.motivo}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+      <section className="mb-10">
+        <h3 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-3">
+          Síntesis provisional para revisión docente
+        </h3>
+        <p className="max-w-lectura text-[12px] text-gris mb-2">
+          La compone el sistema a partir de lo ya verificado en este mismo
+          informe. Nunca se cierra sola: reescríbela antes de darla por
+          buena.
+        </p>
+        <textarea
+          aria-label="Síntesis provisional para revisión docente"
+          className="block w-full max-w-lectura border border-grisclaro px-2 py-2 text-[13px]"
+          rows={6}
+          value={sintesis}
+          onChange={(e) => {
+            setSintesis(e.target.value)
+            setGuardado(false)
+          }}
+        />
+      </section>
 
       {informe.dudas.length > 0 && (
         <section className="mb-10">

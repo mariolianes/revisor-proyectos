@@ -9,6 +9,7 @@ aparenta guardar y no guarda es peor que uno que no guarda.
 import uuid
 from datetime import datetime
 
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     Correccion,
@@ -39,10 +40,29 @@ class AlmacenEnMemoria:
         # AlmacenSupabase, que reutiliza el alumno ya existente con el
         # ciclo con el que se creó. El primero que se registra manda.
         self._ciclo_del_alumno: dict[str, str] = {}
+        # La modalidad es del proyecto, no de la entrega: en la base de
+        # datos la lleva la tabla `proyecto` -clave (alumno_id,
+        # version_criterios), igual que `AlmacenSupabase._proyecto`- y
+        # `entrega` no la tiene. La primera modalidad DECLARADA manda -no
+        # necesariamente la de la primera entrega: una fase TEMA puede
+        # llegar sin modalidad todavía, antes de validar el tema (§3.2), y
+        # la primera entrega que sí la declare es la que la fija-, y
+        # ninguna declaración posterior la sustituye: cambiarla es una
+        # decisión expresa del profesor (§3.2) que este almacén no toma por
+        # su cuenta. Ver el aviso que compone `api/entregas.confirmar`
+        # cuando lo declarado no coincide.
+        self._modalidad_del_proyecto: dict[tuple[str, str], str] = {}
         # Una corrección por entrega: guardar dos veces sobre la misma
         # entrega sustituye el valor del diccionario entero, igual que
         # `unique (entrega_id)` sustituye la fila en Supabase.
         self._correcciones: dict[str, Correccion] = {}
+        # A diferencia de `_correcciones`, es una lista y no un diccionario
+        # por entrega: una entrega real de un mismo alumno puede analizarse
+        # más de una vez -un reanálisis, un intento que falló y se repite-,
+        # y cada ejecución es su propio gasto. Sustituir por la última
+        # perdería el histórico de lo gastado, que es justo el dato que
+        # esto existe para conservar.
+        self._consumos: list[RegistroDeConsumo] = []
 
     @property
     def es_duradero(self) -> bool:
@@ -69,6 +89,10 @@ class AlmacenEnMemoria:
         datos["ciclo"] = self._ciclo_del_alumno.setdefault(
             entrega.codigo_alumno, entrega.ciclo
         )
+        clave_proyecto = (entrega.codigo_alumno, entrega.version_criterios)
+        if entrega.modalidad is not None and clave_proyecto not in self._modalidad_del_proyecto:
+            self._modalidad_del_proyecto[clave_proyecto] = entrega.modalidad
+        datos["modalidad"] = self._modalidad_del_proyecto.get(clave_proyecto)
         registrada = EntregaRegistrada(
             id=str(uuid.uuid4()),
             recibida_en=datetime.now(),
@@ -160,3 +184,17 @@ class AlmacenEnMemoria:
 
     def correccion_de(self, entrega_id: str) -> Correccion | None:
         return self._correcciones.get(entrega_id)
+
+    def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
+        """Añade el registro a la lista de esta sesión. No es duradero -se
+        pierde al cerrar, igual que el resto de este almacén (`es_duradero`
+        es `False`)-."""
+        self._consumos.append(registro)
+
+    def consumos(self) -> list[RegistroDeConsumo]:
+        """Lo registrado en esta sesión. No forma parte del `Protocol`
+        `Almacen` -solo lo usan las pruebas, para comprobar qué se ha
+        guardado-; `AlmacenSupabase` no lo implementa porque leer el
+        histórico completo desde la base de datos es un consumo aparte que
+        nadie ha pedido todavía."""
+        return list(self._consumos)

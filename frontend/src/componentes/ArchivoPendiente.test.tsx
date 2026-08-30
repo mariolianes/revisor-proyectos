@@ -53,6 +53,7 @@ describe("ArchivoPendiente", () => {
     expect(alConfirmar).toHaveBeenCalledWith({
       nombre_archivo: "AF023_DAM_E2_20260115_v1.pdf",
       codigo_alumno: "AF023", ciclo: "DAM", fase: "E2", version: 1,
+      modalidad: null,
     })
   })
 
@@ -80,7 +81,21 @@ describe("ArchivoPendiente", () => {
     expect(alConfirmar).toHaveBeenCalledWith({
       nombre_archivo: "trabajo de clase.pdf",
       codigo_alumno: "AF031", ciclo: "DAW", fase: "E1", version: 1,
+      modalidad: null,
     })
+  })
+
+  it("confirma con la modalidad elegida cuando se declara", async () => {
+    const alConfirmar = vi.fn()
+    render(<ArchivoPendiente archivo={DEDUCIDO} alConfirmar={alConfirmar} />)
+
+    await userEvent.click(screen.getByRole("button", { name: /corregir/i }))
+    await userEvent.selectOptions(screen.getByLabelText(/modalidad/i), "PROFESIONAL")
+    await userEvent.click(screen.getByRole("button", { name: /confirmar/i }))
+
+    expect(alConfirmar).toHaveBeenCalledWith(
+      expect.objectContaining({ modalidad: "PROFESIONAL" }),
+    )
   })
 
   it("deja corregir una propuesta que se dedujo mal", async () => {
