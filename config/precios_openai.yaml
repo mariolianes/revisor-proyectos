@@ -1,0 +1,40 @@
+# Tarifas de OpenAI, en dólares por millón de tokens.
+#
+# Esto NO es un dato del sistema: es un precio de un tercero que cambia sin
+# avisar, y por eso vive en un fichero de texto y no en una constante de
+# Python (backend/analisis/precios.py lo lee, no lo declara). Cuando OpenAI
+# cambie una tarifa, se añade una entrada nueva con su propia
+# `vigente_desde`; no se edita la anterior. Así el coste de un análisis ya
+# guardado sigue calculándose con la tarifa que regía el día en que se hizo,
+# y el histórico no se reescribe con el precio de hoy.
+#
+# `entrada_cacheada_por_millon` es opcional: si un modelo no factura los
+# tokens cacheados a un precio distinto, se omite y no se aplica descuento.
+#
+# La entrada de gpt-4.1 de más abajo son los precios públicos de lista que
+# OpenAI anunció al lanzar el modelo. Un precio de lista puede no ser el que
+# aplica a una cuenta con descuentos o un acuerdo distinto, y OpenAI puede
+# haberlo cambiado desde entonces sin que este fichero se haya actualizado
+# todavía: antes de fiarse de una cifra de coste para decidir algo, contrasta
+# esta tabla con https://openai.com/api/pricing/ y añade una fila nueva si
+# no coincide. Si un modelo no aparece aquí, el sistema no inventa un precio:
+# `backend/analisis/precios.py` devuelve el coste como no calculable, y lo
+# dice.
+
+- modelo: gpt-4.1
+  vigente_desde: 2026-08-30
+  entrada_por_millon: 2.00
+  entrada_cacheada_por_millon: 0.50
+  salida_por_millon: 8.00
+
+- modelo: gpt-4.1-mini
+  vigente_desde: 2026-08-30
+  entrada_por_millon: 0.40
+  entrada_cacheada_por_millon: 0.10
+  salida_por_millon: 1.60
+
+- modelo: gpt-4.1-nano
+  vigente_desde: 2026-08-30
+  entrada_por_millon: 0.10
+  entrada_cacheada_por_millon: 0.025
+  salida_por_millon: 0.40

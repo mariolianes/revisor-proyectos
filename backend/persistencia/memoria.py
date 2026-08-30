@@ -9,6 +9,7 @@ aparenta guardar y no guarda es peor que uno que no guarda.
 import uuid
 from datetime import datetime
 
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     Correccion,
@@ -43,6 +44,13 @@ class AlmacenEnMemoria:
         # entrega sustituye el valor del diccionario entero, igual que
         # `unique (entrega_id)` sustituye la fila en Supabase.
         self._correcciones: dict[str, Correccion] = {}
+        # A diferencia de `_correcciones`, es una lista y no un diccionario
+        # por entrega: una entrega real de un mismo alumno puede analizarse
+        # más de una vez -un reanálisis, un intento que falló y se repite-,
+        # y cada ejecución es su propio gasto. Sustituir por la última
+        # perdería el histórico de lo gastado, que es justo el dato que
+        # esto existe para conservar.
+        self._consumos: list[RegistroDeConsumo] = []
 
     @property
     def es_duradero(self) -> bool:
@@ -160,3 +168,17 @@ class AlmacenEnMemoria:
 
     def correccion_de(self, entrega_id: str) -> Correccion | None:
         return self._correcciones.get(entrega_id)
+
+    def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
+        """Añade el registro a la lista de esta sesión. No es duradero -se
+        pierde al cerrar, igual que el resto de este almacén (`es_duradero`
+        es `False`)-."""
+        self._consumos.append(registro)
+
+    def consumos(self) -> list[RegistroDeConsumo]:
+        """Lo registrado en esta sesión. No forma parte del `Protocol`
+        `Almacen` -solo lo usan las pruebas, para comprobar qué se ha
+        guardado-; `AlmacenSupabase` no lo implementa porque leer el
+        histórico completo desde la base de datos es un consumo aparte que
+        nadie ha pedido todavía."""
+        return list(self._consumos)

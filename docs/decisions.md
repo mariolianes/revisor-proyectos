@@ -284,3 +284,97 @@ podría escribir él la síntesis que el §17.1 describe.
 **Arrastra:** `backend/salidas/informe.py` (`_resumen`) y
 `frontend/src/paginas/Revision.tsx`, donde el bloque «Resumen» sigue
 mostrando el campo tal cual llega del backend.
+
+## D-012 · Minimización de mejor esfuerzo, no anonimización, antes de la llamada externa
+
+**Fecha:** 2026-08-30 · **Estado:** Provisional, a la espera de que Marcos la
+valide · **Responsable:** Marcos, condiciones concretas a cambio de levantar
+el bloqueo de `proteccion_datos`
+
+El docente levantó el bloqueo de protección de datos a cambio de medidas
+concretas: un ID por alumno (reutiliza `codigo_alumno`, ya alfanumérico y ya
+no personal, en vez de crear un segundo identificador numérico en paralelo
+-ver el docstring de `backend/privacidad/listado_local.py` para el porqué-),
+la correspondencia nombre-código solo en local
+(`backend/privacidad/listado_local.py`, fuera de Supabase, de la API y de
+cualquier informe), y que el nombre del alumno, el DNI, el correo y el
+teléfono se retiren del texto ANTES de que salga hacia el proveedor
+(`backend/privacidad/minimizacion.py`).
+
+**Esto no se vende como anonimización.** Los correos, teléfonos y DNI se
+retiran con las mismas expresiones regulares de R6
+(`tools/gobernanza/privacidad.py`), reutilizadas y no reescritas -mismo
+criterio que ya seguía D-001 con otras piezas de la Parte A-, pero una
+expresión regular no agota los casos: un DNI escrito distinto, un correo
+partido por un salto de página, no encajan. El nombre se busca por
+coincidencia literal contra el que trae el listado local para ese código, y
+solo si el listado lo tiene: un apodo, una errata o un nombre que el listado
+no conoce no se reconocen. Prometer una limpieza total que no se puede
+garantizar sería peor que admitir el límite -la instrucción explícita de
+Marcos al encargar esta tarea-, así que el sistema nunca informa «texto
+limpio»: informa qué ha sustituido y qué no ha podido comprobar. Ver el
+docstring de `backend/privacidad/minimizacion.py` para el detalle completo.
+
+El sistema NO bloquea el análisis cuando el nombre no se puede verificar
+como retirado -sería un segundo bloqueo donde el docente ya decidió asumir
+el riesgo de una herramienta personal, sobre su propio equipo, con trabajos
+descargados legítimamente-. Lo que hace es avisar, cada vez, cuando el
+proveedor no es el simulado: el mismo criterio de honestidad por petición
+que ya usa `AVISO_PROTECCION_DATOS` en `backend/api/analisis.py`.
+
+**Sigue en pie** que la entrada `proteccion_datos` de
+`docs/PENDIENTE_OFICIAL.md` no se retira con este cambio: es lo único que
+hoy hace saltar la confirmación explícita antes de enviar un trabajo real
+(`AVISO_PROTECCION_DATOS`), y quitarla antes de que esta minimización esté
+fusionada y verificada dejaría al sistema mandando nombres sin avisar. La
+retira Marcos cuando dé por buena esta tarea.
+
+Además, `ProveedorOpenAI.analizar()` llama a la API de Responses con
+`store: false`, para que OpenAI no conserve un objeto persistente de la
+llamada en su lado -el profesor lo pidió expresamente, del mismo apartado-.
+
+**Arrastra:** `backend/privacidad/`, `backend/servicios/
+analisis_de_entrega.py` (la minimización se aplica antes de
+`proveedor.analizar`, y el texto verificado y citado a partir de ahí es
+siempre el minimizado, nunca el original -el motor no vio el original-),
+`backend/analisis/openai.py` (`store=False`), `tools/importar_listado.py`
+(la CLI que carga el listado local) y `.env.example`
+(`REVISOR_DATOS_LOCALES`).
+
+## D-013 · Registro de consumo, con una tabla de precios fechada y no escrita en Python
+
+**Fecha:** 2026-08-30 · **Estado:** Provisional, a la espera de que Marcos la
+valide · **Responsable:** Marcos
+
+Del mismo encargo que D-012: para una herramienta que se paga por uso, saber
+cuánto cuesta corregir una entrega es parte de decidir si compensa. Se
+añade `ejecucion_motor`
+(`supabase/migrations/20260830090000_registro_de_consumo.sql`), una fila por
+llamada a `POST /entregas/{id}/analisis` -no por llamada individual al
+proveedor: una ejecución puede hacer hasta dos llamadas reales, con hasta
+dos intentos cada una-, con modelo, tokens de entrada/salida/cacheados,
+coste estimado, duración, estado, intentos, causa de error, páginas,
+volumen de texto y si se reutilizó un resultado anterior. Nunca el texto,
+la instrucción ni ninguna cita: la misma frontera que D-001 ya traza para
+`Correccion`.
+
+El coste se calcula con `backend/analisis/precios.py`, contra una tabla
+fechada en `config/precios_openai.yaml` -no un número en Python: las
+tarifas de OpenAI cambian sin avisar, y una fila nueva con su propia
+`vigente_desde` no reescribe el coste de un análisis ya hecho con el precio
+de ayer-. Si un modelo no tiene tarifa vigente para la fecha del análisis,
+el coste se deja como `None` -no calculable-, nunca en cero: R3 no
+distingue entre inventar un criterio de corrección y inventar un precio.
+
+`registrar_consumo` no es un método obligatorio del `Protocol` `Almacen`
+(`backend/persistencia/modelos.py`): se llama por `getattr` con degradado
+en silencio si el almacén -o un doble de prueba- no lo implementa. Hacerlo
+obligatorio habría exigido tocar cada doble de prueba existente en el
+repositorio para un dato de telemetría que no debe poder tumbar un análisis
+que sí se completó.
+
+**Arrastra:** `backend/persistencia/consumo.py`, `backend/analisis/
+precios.py`, `config/precios_openai.yaml`,
+`supabase/migrations/20260830090000_registro_de_consumo.sql`, y
+`ConsumoDeLlamada`/`numero_de_llamadas`/`modelo` en
+`backend/analisis/proveedor.py` y `backend/analisis/openai.py`.

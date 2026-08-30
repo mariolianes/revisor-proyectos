@@ -266,3 +266,34 @@ def test_un_modelo_de_analisis_vacio_no_cuenta_como_configurado(
     configuracion = cargar(tmp_path, entorno={"REVISOR_MODELO_ANALISIS": ""})
 
     assert configuracion.modelo_analisis is None
+
+
+def test_sin_datos_locales_indicados_no_hay_carpeta_ni_problema(tmp_path: Path) -> None:
+    configuracion = cargar(tmp_path)
+
+    assert configuracion.datos_locales is None
+    assert configuracion.problema_datos_locales is None
+
+
+def test_cargar_lee_la_carpeta_de_datos_locales_del_entorno(tmp_path: Path) -> None:
+    carpeta = tmp_path / "datos_locales"
+    carpeta.mkdir()
+
+    configuracion = cargar(
+        tmp_path / "repo", entorno={"REVISOR_DATOS_LOCALES": str(carpeta)},
+    )
+
+    assert configuracion.datos_locales == carpeta
+
+
+def test_datos_locales_dentro_del_repositorio_se_rechaza(tmp_path: Path) -> None:
+    """Misma exigencia que la carpeta de entregas, y por el mismo motivo: lo
+    que vive ahí no se versiona nunca."""
+    raiz = tmp_path / "repo"
+    dentro = raiz / "listado_local"
+    dentro.mkdir(parents=True)
+
+    configuracion = cargar(raiz, entorno={"REVISOR_DATOS_LOCALES": str(dentro)})
+
+    assert configuracion.datos_locales is None
+    assert "dentro del repositorio" in configuracion.problema_datos_locales

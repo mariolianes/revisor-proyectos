@@ -20,6 +20,13 @@ CLAVE = "SUPABASE_SERVICE_KEY"
 VERSION = "REVISOR_VERSION_CRITERIOS"
 CLAVE_OPENAI = "OPENAI_API_KEY"
 MODELO = "REVISOR_MODELO_ANALISIS"
+# Carpeta de datos locales: hoy, solo el listado nombre-código
+# (`backend/privacidad/listado_local.py`). Misma exigencia que `CARPETA`
+# -fuera del repositorio- y por el mismo motivo: lo que vive ahí no se
+# versiona nunca. Se reutiliza `revisar_carpeta` para las dos, no una
+# comprobación propia: la regla («no dentro del árbol versionado») es
+# idéntica, cambia solo qué se guarda dentro.
+DATOS_LOCALES = "REVISOR_DATOS_LOCALES"
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,8 @@ class Configuracion(BaseModel):
     version_criterios: str = VERSION_CRITERIOS_POR_OMISION
     clave_openai: str | None = None
     modelo_analisis: str | None = None
+    datos_locales: Path | None = None
+    problema_datos_locales: str | None = None
 
 
 def revisar_carpeta(raiz: Path, carpeta: Path) -> ProblemaDeCarpeta | None:
@@ -111,6 +120,14 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
         if problema is None:
             carpeta = candidata.resolve()
 
+    datos_locales: Path | None = None
+    problema_datos_locales: ProblemaDeCarpeta | None = None
+    if valores.get(DATOS_LOCALES):
+        candidata_local = Path(valores[DATOS_LOCALES])
+        problema_datos_locales = revisar_carpeta(raiz, candidata_local)
+        if problema_datos_locales is None:
+            datos_locales = candidata_local.resolve()
+
     return Configuracion(
         carpeta_entregas=carpeta,
         problema_carpeta=problema.motivo if problema else None,
@@ -119,4 +136,8 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
         version_criterios=valores.get(VERSION) or VERSION_CRITERIOS_POR_OMISION,
         clave_openai=valores.get(CLAVE_OPENAI) or None,
         modelo_analisis=valores.get(MODELO) or None,
+        datos_locales=datos_locales,
+        problema_datos_locales=(
+            problema_datos_locales.motivo if problema_datos_locales else None
+        ),
     )

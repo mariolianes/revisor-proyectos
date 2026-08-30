@@ -466,3 +466,103 @@ def test_el_cliente_real_no_reintenta_por_su_cuenta(monkeypatch) -> None:
     ProveedorOpenAI("clave", "un-modelo")  # sin cliente inyectado: construye el real
 
     assert recibido["max_retries"] == 0
+
+
+def test_pide_que_openai_no_conserve_la_llamada() -> None:
+    """El profesor lo pidió expresamente: `store: false`, para que no queden
+    objetos persistentes al otro lado."""
+    cliente = _ClienteFalso()
+    ProveedorOpenAI("clave", "un-modelo", cliente=cliente).analizar("i", "t", AnalisisDelMotor)
+
+    assert cliente.recibido["store"] is False
+
+
+class _Detalles:
+    def __init__(self, cached_tokens: int) -> None:
+        self.cached_tokens = cached_tokens
+
+
+class _Usage:
+    def __init__(self, input_tokens: int, output_tokens: int, cached_tokens: int = 0) -> None:
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.input_tokens_details = _Detalles(cached_tokens)
+
+
+def test_captura_el_consumo_de_una_llamada_con_exito() -> None:
+    respuesta = _RespuestaFalsa(parsed=VACIO)
+    respuesta.usage = _Usage(input_tokens=10290, output_tokens=2054, cached_tokens=128)
+    cliente = _ClienteFalso(resultado=respuesta)
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    p.analizar("i", "t", AnalisisDelMotor)
+
+    assert p.ultimo_consumo is not None
+    assert p.ultimo_consumo.tokens_entrada == 10290
+    assert p.ultimo_consumo.tokens_salida == 2054
+    assert p.ultimo_consumo.tokens_entrada_cacheados == 128
+
+
+def test_sin_usage_en_la_respuesta_no_hay_consumo_que_capturar() -> None:
+    """Los dobles de prueba de este mismo fichero -`_RespuestaFalsa`- no
+    simulan `usage`: el adaptador tiene que degradar sin reventar."""
+    cliente = _ClienteFalso()
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    p.analizar("i", "t", AnalisisDelMotor)
+
+    assert p.ultimo_consumo is None
+
+
+def test_una_respuesta_que_no_encaja_tambien_deja_leer_su_consumo() -> None:
+    """OpenAI factura los tokens generados aunque el JSON no encaje en el
+    formulario -el caso de `RespuestaNoValida`-, así que el consumo se debe
+    poder leer aunque `analizar` acabe levantando esa excepción."""
+    respuesta = _RespuestaFalsa(parsed=None)
+    respuesta.usage = _Usage(input_tokens=500, output_tokens=300)
+    cliente = _ClienteFalso(resultado=respuesta)
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    with pytest.raises(RespuestaNoValida):
+        p.analizar("i", "t", AnalisisDelMotor)
+
+    assert p.ultimo_consumo is not None
+    assert p.ultimo_consumo.tokens_entrada == 500
+
+
+def test_numero_de_llamadas_sube_en_cada_intento_tenga_o_no_exito() -> None:
+    cliente = _ClienteFalso()
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+
+    assert p.numero_de_llamadas == 0
+    p.analizar("i", "t", AnalisisDelMotor)
+    assert p.numero_de_llamadas == 1
+
+    cliente_que_falla = _ClienteFalso(error=ConnectionError("sin red"))
+    q = ProveedorOpenAI("clave", "un-modelo", cliente=cliente_que_falla)
+    with pytest.raises(ErrorDelProveedor):
+        q.analizar("i", "t", AnalisisDelMotor)
+    assert q.numero_de_llamadas == 1
+
+
+def test_el_consumo_se_reinicia_en_cada_llamada_nueva() -> None:
+    """Si una llamada no deja `usage` legible, no debe arrastrar el consumo
+    de la llamada anterior: sería contar dos veces el mismo gasto."""
+    respuesta_con_usage = _RespuestaFalsa(parsed=VACIO)
+    respuesta_con_usage.usage = _Usage(input_tokens=100, output_tokens=50)
+    cliente = _ClienteFalso(resultado=respuesta_con_usage)
+    p = ProveedorOpenAI("clave", "un-modelo", cliente=cliente)
+    p.analizar("i", "t", AnalisisDelMotor)
+    assert p.ultimo_consumo is not None
+
+    cliente._resultado = _RespuestaFalsa(parsed=VACIO)  # sin usage
+    p.analizar("i", "t", AnalisisDelMotor)
+
+    assert p.ultimo_consumo is None
+
+
+def test_el_modelo_se_expone_sin_el_prefijo_de_nombre() -> None:
+    p = ProveedorOpenAI("clave", "gpt-4.1", cliente=_ClienteFalso())
+
+    assert p.modelo == "gpt-4.1"
+    assert p.nombre == "openai:gpt-4.1"
