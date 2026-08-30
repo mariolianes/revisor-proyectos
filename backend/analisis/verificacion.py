@@ -7,6 +7,16 @@ motor hostil en vez de contra uno que colabora.
 La primera es la que sostiene las demás: un modelo puede inventarse una frase,
 pero no puede hacer que exista en el documento del alumno.
 
+Esa primera defensa tiene un refinamiento, `recortar_cita`: cuando el motor
+copia bien el principio de una cita y luego añade algo que no está -una
+viñeta con contenido nuevo, un "..." que salta a otro punto del documento-,
+recorta la cita al prefijo que sí es literal en vez de descartar la
+observación entera. Sigue siendo la misma defensa: `cita_localizada` decide
+si el recorte vale, no `recortar_cita`, que solo propone un candidato. Y
+sigue fallando del lado seguro: una cita sin ningún tramo real -por ejemplo,
+una que describe una ausencia en vez de citar algo que exista- no tiene
+prefijo que recortar y se descarta igual que antes.
+
 Los cuatro modelos que representan un juicio ya verificado -`ValoracionVerificada`,
 `PatronVerificado`, `FortalezaVerificada` e `IndicioDeAutoriaVerificado`- son
 inmutables (`frozen=True`). No es una preferencia defensiva: son la constancia de
@@ -92,6 +102,25 @@ _AFIRMACIONES_DE_AUTORIA = tuple(
 # relleno como si señalara algo.
 CITA_MINIMA = 20
 
+# La calibración del 2026-08-30 con los nueve casos del banco: el motor cita
+# bien el principio y luego añade algo que no está -una viñeta con contenido
+# nuevo, un "..." que salta a otro punto del documento, a veces una frase
+# entera describiendo una ausencia-. Cuando eso pasa, `recortar_cita` (más
+# abajo) busca el prefijo más largo de la cita que sí es literal en el
+# documento, pero un prefijo cualquiera no basta: hace falta que siga siendo
+# la mayor parte de lo que el motor dijo que sostenía la observación, no una
+# esquirla que ya no lo hace. Un tercio es el punto de corte: por debajo, lo
+# que sobrevive es menos que lo que se perdió, y quedarse con eso sería dar
+# por buena una evidencia que ya no sostiene lo que decía sostener -el caso
+# de manual: una cita de 300 caracteres de la que solo se localizan 21 no es
+# una evidencia recortada, es casi ninguna evidencia, aunque 21 ya supere
+# `CITA_MINIMA`-. Por encima de un tercio, lo que queda sigue siendo la
+# mayor parte del testimonio original, aunque el motor haya añadido algo más
+# después. El recorte exige las dos cosas a la vez: `CITA_MINIMA` como suelo
+# absoluto (nunca cambia, y ya es el que impide una cita trivial) y esta
+# proporción como suelo relativo al tamaño de la cita que el motor propuso.
+PROPORCION_MINIMA_DE_RECORTE = 1 / 3
+
 # Word parte una palabra al final de línea con un guion que no está en el
 # texto real; al extraer el PDF ese guion queda pegado a un salto de línea.
 # Se cierra esa costura, pero solo cuando el guion va seguido de un salto de
@@ -144,6 +173,62 @@ def cita_localizada(cita: str, texto: str) -> bool:
     if len(limpia) < CITA_MINIMA:
         return False
     return limpia in normalizar_para_buscar(texto)
+
+
+def recortar_cita(cita: str, texto: str) -> str | None:
+    """El prefijo más largo de `cita` que sí es literal en `texto`, si llega.
+
+    Para cuando `cita_localizada(cita, texto)` ya ha dado `False` pero la
+    cita no es pura invención: a veces el motor copia bien el principio y
+    luego añade algo que no está -una viñeta con una idea nueva, un "..."
+    que salta a otro punto del documento-. Descartar la observación entera
+    tira una evidencia real por lo que se añadió después; esta función
+    busca cuánto de la cita se sostiene por sí sola.
+
+    Busca por palabras completas, nunca a mitad de una: una cita que
+    acabara en «el presupuesto asc» sería peor que ninguna, porque parece
+    evidencia y no lo es. `cita.split()` parte por cualquier espacio en
+    blanco -incluidos los saltos de línea de una cita con viñetas-, así que
+    cada candidato que se prueba es siempre un número entero de palabras
+    del motor, nunca un corte a medias.
+
+    Cada candidato se comprueba con `cita_localizada`, la misma función que
+    usa el resto del sistema: busca sobre lo mismo que ella compara
+    -`normalizar_para_buscar`-, así que un recorte aguanta las mismas
+    diferencias de tildes, espacios, guiones de maquetación y comillas
+    tipográficas que una cita entera.
+
+    Se recorre de más palabras a menos, y el primer candidato que se
+    localiza ya es el más largo posible: si un candidato de N palabras
+    aparece en el texto, todo prefijo suyo -con menos palabras- aparece
+    también, en el mismo sitio. Por eso, en cuanto se encuentra el primero
+    que se localiza, ya no hace falta seguir probando candidatos más
+    cortos: si ese, el más largo posible, no llega a
+    `PROPORCION_MINIMA_DE_RECORTE` de la cita original, ninguno de los que
+    quedan por probar -todos más cortos que él- va a llegar tampoco.
+
+    Devuelve `None` cuando no hay ningún candidato que valga: porque ni la
+    primera palabra está en el documento -el caso de una cita inventada del
+    todo, sin ningún tramo real-, o porque lo único que se localiza es una
+    esquirla que ya no sostiene la observación. `verificar()` es quien
+    decide qué hacer con ese candidato o con ese `None`: esta función solo
+    lo propone, nunca lo da por bueno.
+    """
+    palabras = cita.split()
+    original_normalizado = normalizar_para_buscar(cita)
+    if not original_normalizado:
+        return None
+
+    for n in range(len(palabras) - 1, 0, -1):
+        candidato = " ".join(palabras[:n])
+        if not cita_localizada(candidato, texto):
+            continue
+        if len(normalizar_para_buscar(candidato)) < (
+            len(original_normalizado) * PROPORCION_MINIMA_DE_RECORTE
+        ):
+            return None
+        return candidato
+    return None
 
 
 class Reparo(BaseModel):
@@ -239,6 +324,55 @@ class AnalisisVerificado(BaseModel):
     reparos: list[Reparo]
 
 
+def _evidencia_o_recorte(
+    evidencia: Evidencia, texto: str, contexto: str
+) -> tuple[Evidencia, bool, Reparo | None]:
+    """Localiza una evidencia y, si no se localiza entera, intenta recortarla.
+
+    Es el punto donde `recortar_cita` entra en la verificación, usado por
+    los cuatro canales que traen una cita -valoraciones, patrones,
+    fortalezas e indicios de autoría- para no repetir la misma secuencia
+    cuatro veces.
+
+    `cita_localizada` sigue siendo la que manda, en los dos pasos: primero
+    decide si la cita entera se localiza, y si no, decide -otra vez, no el
+    candidato de `recortar_cita`- si el recorte propuesto se localiza. Esta
+    función nunca da nada por bueno por su cuenta.
+
+    Devuelve la evidencia que se debe conservar -la original si se localiza
+    entera, o si ningún recorte llega; la recortada si un recorte se
+    localiza y alcanza `PROPORCION_MINIMA_DE_RECORTE`-, si se ha dado por
+    localizada, y el reparo que avisa del recorte cuando lo ha habido -para
+    que el docente distinga una cita que el motor copió bien de una que el
+    sistema ha tenido que acortar-. Cuando no hay recorte, ese reparo es
+    `None`; sigue siendo tarea de quien llama añadir el reparo de
+    `evidencia_localizable` si `localizada` acaba en `False`.
+
+    `contexto` es la frase que identifica de qué evidencia se trata dentro
+    del reparo -"de D07", "del patrón «Uso de IA sin declarar»", "de una
+    fortaleza", "de un indicio de autoría"-, la misma idea que ya usa el
+    reparo de `evidencia_localizable` en cada uno de los cuatro bucles.
+    """
+    if cita_localizada(evidencia.cita, texto):
+        return evidencia, True, None
+
+    candidato = recortar_cita(evidencia.cita, texto)
+    if candidato is None or not cita_localizada(candidato, texto):
+        return evidencia, False, None
+
+    recortada = Evidencia(cita=candidato, apartado=evidencia.apartado)
+    reparo = Reparo(
+        regla="cita_recortada",
+        detalle=(
+            f"La evidencia {contexto} no se localizaba entera; se ha "
+            "recortado a la parte que sí está literal en el documento. "
+            f"Cita del motor: «{evidencia.cita}». "
+            f"Cita usada tras el recorte: «{candidato}»."
+        ),
+    )
+    return recortada, True, reparo
+
+
 def _dimensiones_activas(raiz: Path, version: str, fase: str) -> list[str]:
     """Las dimensiones que corresponden a esa fase, según los criterios."""
     fichero = raiz / "criteria" / version / "dimensiones.yaml"
@@ -301,7 +435,11 @@ def verificar(
             continue
         vistas.add(v.dimension)
 
-        localizada = cita_localizada(v.evidencia.cita, texto)
+        evidencia, localizada, reparo_recorte = _evidencia_o_recorte(
+            v.evidencia, texto, f"de {v.dimension}"
+        )
+        if reparo_recorte is not None:
+            reparos.append(reparo_recorte)
         if not localizada:
             reparos.append(Reparo(
                 regla="evidencia_localizable",
@@ -313,14 +451,18 @@ def verificar(
             dimension=v.dimension,
             nivel=v.nivel,
             prioridad=v.prioridad,
-            evidencia=v.evidencia,
+            evidencia=evidencia,
             observacion=v.observacion,
             evidencia_localizada=localizada,
         ))
 
     patrones: list[PatronVerificado] = []
     for p in analisis.patrones:
-        localizada = cita_localizada(p.evidencia.cita, texto)
+        evidencia, localizada, reparo_recorte = _evidencia_o_recorte(
+            p.evidencia, texto, f"del patrón «{p.nombre}»"
+        )
+        if reparo_recorte is not None:
+            reparos.append(reparo_recorte)
         if not localizada:
             reparos.append(Reparo(
                 regla="evidencia_localizable",
@@ -330,13 +472,17 @@ def verificar(
         patrones.append(PatronVerificado(
             nombre=p.nombre,
             descripcion=p.descripcion,
-            evidencia=p.evidencia,
+            evidencia=evidencia,
             evidencia_localizada=localizada,
         ))
 
     fortalezas: list[FortalezaVerificada] = []
     for f in analisis.fortalezas:
-        localizada = cita_localizada(f.evidencia.cita, texto)
+        evidencia, localizada, reparo_recorte = _evidencia_o_recorte(
+            f.evidencia, texto, "de una fortaleza"
+        )
+        if reparo_recorte is not None:
+            reparos.append(reparo_recorte)
         if not localizada:
             reparos.append(Reparo(
                 regla="evidencia_localizable",
@@ -345,13 +491,17 @@ def verificar(
             ))
         fortalezas.append(FortalezaVerificada(
             descripcion=f.descripcion,
-            evidencia=f.evidencia,
+            evidencia=evidencia,
             evidencia_localizada=localizada,
         ))
 
     indicios_de_autoria: list[IndicioDeAutoriaVerificado] = []
     for indicio in analisis.indicios_de_autoria:
-        localizada = cita_localizada(indicio.evidencia.cita, texto)
+        evidencia, localizada, reparo_recorte = _evidencia_o_recorte(
+            indicio.evidencia, texto, "de un indicio de autoría"
+        )
+        if reparo_recorte is not None:
+            reparos.append(reparo_recorte)
         if not localizada:
             reparos.append(Reparo(
                 regla="evidencia_localizable",
@@ -386,7 +536,7 @@ def verificar(
             ))
         indicios_de_autoria.append(IndicioDeAutoriaVerificado(
             descripcion=indicio.descripcion,
-            evidencia=indicio.evidencia,
+            evidencia=evidencia,
             evidencia_localizada=localizada,
         ))
 
