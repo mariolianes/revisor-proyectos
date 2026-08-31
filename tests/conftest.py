@@ -167,6 +167,28 @@ def criterios_de_analisis(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def raiz_con_estructura_expedientes(tmp_path: Path) -> Path:
+    """Una raíz con una copia de `config/estructura_expedientes.yaml`.
+
+    Mismo motivo que `criterios_de_analisis`: es una copia del fichero real
+    del repositorio, no uno inventado para la prueba, así que lo que
+    comprueba una prueba sobre esta raíz es lo mismo que ve el docente. Sirve
+    para las pruebas que arrancan por `backend.configuracion.cargar` -la CLI
+    de `tools/crear_estructura_expedientes.py`, sobre todo-, que necesitan un
+    `.env` propio y controlado por la prueba, y por eso no pueden usar
+    directamente la raíz real del repositorio: ese `.env` es del docente, no
+    del test.
+    """
+    destino = tmp_path / "repo"
+    (destino / "config").mkdir(parents=True)
+    shutil.copy(
+        RAIZ_DEL_REPOSITORIO / "config" / "estructura_expedientes.yaml",
+        destino / "config" / "estructura_expedientes.yaml",
+    )
+    return destino
+
+
+@pytest.fixture
 def pdf_simple(tmp_path: Path) -> Path:
     """Dos páginas con texto, ninguna vacía."""
     return escribir_pdf(

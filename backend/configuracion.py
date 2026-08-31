@@ -27,6 +27,12 @@ MODELO = "REVISOR_MODELO_ANALISIS"
 # comprobación propia: la regla («no dentro del árbol versionado») es
 # idéntica, cambia solo qué se guarda dentro.
 DATOS_LOCALES = "REVISOR_DATOS_LOCALES"
+# Raíz de la arquitectura de expedientes del docente -la carpeta
+# `CESUR_2026-2027` que describe `config/estructura_expedientes.yaml`-. Mismo
+# motivo y misma comprobación que `CARPETA` y `DATOS_LOCALES`: vive en el
+# equipo del docente, nunca en el repositorio. Ver
+# `backend/expedientes/creacion.py`, que es quien de verdad escribe ahí.
+RAIZ_EXPEDIENTES = "REVISOR_RAIZ_EXPEDIENTES"
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,8 @@ class Configuracion(BaseModel):
     modelo_analisis: str | None = None
     datos_locales: Path | None = None
     problema_datos_locales: str | None = None
+    raiz_expedientes: Path | None = None
+    problema_raiz_expedientes: str | None = None
 
 
 def revisar_carpeta(raiz: Path, carpeta: Path) -> ProblemaDeCarpeta | None:
@@ -128,6 +136,14 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
         if problema_datos_locales is None:
             datos_locales = candidata_local.resolve()
 
+    raiz_expedientes: Path | None = None
+    problema_raiz_expedientes: ProblemaDeCarpeta | None = None
+    if valores.get(RAIZ_EXPEDIENTES):
+        candidata_expedientes = Path(valores[RAIZ_EXPEDIENTES])
+        problema_raiz_expedientes = revisar_carpeta(raiz, candidata_expedientes)
+        if problema_raiz_expedientes is None:
+            raiz_expedientes = candidata_expedientes.resolve()
+
     return Configuracion(
         carpeta_entregas=carpeta,
         problema_carpeta=problema.motivo if problema else None,
@@ -139,5 +155,9 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
         datos_locales=datos_locales,
         problema_datos_locales=(
             problema_datos_locales.motivo if problema_datos_locales else None
+        ),
+        raiz_expedientes=raiz_expedientes,
+        problema_raiz_expedientes=(
+            problema_raiz_expedientes.motivo if problema_raiz_expedientes else None
         ),
     )

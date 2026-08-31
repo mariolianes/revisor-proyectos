@@ -297,3 +297,35 @@ def test_datos_locales_dentro_del_repositorio_se_rechaza(tmp_path: Path) -> None
 
     assert configuracion.datos_locales is None
     assert "dentro del repositorio" in configuracion.problema_datos_locales
+
+
+def test_sin_raiz_de_expedientes_indicada_no_hay_carpeta_ni_problema(tmp_path: Path) -> None:
+    configuracion = cargar(tmp_path)
+
+    assert configuracion.raiz_expedientes is None
+    assert configuracion.problema_raiz_expedientes is None
+
+
+def test_cargar_lee_la_raiz_de_expedientes_del_entorno(tmp_path: Path) -> None:
+    carpeta = tmp_path / "CESUR_2026-2027"
+    carpeta.mkdir()
+
+    configuracion = cargar(
+        tmp_path / "repo", entorno={"REVISOR_RAIZ_EXPEDIENTES": str(carpeta)},
+    )
+
+    assert configuracion.raiz_expedientes == carpeta
+
+
+def test_raiz_de_expedientes_dentro_del_repositorio_se_rechaza(tmp_path: Path) -> None:
+    """Misma exigencia que la carpeta de entregas y la de datos locales, y
+    por el mismo motivo: la arquitectura de expedientes vive en el equipo
+    del docente, nunca en el repositorio."""
+    raiz = tmp_path / "repo"
+    dentro = raiz / "CESUR_2026-2027"
+    dentro.mkdir(parents=True)
+
+    configuracion = cargar(raiz, entorno={"REVISOR_RAIZ_EXPEDIENTES": str(dentro)})
+
+    assert configuracion.raiz_expedientes is None
+    assert "dentro del repositorio" in configuracion.problema_raiz_expedientes
