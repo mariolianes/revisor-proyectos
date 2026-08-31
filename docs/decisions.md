@@ -753,3 +753,116 @@ constancia de qué se pidió y qué no se ha construido todavía.
 `_lectura_de_consumo`, `PRESUPUESTO_CALIBRACION`, `UMBRALES_DE_ALERTA_PCT`,
 `PROYECCIONES_DE_ANALISIS`, `--presupuesto-usd`) y
 `tests/tools/test_calibrar.py`.
+
+## D-019 · El límite de prioridades se agrupa por causa raíz y varía con el semáforo
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, a la espera de que el
+docente la valide sobre casos reales · **Responsable:** Marcos / colaborador
+técnico
+
+El docente pidió dos ajustes de calibración a partir de un caso real -un
+proyecto de importación textil al que el sistema le pidió indicadores de
+logro, tablas de flujo de caja, ratios financieros y un análisis de
+sensibilidad como si fueran requisitos generales, y al que se le trasladaron
+cuatro observaciones sueltas cuando la causa real eran tres o cuatro
+problemas de fondo-:
+
+1. Que el rigor proporcional a la FP -§2 del calibrador- se aplique también
+   dentro de la instrucción de análisis, no solo en la de redacción del
+   borrador.
+2. Que el límite de prioridades -§2.3 del calibrador- deje de ser un tope
+   fijo de cuatro y pase a depender del estado del trabajo, y que agrupe por
+   la causa que explica la calidad del proyecto, no por hallazgo aislado.
+
+**El primer ajuste era un hueco real, no una ambigüedad.** `no_exigir` y
+`priorizar_siempre` ya existían -o se han añadido, ver más abajo- en
+`criteria/<version>/feedback.yaml`, pero `backend/analisis/instruccion.py`
+nunca los leía: solo `backend/salidas/borrador.py` los usaba, y eso ocurre
+al redactar el texto para el alumno, no al analizar el documento. El motor
+podía -y, según el caso real, lo hacía- generar hallazgos P1/P2 pidiendo
+herramientas financieras avanzadas como requisito general, y ese hallazgo ya
+había pasado el filtro de evidencia antes de que `borrador.py` tuviera
+oportunidad de no trasladarlo. `construir()` ahora lee los dos bloques y se
+lo dice explícitamente al motor, con el ejemplo concreto -indicadores de
+logro, flujo de caja, ratios, sensibilidad- para que no dependa de que el
+modelo generalice bien una frase abstracta sobre «rigor proporcional».
+
+**El segundo ajuste es el que exige justificar una elección de diseño.** El
+docente pidió agrupar por «la causa que más explica la calidad global», no
+por hallazgo aislado, y dio dos caminos posibles: pedirle al motor que
+agrupe -texto libre, que habría que verificar otra vez, igual que una cita-,
+o derivarlo de lo que el sistema ya sabe. Se elige el segundo camino, con
+una pieza nueva: `agrupacion_de_causa` en `feedback.yaml`, un mapa fijo de
+las doce dimensiones del §8 en seis grupos -Planteamiento y encaje;
+Estructura y presentación; Base documental y método; Aplicación y
+resultados; Cierre y evolución; Autoría y defendibilidad-, con la misma
+disciplina de fuente que cualquier otro criterio (`fuente:
+calibracion#2-rigor-proporcional`, `fuente_adicional: maestro#8-dimensiones`).
+`backend/salidas/seleccion.py` colapsa cada grupo a su hallazgo de mayor
+prioridad antes de aplicar el límite; el resto de ese mismo grupo se
+descarta -y sigue en `descartadas`, íntegro, no un recuento- salvo que
+sobre hueco tras cubrir todas las causas distintas, en cuyo caso sí se
+rellena con él.
+
+**Qué se pierde con este camino, y por qué se acepta.** La agrupación fija
+por dimensión es más tosca que el juicio caso por caso del docente: su
+propio ejemplo -P07, ahora en el §6 del calibrador- reparte una misma causa
+real («reducir teoría general y reforzar aplicación y criterio propio»)
+entre D05 y D07, que este mapa no fusiona porque quedan en grupos distintos
+("Base documental y método" y "Aplicación y resultados"). Un mapa fijo no
+puede seguir esa clase de relación contextual, específica de cada proyecto,
+sin dejar de ser verificable: fusionar D05 con D07 solo en ese caso exigiría
+un juicio semántico sobre el contenido del trabajo, que es exactamente lo
+que el §13 y la cultura de este repositorio reservan a una cita localizable,
+no a una inferencia. Lo que el mapa fijo sí evita, con seguridad, es el caso
+más frecuente y más dañino del ejemplo real: tres observaciones sobre
+estructura, índice y numeración -todas D04 o D11- contando como tres
+prioridades en vez de una. Se acepta la pérdida de precisión en los casos
+límite a cambio de una regla que no hay que verificar caso por caso, y que
+el docente puede corregir él mismo editando `agrupacion_de_causa` sin tocar
+código.
+
+**El número máximo ahora sale del semáforo, no de una constante.** El
+docente pidió «dos o tres en un trabajo sólido, tres o cuatro en uno
+débil», no un número fijo. La señal de qué tan sólido o débil es un trabajo
+ya existía: `semaforo_por_valoraciones` -movida de `backend/salidas/informe.py`
+a `backend/analisis/verificacion.py` para que `seleccion.py` pudiera
+importarla sin crear un ciclo- calcula el mismo color que
+`Informe.semaforo_propuesto` va a mostrar. AMBAR («tiene base, pero necesita
+prioridades concretas») se lee como el trabajo sólido del §2.3 y ahora tope
+tres; ROJO («carencia crítica o bloqueo académico») se lee como el trabajo
+débil y tope cuatro. VERDE y GRIS no llevan una entrada en
+`prioridades_maximas_por_semaforo` porque los dos implican que no hay
+ninguna valoración P1-P3 fiable -la lista de candidatas ya está vacía antes
+de que el límite se aplique-, así que no hay caso real que obligue a fijar
+un número ahí.
+
+**Un efecto secundario, descubierto al resellar R2 tras este cambio.**
+`tools/gobernanza/sincronia.py` buscaba «la siguiente ancla» con un patrón
+que no incluía el prefijo `calibracion`, así que dentro de
+`04-calibracion.md` -que solo lleva anclas de ese tipo- el cuerpo de cada
+sección se extendía hasta el final del fichero en vez de hasta la sección
+siguiente. El síntoma no era que R2 dejara pasar un cambio real -al
+contrario, avisaba de más: cualquier edición en cualquier punto posterior
+del documento hacía cambiar el hash de todas las secciones de calibración
+anteriores a ella, aunque su propio texto no se hubiera tocado una letra-,
+pero eso también significa que ningún test lo notó hasta que este cambio
+tocó el §2 y el sello del §4 -sin relación con este cambio- saltó con él.
+Se corrige el patrón y se añade
+`test_hash_no_se_extiende_a_la_siguiente_ancla_calibracion` en
+`tests/gobernanza/test_sincronia.py`, con dos anclas `calibracion#...`
+seguidas, que antes no existía en ningún fixture.
+
+**Arrastra:** `docs/maestro/04-calibracion.md` (§2.2-2.5 nuevos, fila P07 del
+§6), `criteria/v2026-2027/feedback.yaml` (`no_exigir` ampliado,
+`priorizar_siempre` y `agrupacion_de_causa` nuevos, `economia_pedagogica`
+con `prioridades_maximas_por_semaforo`), `backend/analisis/instruccion.py`
+(lee `priorizar_siempre` y `no_exigir`), `backend/analisis/verificacion.py`
+(`semaforo_por_valoraciones`, `CODIGOS_SEMAFORO`, `SEVERIDAD_SEMAFORO`,
+movidas desde `informe.py`), `backend/salidas/informe.py` (reexporta los
+tres nombres anteriores), `backend/salidas/seleccion.py` (agrupación por
+causa y límite variable), `tools/gobernanza/sincronia.py`
+(`PATRON_CUALQUIER_ANCLA` incluye `calibracion`), y los tests de
+`tests/analisis/test_instruccion.py`, `tests/salidas/test_seleccion.py`,
+`tests/salidas/test_informe.py`, `tests/salidas/test_borrador.py` y
+`tests/gobernanza/test_sincronia.py`.

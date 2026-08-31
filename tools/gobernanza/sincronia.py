@@ -21,7 +21,23 @@ from tools.gobernanza.resultado import Infraccion
 # dentro de una sola, y en cuanto exista una segunda -que es justo lo que R4
 # prescribe para cualquier cambio- sellar tocaria una carpeta congelada.
 FICHERO_SINCRONIA = "criteria/.sincronia.json"
-PATRON_CUALQUIER_ANCLA = re.compile(r"^<!-- ancla: (?:maestro|indice|guia)#[a-z0-9-]+ -->$", re.M)
+# Los cuatro documentos que pueden llevar anclas -mismo alcance que
+# PATRON_FUENTE en tools/gobernanza/criterios.py-. Antes de que
+# 'calibracion' se sumara aquí, dos anclas seguidas dentro del propio
+# documento de calibración -04-calibracion.md solo tiene anclas
+# 'calibracion#...'- no se detectaban como límite: el cuerpo de la primera
+# se extendía hasta la siguiente ancla 'maestro', 'indice' o 'guia', que en
+# ese documento no existe, así que llegaba hasta el final del fichero y se
+# tragaba el contenido de todas las secciones posteriores. El síntoma era
+# silencioso -R2 no fallaba menos, fallaba de más: cualquier cambio en
+# cualquier sección de calibracion.md hacía saltar el sello de todas las
+# secciones de calibracion.md anteriores a ella, aunque su prosa no hubiera
+# cambiado una letra-, así que ningún test lo detectó hasta que la
+# calibración del 2026-08-31 tocó el §2 y el sello del §4 cambió sin que su
+# texto se hubiera tocado. Ver test_hash_no_se_extiende_a_la_siguiente_ancla_calibracion.
+PATRON_CUALQUIER_ANCLA = re.compile(
+    r"^<!-- ancla: (?:maestro|indice|guia|calibracion)#[a-z0-9-]+ -->$", re.M
+)
 
 _DOCUMENTOS = {
     "maestro": "01-documento-maestro.md",

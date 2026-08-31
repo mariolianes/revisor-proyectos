@@ -324,6 +324,59 @@ class AnalisisVerificado(BaseModel):
     reparos: list[Reparo]
 
 
+# El §9 del calibrador, calibrado en `criteria/<version>/semaforo.yaml`: un
+# P1 es carencia crítica (ROJO); un P2 o P3, mejora pendiente (AMBAR); sin
+# ninguno de los tres, correcto para la fase (VERDE). GRIS -"no evaluable"-
+# no sale de esta tabla: lo decide `semaforo_por_valoraciones` directamente
+# cuando no hay ninguna valoración fiable de la que partir.
+#
+# Vive aquí, no en `backend/salidas/informe.py` -donde estuvo hasta que
+# `backend/salidas/seleccion.py` necesitó el mismo cálculo-, porque los dos
+# módulos que lo consumen (`informe.py` para `semaforo_propuesto` y
+# `seleccion.py` para el límite variable de prioridades, ver
+# `criteria/<version>/feedback.yaml#economia_pedagogica`) importan de aquí
+# sin que ninguno de los dos tenga que importar del otro. `informe.py`
+# vuelve a exponer los cuatro nombres de abajo -están reexportados, no
+# duplicados- para que nada que ya los importara de allí se rompa.
+_SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "AMBAR"}
+
+# Los cuatro códigos válidos, en el mismo orden que declara
+# `criteria/<version>/semaforo.yaml`.
+CODIGOS_SEMAFORO: tuple[str, ...] = ("VERDE", "AMBAR", "ROJO", "GRIS")
+
+# La severidad de cada color, de menos a más -no la enumeración de arriba,
+# que es solo de lectura-. GRIS queda por debajo de VERDE a propósito: no es
+# "mejor que todo", es "no evaluable". Ver D-016 en `docs/decisions.md`.
+SEVERIDAD_SEMAFORO = {"GRIS": -1, "VERDE": 0, "AMBAR": 1, "ROJO": 2}
+
+
+def semaforo_por_valoraciones(valoraciones: list[ValoracionVerificada]) -> str:
+    """El peor de los estados que se desprenden de un conjunto de
+    valoraciones fiables, o GRIS si ninguna lo es.
+
+    Solo cuentan las valoraciones cuya evidencia se localizó en el
+    documento: un semáforo calculado sobre lo que el motor afirmó, sin pasar
+    por esa criba, diría ROJO con la misma confianza si las diez citas
+    fueran inventadas que si estuvieran bien fundadas. El resto sigue en
+    `valoraciones` -entero, para que el docente lo vea- pero no decide el
+    color.
+
+    Reutilizada en tres sitios que no pueden calcular colores distintos
+    para el mismo análisis: `backend/salidas/informe.py` (`semaforo_propuesto`),
+    `backend/api/analisis.py` (`revisar()`, para no aceptar un
+    `semaforo_final_docente` más benévolo del que las observaciones
+    aprobadas sostienen) y `backend/salidas/seleccion.py` (el límite de
+    prioridades que depende del estado del trabajo, §2.3 del calibrador).
+    """
+    fiables = [v for v in valoraciones if v.evidencia_localizada]
+    if not fiables:
+        return "GRIS"
+    for codigo in ("P1", "P2", "P3"):
+        if any(v.prioridad == codigo for v in fiables):
+            return _SEMAFORO_POR_PRIORIDAD[codigo]
+    return "VERDE"
+
+
 def _evidencia_o_recorte(
     evidencia: Evidencia, texto: str, contexto: str
 ) -> tuple[Evidencia, bool, Reparo | None]:
