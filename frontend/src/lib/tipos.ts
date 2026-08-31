@@ -326,7 +326,14 @@ export const ESTADOS_NOTA = [
 ] as const
 export type EstadoNota = (typeof ESTADOS_NOTA)[number]
 
-export const CODIGOS_SEMAFORO = ["VERDE", "AMBAR", "ROJO", "GRIS"] as const
+// Cinco códigos, no cuatro, desde D-019 (`docs/decisions.md`, 2026-08-31):
+// VERDE_CON_ALERTAS se añade entre VERDE y AMBAR, para el proyecto que
+// cumple los mínimos y es defendible pero conserva algún defecto
+// importante -la regla fronteriza del docente: "verde con alertas cuando
+// todos los mínimos estén cumplidos", en vez de subir a AMBAR ante la duda-.
+// Mismo orden que `criteria/v2026-2027/semaforo.yaml` y que
+// `CODIGOS_SEMAFORO` en `backend/salidas/informe.py`.
+export const CODIGOS_SEMAFORO = ["VERDE", "VERDE_CON_ALERTAS", "AMBAR", "ROJO", "GRIS"] as const
 export type CodigoDeSemaforo = (typeof CODIGOS_SEMAFORO)[number]
 
 export interface Informe {

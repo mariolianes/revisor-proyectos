@@ -510,6 +510,71 @@ def test_semaforo_por_valoraciones_sin_nada_da_gris() -> None:
     assert semaforo_por_valoraciones([]) == "GRIS"
 
 
+# --- D-019: la escala pasa a cuatro niveles, con regla fronteriza ----------
+
+
+def test_p3_sin_p1_ni_p2_da_verde_con_alertas() -> None:
+    """La regla fronteriza del docente (2026-08-31): entre ámbar y verde, se
+    usa verde con alertas cuando todos los mínimos están cumplidos. Antes,
+    un P3 sin P1 ni P2 llegaba igual que un P2 a AMBAR -el color más severo
+    ante la duda-, aunque el §7 del calibrador ya describe P3 como algo que
+    "refina, pero no cambia el nivel global"."""
+    assert semaforo_por_valoraciones([_v("D05", "P3")]) == "VERDE_CON_ALERTAS"
+
+
+def test_semaforo_por_valoraciones_distingue_p2_de_p3() -> None:
+    """Control: P2 sigue dando AMBAR, no VERDE_CON_ALERTAS. El único mapeo
+    que cambia con D-019 es el de P3."""
+    assert semaforo_por_valoraciones([_v("D05", "P2")]) == "AMBAR"
+
+
+def test_un_p1_sigue_dando_rojo_aunque_haya_p2_y_p3() -> None:
+    """Control: la mitad ROJO/ÁMBAR de la regla fronteriza no cambia. Un P1
+    fiable ya era, antes de D-019, la "carencia crítica demostrable" que la
+    regla exige para ROJO -verificada contra evidencia_localizada-."""
+    valoraciones = [_v("D01", "P3"), _v("D02", "P2"), _v("D03", "P1")]
+    assert semaforo_por_valoraciones(valoraciones) == "ROJO"
+
+
+def test_verde_con_alertas_esta_en_los_codigos_y_su_severidad_es_intermedia() -> None:
+    """`CODIGOS_SEMAFORO` y `SEVERIDAD_SEMAFORO` son los que usan
+    `revisar()` (`backend/api/analisis.py`) y `Revision.tsx` para validar el
+    semáforo final: el quinto código tiene que estar en los dos, y su
+    severidad tiene que quedar entre VERDE y AMBAR, no fuera de ese orden."""
+    from backend.salidas.informe import CODIGOS_SEMAFORO, SEVERIDAD_SEMAFORO
+
+    assert "VERDE_CON_ALERTAS" in CODIGOS_SEMAFORO
+    assert (
+        SEVERIDAD_SEMAFORO["VERDE"]
+        < SEVERIDAD_SEMAFORO["VERDE_CON_ALERTAS"]
+        < SEVERIDAD_SEMAFORO["AMBAR"]
+        < SEVERIDAD_SEMAFORO["ROJO"]
+    )
+
+
+def test_color_sostenido_por_prioridades_sigue_el_mismo_mapeo() -> None:
+    """`color_sostenido_por_prioridades` -la que usa
+    `backend/salidas/borrador.py` para comprobar la coherencia del
+    borrador- tiene que dar el mismo color que `semaforo_por_valoraciones`
+    cuando hay algo fiable de lo que partir."""
+    from backend.salidas.informe import color_sostenido_por_prioridades
+
+    assert color_sostenido_por_prioridades([_v("D05", "P3")]) == "VERDE_CON_ALERTAS"
+    assert color_sostenido_por_prioridades([_v("D05", "P1")]) == "ROJO"
+
+
+def test_color_sostenido_por_prioridades_vacio_es_verde_no_gris() -> None:
+    """A diferencia de `semaforo_por_valoraciones`, una lista vacía aquí no
+    es GRIS: es VERDE. GRIS significa "no se pudo evaluar nada del
+    trabajo"; una selección vacía de prioridades que llegan al alumno
+    significa "nada de lo que le llega es P1, P2 o P3", que es justo lo que
+    pasa en un proyecto VERDE sin nada que corregir. Confundir los dos
+    rechazaría, por diseño, cualquier borrador de un proyecto limpio."""
+    from backend.salidas.informe import color_sostenido_por_prioridades
+
+    assert color_sostenido_por_prioridades([]) == "VERDE"
+
+
 # --- Nota interna (D-015) ---------------------------------------------------
 
 

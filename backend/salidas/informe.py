@@ -44,6 +44,14 @@ al cerrar la revisión y que `revisar()` no deja fijar con un color más
 benévolo del que las observaciones que siguen aprobadas sostienen. Ver
 `semaforo_por_valoraciones` y el docstring de `revisar()`.
 
+Desde D-019 (`docs/decisions.md`), la escala tiene cuatro niveles, no tres:
+entre AMBAR y VERDE se añade VERDE_CON_ALERTAS, con la regla fronteriza del
+docente del 2026-08-31 -"la prudencia no significa elegir siempre el color
+más bajo"-. `color_sostenido_por_prioridades`, más abajo, es la misma tabla
+de prioridades que `semaforo_por_valoraciones`, pero pensada para que
+`backend/salidas/borrador.py` compruebe que el color propuesto no dice más
+de lo que las prioridades que de verdad llegan al alumno sostienen.
+
 Ningún indicio de autoría se presenta como un veredicto. `verificar()` ya le
 pone a cada uno el aviso del §13 (un `Reparo` con `regla:
 "autoria_es_indicio"`, incondicional, en `analisis.reparos`); este módulo no
@@ -71,30 +79,43 @@ from backend.salidas.seleccion import SeleccionDePrioridades, seleccionar_priori
 from backend.servicios.lectura_objetiva import FichaDeLectura
 
 # El §9 del calibrador, calibrado en `criteria/<version>/semaforo.yaml`: un
-# P1 es carencia crítica (ROJO); un P2 o P3, mejora pendiente (AMBAR); sin
-# ninguno de los tres, correcto para la fase (VERDE). GRIS -"no evaluable"-
-# no sale de esta tabla: lo devuelve `_semaforo` directamente cuando no hay
-# ninguna valoración fiable de la que partir. Archivo ausente, fuera de
-# plazo o ilegible siguen decidiéndose en la Parte A, antes de que exista un
-# `AnalisisVerificado` sobre el que razonar; este módulo solo cubre la
-# incidencia que puede ver por sí mismo, que el motor no consiguió valorar
-# nada verificable, y la nombra con el mismo código GRIS.
-_SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "AMBAR"}
+# P1 es carencia crítica (ROJO); un P2, mejora pendiente (AMBAR); un P3, sin
+# P1 ni P2, un defecto que conviene atender pero no cambia el nivel global
+# (VERDE_CON_ALERTAS -D-019 en `docs/decisions.md`, la regla fronteriza del
+# docente del 2026-08-31-); sin ninguno de los tres, correcto para la fase
+# (VERDE). GRIS -"no evaluable"- no sale de esta tabla: lo devuelve
+# `_semaforo` directamente cuando no hay ninguna valoración fiable de la que
+# partir. Archivo ausente, fuera de plazo o ilegible siguen decidiéndose en
+# la Parte A, antes de que exista un `AnalisisVerificado` sobre el que
+# razonar; este módulo solo cubre la incidencia que puede ver por sí mismo,
+# que el motor no consiguió valorar nada verificable, y la nombra con el
+# mismo código GRIS.
+#
+# Antes, P2 y P3 llegaban los dos a AMBAR: el propio §7 del calibrador dice
+# de P3 que "refina, pero no cambia el nivel global"
+# (`criteria/<version>/prioridades.yaml`), así que tratarlo igual que un P2
+# -"mejora materialmente el proyecto"- era elegir el color más severo ante la
+# duda, justo lo que la regla fronteriza del docente pide invertir. La mitad
+# ROJO/AMBAR no cambia: un P1 fiable, verificado contra evidencia_localizada,
+# ES la "carencia crítica demostrable" que la regla exige para ROJO, así que
+# ahí no había duda que resolver.
+_SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "VERDE_CON_ALERTAS"}
 
 # Si `semaforo.yaml` no existiera. Los mismos textos que ese fichero declara
 # hoy bajo `accion`, para que la ausencia del fichero degrade sin romper y no
 # para inventar un texto que el criterio no ha fijado.
 _RECOMENDACION_POR_OMISION = {
     "VERDE": "Mantener fortalezas y aplicar ajustes menores",
+    "VERDE_CON_ALERTAS": "Atender los defectos importantes señalados antes del cierre",
     "AMBAR": "Aplicar cambios antes de cerrar la siguiente fase",
     "ROJO": "Revisión docente y plan de corrección",
     "GRIS": "Resolver incidencia; no emitir juicio académico automático",
 }
 
-# Los cuatro códigos válidos, en el mismo orden que declara
+# Los cinco códigos válidos, en el mismo orden que declara
 # `criteria/<version>/semaforo.yaml`. `revisar()` (`backend/api/analisis.py`)
 # los usa para validar `semaforo_final_docente` antes de aceptarlo.
-CODIGOS_SEMAFORO: tuple[str, ...] = ("VERDE", "AMBAR", "ROJO", "GRIS")
+CODIGOS_SEMAFORO: tuple[str, ...] = ("VERDE", "VERDE_CON_ALERTAS", "AMBAR", "ROJO", "GRIS")
 
 # La severidad de cada color, de menos a más -no la enumeración de arriba,
 # que es solo de lectura-. GRIS queda por debajo de VERDE a propósito: no es
@@ -102,7 +123,7 @@ CODIGOS_SEMAFORO: tuple[str, ...] = ("VERDE", "AMBAR", "ROJO", "GRIS")
 # mientras queden observaciones aprobadas con prioridad estaría escondiendo
 # esas observaciones detrás de una incidencia que ya no existe. Ver
 # `semaforo_por_valoraciones` y D-016 en `docs/decisions.md`.
-SEVERIDAD_SEMAFORO = {"GRIS": -1, "VERDE": 0, "AMBAR": 1, "ROJO": 2}
+SEVERIDAD_SEMAFORO = {"GRIS": -1, "VERDE": 0, "VERDE_CON_ALERTAS": 1, "AMBAR": 2, "ROJO": 3}
 
 # Los cinco estados de `Informe.estado_nota`, en el orden en que una nota los
 # recorre: nace `pendiente_de_rubrica` -o `no_aplicable`, si la fase nunca
@@ -355,6 +376,34 @@ def semaforo_por_valoraciones(valoraciones: list[ValoracionVerificada]) -> str:
     fiables = [v for v in valoraciones if v.evidencia_localizada]
     if not fiables:
         return "GRIS"
+    for codigo in ("P1", "P2", "P3"):
+        if any(v.prioridad == codigo for v in fiables):
+            return _SEMAFORO_POR_PRIORIDAD[codigo]
+    return "VERDE"
+
+
+def color_sostenido_por_prioridades(valoraciones: list[ValoracionVerificada]) -> str:
+    """El color que sostienen, por sí solas, unas prioridades de las que ya
+    se sabe que van a llegar al alumno -no una lista cualquiera de
+    valoraciones sin filtrar-.
+
+    `backend/salidas/borrador.py` la usa sobre `elegidas` -las prioridades
+    que de verdad generan las `acciones` del borrador- para comprobar que el
+    color propuesto no dice más de lo que esas mismas prioridades sostienen.
+    Es el mismo mapeo P1/P2/P3 que `semaforo_por_valoraciones`, pero sin su
+    rama GRIS: aquí una lista vacía es VERDE, no una incidencia. GRIS
+    significa "no se pudo evaluar nada del trabajo"; una `elegidas` vacía
+    significa "nada de lo que llega al alumno es P1, P2 o P3", que es
+    exactamente lo que ocurre en un VERDE limpio, sin ninguna prioridad que
+    dar. Confundir los dos rechazaría, por diseño, cualquier borrador de un
+    proyecto sin nada que corregir.
+
+    Filtra por `evidencia_localizada` igual que `semaforo_por_valoraciones`
+    -no porque `elegidas` deba traer algo sin localizar, que no debería, sino
+    por el mismo motivo que `_con_evidencia_localizada` vuelve a filtrar en
+    `borrador.py`: no fiarse de que quien llama ya lo haya hecho.
+    """
+    fiables = [v for v in valoraciones if v.evidencia_localizada]
     for codigo in ("P1", "P2", "P3"):
         if any(v.prioridad == codigo for v in fiables):
             return _SEMAFORO_POR_PRIORIDAD[codigo]

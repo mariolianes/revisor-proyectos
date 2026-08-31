@@ -753,3 +753,165 @@ constancia de qué se pidió y qué no se ha construido todavía.
 `_lectura_de_consumo`, `PRESUPUESTO_CALIBRACION`, `UMBRALES_DE_ALERTA_PCT`,
 `PROYECCIONES_DE_ANALISIS`, `--presupuesto-usd`) y
 `tests/tools/test_calibrar.py`.
+
+## D-019 · El semáforo pasa a cuatro niveles, y la duda ya no elige el color más severo
+
+**Fecha:** 2026-08-31 · **Estado:** Validada, con un hueco pendiente de que
+el docente lo cierre · **Responsable:** Marcos
+
+El docente dio una regla fronteriza, literal: «Entre ámbar y verde, usar
+verde con alertas cuando todos los mínimos estén cumplidos. Entre rojo y
+ámbar, usar rojo únicamente cuando exista una carencia crítica demostrable.
+La prudencia no significa elegir siempre el color más bajo.» Es lo contrario
+de lo que hacía `_SEMAFORO_POR_PRIORIDAD`: un P2 y un P3 llegaban los dos a
+AMBAR, aunque el propio §7 del calibrador (`calibracion#7-prioridades`)
+describe P3 como algo que «refina, pero no cambia el nivel global» -la
+propia definición de un defecto que conviene atender, no de una mejora que
+haga falta antes de cerrar-.
+
+La mitad ROJO/ÁMBAR de la regla no exigía ningún cambio de código: ROJO solo
+sale de un P1, y P1 ya es, en `criteria/v2026-2027/prioridades.yaml`, lo que
+«bloquea o compromete la fase», verificado además contra
+`evidencia_localizada`. Un P1 fiable ES la carencia crítica demostrable; ahí
+no había una duda que resolver a favor del color más severo. La mitad
+ÁMBAR/VERDE sí la exigía: hacía falta un nivel intermedio que no existía,
+VERDE_CON_ALERTAS, para los casos con algún P3 fiable pero ningún P1 ni P2.
+
+**El nombre ya estaba en la prosa, pero no como nivel formal.** El §12.1 del
+Documento Maestro y el §9 del calibrador (`maestro#12-errores-y-semaforo`,
+`calibracion#9-semaforo`) siguen enumerando solo VERDE, ÁMBAR, ROJO y GRIS.
+Pero "verde con alertas" aparece, aplicado al caso P05, en el banco de casos
+del §6 del calibrador (`calibracion#6-banco-de-casos`): «Transición de moda
+al modelo D2C [...] Verde con alertas: recomendar cierre general, objetivos
+numéricos de KPIs [...]». Y el propio banco ya trataba varios casos como
+fronterizos entre dos colores -P02 «Amarillo / puerta formal», P06 «Amarillo
+/ verde», P08 «Verde / amarillo»-, resueltos siempre hacia el más severo
+(`docs/calibracion/casos.example.yaml` lo dice explícitamente: «se ha
+elegido el más prudente de los dos»). Ese «siempre el más prudente» es
+exactamente la prudencia-como-severidad que esta regla fronteriza pide dejar
+de aplicar por defecto.
+
+R1 exige que ningún criterio exista sin `fuente` a una sección real de
+`docs/maestro/`. `criteria/v2026-2027/semaforo.yaml` registra
+VERDE_CON_ALERTAS con `fuente: calibracion#6-banco-de-casos` -el ancla real
+donde el término aparece- y dos campos que dicen, sin adornarlo, que es un
+origen parcial: la palabra está en la prosa normativa, pero no como nivel
+formal de la escala del §12.1 ni del §9. **Esto queda pendiente de que el
+docente decida** si formaliza VERDE_CON_ALERTAS en el Documento Maestro -lo
+que exigiría editar `docs/maestro/01-documento-maestro.md` y
+`docs/maestro/04-calibracion.md`, algo que esta tarea no hace porque el
+docente pidió expresamente no rehacer el Maestro- o si prefiere que el nivel
+siga viviendo solo en la calibración.
+
+`backend/salidas/informe.py` cambia en consecuencia:
+`_SEMAFORO_POR_PRIORIDAD["P3"]` pasa de `"AMBAR"` a `"VERDE_CON_ALERTAS"`,
+`CODIGOS_SEMAFORO` y `SEVERIDAD_SEMAFORO` ganan el quinto código
+(`GRIS: -1, VERDE: 0, VERDE_CON_ALERTAS: 1, AMBAR: 2, ROJO: 3`), y se añade
+`color_sostenido_por_prioridades` -mismo mapeo que `semaforo_por_
+valoraciones`, sin su rama GRIS, para uso de D-020-. `revisar()`
+(`backend/api/analisis.py`) y `Revision.tsx` no necesitaron ningún cambio de
+lógica: los dos ya comparaban por `SEVERIDAD_SEMAFORO`/`CODIGOS_SEMAFORO`
+como constantes genéricas, no como una enumeración de tres colores escrita a
+mano. El quinto valor también se añade al `enum semaforo` de Postgres
+(`supabase/migrations/20260831093000_semaforo_verde_con_alertas.sql`); esa
+migración la aplica el docente desde el panel, no este cambio.
+
+Se ha comprobado rompiendo la tabla a propósito -devolviendo `"AMBAR"` para
+P3 otra vez- y viendo caer `test_p3_sin_p1_ni_p2_dice_verde_con_alertas` y
+`test_semaforo_por_valoraciones_distingue_p2_de_p3` en
+`tests/salidas/test_informe.py`.
+
+**Arrastra:** `criteria/v2026-2027/semaforo.yaml`,
+`backend/salidas/informe.py` (`_SEMAFORO_POR_PRIORIDAD`,
+`_RECOMENDACION_POR_OMISION`, `CODIGOS_SEMAFORO`, `SEVERIDAD_SEMAFORO`,
+`color_sostenido_por_prioridades`), `frontend/src/lib/tipos.ts`
+(`CODIGOS_SEMAFORO`), `frontend/src/paginas/Revision.tsx`
+(`SEVERIDAD_SEMAFORO`, `colorMinimo`),
+`supabase/migrations/20260831093000_semaforo_verde_con_alertas.sql`,
+`docs/changes/2026-08-31-semaforo-de-cuatro-niveles-y-coherencia-del-borrador.md`.
+
+## D-020 · El borrador se rechaza si el semáforo dice más de lo que sostienen las acciones que va a pedir
+
+**Fecha:** 2026-08-31 · **Estado:** Validada · **Responsable:** Marcos
+
+Objeción del docente sobre un caso real: un borrador de ejemplo para P07
+-ROJO- le decía al alumno que mostraba «un avance sólido», que estaba «en
+fase de afinado» y que bastaban «cuatro retoques». Pidió un validador que
+compruebe, antes de liberar el borrador, que apertura, prioridades, cierre y
+semáforo cuentan la misma historia.
+
+Detectar «esto suena a retoques menores» en `apertura` o `cierre` exigiría
+un catálogo de frases, y este proyecto ya tiene un precedente de que eso
+falla: la detección de afirmaciones de autoría por palabra clave, que se
+convirtió en una lista que perseguir sin fin y que un modelo esquiva con un
+sinónimo cualquiera. No se repite ese patrón aquí.
+
+En su lugar, la garantía se mueve a una relación estructural que sí se puede
+comprobar contando, no leyendo: qué prioridad sostiene el color propuesto,
+frente a qué prioridad sostienen -por sí solas- las observaciones que de
+verdad van a convertirse en `acciones` del borrador. `Devolucion.acciones`
+es, por construcción (`componer`), como mucho las mismas `elegidas` que ya
+pasaron `seleccionar_prioridades`: si el color dice ROJO pero ninguna de las
+`elegidas` es P1 -la única forma en que `semaforo_por_valoraciones` puede
+devolver ROJO-, el borrador va a pedirle al alumno algo que no explica por
+qué el proyecto está en rojo, y eso es la misma incoherencia que describió
+el docente, solo que verificable sin abrir el texto.
+
+`_semaforo_y_acciones_incoherentes` (`backend/salidas/borrador.py`) hace
+justo esa comparación, con `SEVERIDAD_SEMAFORO` de D-019, y `componer` la
+aplica **antes** de llamar al motor -no depende de lo que redacte, y evita
+gastar una llamada real cuando el dato ya es incoherente-. `seleccionar_
+prioridades` ordena por severidad primero -P1 antes que P2, P2 antes que
+P3-, así que la prioridad que decide el color siempre cae en los primeros
+puestos, y el límite de la economía pedagógica solo recorta la cola: en el
+uso normal, esta comprobación casi nunca dispara. Es una red de seguridad
+para cuando esa garantía se rompe por otra vía -`prioridades.yaml` con
+`llega_al_alumno: nunca` en la prioridad que sostiene el color, o un cambio
+futuro en `seleccionar_prioridades` que deje de ordenar por severidad-, no
+una que se espere ver saltar cada día. (Se descartó, al escribir la prueba,
+la mutación más obvia -bajar `economia_pedagogica.prioridades_maximas` a
+0-: `_maximo`, en `seleccion.py`, lee ese valor con `... or
+_MAXIMO_POR_OMISION`, y en Python `0 or 4` da `4`; un 0 explícito no baja el
+límite, vuelve al valor por omisión.) Mismo patrón que
+`_con_evidencia_localizada`, que vuelve a filtrar en la frontera hacia el
+alumno «por si acaso»: la garantía real vive en dos sitios porque no cuesta
+nada tenerla en los dos.
+
+**Qué pasa cuando falla, y por qué se decide así.** Se levanta
+`BorradorNoValido`, exactamente la misma excepción que ya usa
+`_viola_una_regla_dura`. No hay un camino especial para esta regla: el
+mismo `except (ErrorDelProveedor, BorradorNoValido)` en `analizar_entrega`
+(`backend/servicios/analisis_de_entrega.py`) ya revierte la entrega a
+`ANALIZADO` con el informe guardado -el análisis no se pierde, el semáforo
+propuesto sigue siendo la prueba de auditoría de D-016- y envuelve el fallo
+en `InformeSinBorrador`, que la API traduce a un aviso legible: el informe
+es válido y usable, el borrador no se generó, hay que escribirlo a mano.
+Tratar esta regla de otra forma -devolver un borrador recortado, o solo un
+aviso sin bloquear- rompería la misma garantía que ya sostiene el resto del
+módulo: «se propone y se detiene» no admite una excepción para el único
+caso en que el propio dato de severidad no cuadra con lo que se le va a
+pedir al alumno.
+
+Se le dice también al motor, en `instruccion_de_devolucion`, qué color se ha
+calculado y su lectura `calibrado` -tal cual la declara `semaforo.yaml`, sin
+inventar un texto nuevo-, para que redacte sobre esa severidad en vez de
+inferirla solo de cuántas fortalezas o acciones ve. Esto no es una segunda
+comprobación: es una instrucción, y como cualquier instrucción de este
+módulo, se puede desobedecer. No se ha añadido ningún filtro posterior sobre
+el tono de `apertura` o `cierre`: sería el mismo catálogo de frases que se
+evitó arriba. Queda como límite conocido, no como omisión: el docente sigue
+siendo quien revisa el borrador antes de enviarlo (§13), y esta tarea reduce
+el riesgo de que le llegue una contradicción evidente sin pretender
+eliminarlo del todo.
+
+Se ha comprobado rompiendo la comprobación a propósito -marcando P1 con
+`llega_al_alumno: nunca` en una copia de `prioridades.yaml`, para que un P1
+fiable deje de estar en `elegidas` sin dejar de sostener un ROJO- y viendo
+caer `test_un_p1_excluido_del_alumno_rechaza_un_borrador_rojo` en
+`tests/salidas/test_borrador.py`; y también invirtiendo el operador de la
+comparación, viendo caer el resto de la batería de ese fichero que sigue
+esperando un borrador válido.
+
+**Arrastra:** `backend/salidas/borrador.py`
+(`_semaforo_y_acciones_incoherentes`, `_calibrado_por_color`,
+`instruccion_de_devolucion`, `componer`) y `tests/salidas/test_borrador.py`.
