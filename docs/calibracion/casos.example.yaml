@@ -32,6 +32,28 @@
 # sabiendas de que una búsqueda literal es una señal débil para algo que es,
 # en el fondo, un juicio de lectura; el resto de cada caso queda en notas,
 # para que lo lea el docente.
+#
+# incidencias_esperadas es la comparación que pidió el docente el
+# 2026-08-31, y de la que depende ahora el indicador de cobertura del
+# §11.1 (ver tools/calibrar.py, _indicadores): cada entrada declara un
+# código de la taxonomía del §13
+# (criteria/v2026-2027/taxonomia-incidencias.yaml) y una severidad P1-P4,
+# la misma escala que ya usa el sistema. Coincide con una valoración del
+# informe cuando esa valoración trae una dimensión cuya categoría posible
+# incluye ese código, la misma severidad, y evidencia localizada -"la misma
+# categoría con una severidad equivalente y evidencias compatibles" del
+# criterio del docente-, sin exigir ninguna coincidencia de palabras.
+#
+# La traducción de la prosa del párrafo 6 a estos códigos es una lectura de
+# quien mantiene este fichero de ejemplo, no del docente: son solo los
+# encajes claros, uno por dimensión, sin forzar los que no lo son. Varios
+# rasgos del párrafo 6 -"metodología débil", "proveedor genérico",
+# "lenguaje poco neutral", "verificación regulatoria"- no tienen una
+# categoría clara en una taxonomía de diez códigos que no cubre las doce
+# dimensiones del §8 (ver el docstring del propio YAML de la taxonomía);
+# quedan en notas, no forzados a un código que no les corresponde. El
+# docente puede corregir cualquiera de estas asignaciones al escribir su
+# copia real: son un punto de partida razonado, no una autoridad.
 
 - codigo: P01
   archivo: P01.pdf
@@ -45,6 +67,19 @@
     - páginas en blanco
   no_debe:
     - enumerar cada defecto menor
+  incidencias_esperadas:
+    - codigo: DEV-INSUF
+      severidad: P1
+      nota: Desarrollo superficial; caso ROJO, es el problema principal.
+    - codigo: FUE-INSUF
+      severidad: P2
+      nota: Bibliografía ausente.
+    - codigo: CUANT-BAS
+      severidad: P2
+      nota: Resultados sin evidencia.
+    - codigo: FOR-DEF
+      severidad: P3
+      nota: Tablas vacías y páginas en blanco (extensión artificial).
   notas: >-
     Mejora de pequeño negocio. Feedback centrado en desarrollar y cerrar,
     sin enumerar cada defecto menor. Fase asumida (E3): el párrafo 6 no la
@@ -60,11 +95,20 @@
     - proveedor genérico
     - cifras sin apoyo
   no_debe: []
+  incidencias_esperadas:
+    - codigo: DEV-INSUF
+      severidad: P2
+      nota: Extensión insuficiente.
+    - codigo: CUANT-BAS
+      severidad: P2
+      nota: Cifras sin apoyo.
   notas: >-
     Alimentación canina por dropshipping. El docente lo llama amarillo o
     puerta formal; en el sistema es AMBAR. Reconocer limpieza y coherencia,
     pero la prioridad es completar el desarrollo y cumplir los mínimos.
-    Fase asumida (E3).
+    Fase asumida (E3). "Metodología débil" y "proveedor genérico" no tienen
+    categoría clara en la taxonomía del §13 (no cubre D06, metodología): se
+    dejan aquí, en notas, no en incidencias_esperadas.
 
 - codigo: P03
   archivo: P03.pdf
@@ -75,6 +119,13 @@
     - costes omitidos
   no_debe:
     - todos los errores aritméticos
+  incidencias_esperadas:
+    - codigo: CUANT-BAS
+      severidad: P2
+      nota: Errores aritméticos que alteran la viabilidad o la defensa.
+    - codigo: DEV-INSUF
+      severidad: P3
+      nota: Costes omitidos, tratados como secundarios.
   notas: >-
     Exportación de tortilla española. Valorar estructura y aplicación, pero
     trasladar solo los errores que alteren la viabilidad o la defensa, no
@@ -88,6 +139,13 @@
     - ausencia de fuentes
     - confusión entre ingresos y costes
   no_debe: []
+  incidencias_esperadas:
+    - codigo: FUE-INSUF
+      severidad: P2
+      nota: Ausencia de fuentes.
+    - codigo: CUANT-BAS
+      severidad: P2
+      nota: Confusión entre ingresos y costes.
   notas: >-
     Exportación de vino de nicho. No dejarse llevar por la presentación;
     feedback breve, orientado a justificar la viabilidad. Fase asumida
@@ -103,6 +161,13 @@
     - conexión entre inversión y retorno
   no_debe:
     - exigir una auditoría financiera
+  incidencias_esperadas:
+    - codigo: OBJ-DEF
+      severidad: P3
+      nota: Recomendación de objetivos numéricos de KPI, no una carencia grave.
+    - codigo: CUANT-BAS
+      severidad: P3
+      nota: Conexión entre inversión y retorno, sin exigir auditoría financiera.
   notas: >-
     Transición de moda al modelo D2C. Verde con alertas: recomendar cierre
     general y objetivos numéricos de KPI, sin exigir una auditoría
@@ -117,10 +182,16 @@
     - contradicción entre comunicación y contingencia
   no_debe:
     - juzgar la ideología
+  incidencias_esperadas:
+    - codigo: EST-INCOH
+      severidad: P2
+      nota: Contradicción entre comunicación polémica y plan de contingencia.
   notas: >-
     Marca de ropa identitaria. El docente lo llama amarillo o verde; en el
     sistema es AMBAR. Juzgar coherencia y ética, no la ideología. Fase
-    asumida (E3).
+    asumida (E3). "Lenguaje poco neutral" no tiene categoría clara en la
+    taxonomía del §13 -es un juicio de tono y neutralidad, no de una de las
+    diez categorías-: queda en esta nota, no en incidencias_esperadas.
 
 - codigo: P07
   archivo: P07.pdf
@@ -132,6 +203,16 @@
     - cierre insuficiente
   no_debe:
     - una lista exhaustiva
+  incidencias_esperadas:
+    - codigo: CUANT-BAS
+      severidad: P1
+      nota: Cálculos frágiles, una de las tres correcciones estructurales.
+    - codigo: FOR-DEF
+      severidad: P2
+      nota: Redacción irregular.
+    - codigo: CIERRE-FALTA
+      severidad: P1
+      nota: Cierre insuficiente, ROJO.
   notas: >-
     Importación textil desde China. Priorizar tres correcciones
     estructurales; evitar una lista exhaustiva. Fase asumida (E3).
@@ -145,12 +226,18 @@
     - cálculo de margen
   no_debe:
     - una rentabilidad real absoluta
+  incidencias_esperadas:
+    - codigo: CUANT-BAS
+      severidad: P2
+      nota: Cálculo de margen representativo a revisar.
   notas: >-
     Exportación de AOVE a EAU. El docente lo llama verde o amarillo; se
     elige AMBAR, la lectura más prudente. No exigir demostrar una
     rentabilidad real absoluta. Se asume entrega final, y no E3 como en los
     demás casos, porque "revisar un cálculo de margen representativo" es
-    más propio de cierre que de desarrollo.
+    más propio de cierre que de desarrollo. "Verificación regulatoria" no
+    tiene categoría clara en la taxonomía del §13: queda en esta nota, no en
+    incidencias_esperadas.
 
 - codigo: P09
   archivo: P09.pdf
@@ -161,6 +248,13 @@
     - punto de equilibrio
     - costes incompletos
   no_debe: []
+  incidencias_esperadas:
+    - codigo: CUANT-BAS
+      severidad: P2
+      nota: Inconsistencia entre beneficio y punto de equilibrio.
+    - codigo: CUANT-BAS
+      severidad: P2
+      nota: Costes incompletos.
   notas: >-
     Gimnasio con cafetería en Zúrich. Feedback centrado en la prudencia
     financiera. Fase asumida (E3).

@@ -231,6 +231,78 @@ def recortar_cita(cita: str, texto: str) -> str | None:
     return None
 
 
+# El docente, 2026-08-31: «el siguiente paso consiste en comprobar no solo
+# que la frase existe, sino que sostiene realmente la afirmación [...] Una
+# afirmación de ausencia debe comprobarse en todo el apartado o en todo el
+# documento, no mediante una única cita». El motor a veces no cita nada:
+# escribe, dentro del hueco de la cita, que algo no aparece -«No se
+# localizan referencias a la incorporación de feedback o evolución entre
+# versiones»-. Esa frase nunca va a localizarse ni recortarse -no tiene
+# ningún tramo real, `recortar_cita` ya lo dice-, y hasta ahora recibía el
+# mismo reparo genérico que una cita inventada del todo. Las dos acaban
+# igual -`evidencia_localizada` en `False`, fuera de la devolución-, pero no
+# son el mismo fallo: una es un dato falso, la otra es una observación que
+# el sistema, hoy, no sabe comprobar por sí solo. El docente necesita saber
+# cuál de las dos está mirando.
+#
+# Esto NO comprueba la ausencia -no busca en el documento si el concepto
+# aparece con otras palabras, y no lo hace a propósito-. Verificarlo de
+# verdad exigiría extraer de la frase del motor qué concepto afirma ausente
+# y buscarlo por todo el documento con tolerancia a sinónimos y paráfrasis;
+# eso es un problema de comprensión del lenguaje, no de coincidencia de
+# cadenas, y una heurística de palabras clave fallaría en ambos sentidos -
+# confirmaría ausencias que no lo son porque el documento usa otras
+# palabras, y contradiría ausencias reales porque una palabra suelta
+# aparece en otro contexto-. Una comprobación que falla una parte relevante
+# de las veces es peor que no tenerla: el docente dejaría de fiarse de las
+# que sí funcionan. Por eso este mecanismo se limita a lo que sí se puede
+# sostener con certeza -reconocer que la frase describe una ausencia, no
+# cita nada- y dice con claridad, en el propio reparo, que la comprobación
+# de fondo («en todo el apartado o en todo el documento») queda para el
+# docente.
+#
+# Es un realce, no una garantía, con la misma lógica que
+# `_AFIRMACIONES_DE_AUTORIA`: una lista de frases nunca reconoce todas las
+# formas de negar algo en castellano, y no hace falta que las reconozca
+# todas para ser útil. Cuando una afirmación de ausencia está redactada de
+# otra forma que esta lista no cubre, no pasa nada grave: la evidencia
+# simplemente recibe el reparo genérico de siempre, tan conservadora como
+# hoy. Lo que esta lista nunca hace es al revés -confirmar una cita como
+# localizada por parecer una negación-, porque solo se consulta cuando
+# `cita_localizada` y `recortar_cita` ya han fallado los dos.
+_MARCADORES_DE_AUSENCIA = (
+    "no se localiza", "no se localizan",
+    "no se encuentra", "no se encuentran",
+    "no se menciona", "no se mencionan",
+    "no se aprecia", "no se aprecian",
+    "no se observa", "no se observan",
+    "no se detecta", "no se detectan",
+    "no se identifica", "no se identifican",
+    "no se incluye", "no se incluyen",
+    "no se incorpora", "no se incorporan",
+    "no se aporta", "no se aportan",
+    "no se recoge", "no se recogen",
+    "no consta", "no constan",
+    "no aparece ninguna", "no aparecen",
+    "no existe ninguna mencion", "no existen menciones",
+    "sin ninguna referencia a", "sin ninguna mencion a",
+    "ausencia de",
+    "no hay evidencia de", "no hay ninguna evidencia de",
+    "no hay referencias a", "no hay mencion a", "no hay mencion de",
+)
+
+
+def es_afirmacion_de_ausencia(cita: str) -> bool:
+    """Si `cita` describe que algo falta, en vez de citar algo que existe.
+
+    Se mide sobre `normalizar_para_buscar`, igual que `cita_localizada`: la
+    tilde o la mayúscula con la que el motor redacte la negación no cambian
+    el resultado. Ver `_MARCADORES_DE_AUSENCIA` para las condiciones y los
+    límites de esta comprobación.
+    """
+    return any(marcador in normalizar_para_buscar(cita) for marcador in _MARCADORES_DE_AUSENCIA)
+
+
 class Reparo(BaseModel):
     """Algo que el motor devolvió y no se ha dado por bueno.
 
@@ -243,6 +315,43 @@ class Reparo(BaseModel):
 
     regla: str
     detalle: str
+
+
+def _reparo_no_localizada(cita: str, contexto: str, detalle_generico: str) -> Reparo:
+    """El reparo que se deja cuando `cita_localizada` y `recortar_cita` han
+    fallado los dos.
+
+    Distingue, en el propio `regla`, dos fallos que antes se contaban
+    igual: `evidencia_localizable` para una cita que no se localiza y no
+    hay motivo para pensar que sea otra cosa -inventada, citada de
+    memoria, desfigurada más allá de lo que el recorte tolera-, y
+    `afirmacion_de_ausencia` para una que, por su redacción, describe que
+    algo falta en vez de citar un fragmento -ver `es_afirmacion_de_ausencia`
+    y su docstring para qué comprueba esto y qué no-.
+
+    `detalle_generico` es el mensaje exacto que cada uno de los cuatro
+    canales -valoraciones, patrones, fortalezas, indicios de autoría- ya
+    componía antes de que existiera esta función; se conserva tal cual para
+    no romper ninguna lectura que dependa de su texto. Solo cambia lo que
+    se dice cuando la cita, además, tiene forma de afirmación de ausencia.
+    """
+    if not es_afirmacion_de_ausencia(cita):
+        return Reparo(regla="evidencia_localizable", detalle=detalle_generico)
+    return Reparo(
+        regla="afirmacion_de_ausencia",
+        detalle=(
+            f"La evidencia {contexto} no cita un fragmento del documento: "
+            f"por su redacción, describe que algo no aparece («{cita}»). "
+            "Una afirmación de ausencia no se puede comprobar con una única "
+            "cita -nunca va a localizarse, es una descripción, no una "
+            "transcripción-, sino revisando el apartado o el documento "
+            "entero, y este sistema no hace esa revisión de forma "
+            "automática todavía. No es necesariamente una cita inventada: "
+            "compruébalo tú antes de descartarla. Mientras tanto, la "
+            "observación se conserva para que la revises, pero no pasará a "
+            "la devolución."
+        ),
+    )
 
 
 class ValoracionVerificada(BaseModel):
@@ -441,11 +550,11 @@ def verificar(
         if reparo_recorte is not None:
             reparos.append(reparo_recorte)
         if not localizada:
-            reparos.append(Reparo(
-                regla="evidencia_localizable",
-                detalle=f"La evidencia de {v.dimension} no se ha localizado en "
-                        "el documento. La observación se conserva para que la "
-                        "revises, pero no pasará a la devolución.",
+            reparos.append(_reparo_no_localizada(
+                evidencia.cita, f"de {v.dimension}",
+                f"La evidencia de {v.dimension} no se ha localizado en "
+                "el documento. La observación se conserva para que la "
+                "revises, pero no pasará a la devolución.",
             ))
         verificadas.append(ValoracionVerificada(
             dimension=v.dimension,
@@ -464,10 +573,10 @@ def verificar(
         if reparo_recorte is not None:
             reparos.append(reparo_recorte)
         if not localizada:
-            reparos.append(Reparo(
-                regla="evidencia_localizable",
-                detalle=f"La evidencia del patrón «{p.nombre}» no se ha "
-                        "localizado en el documento; no pasará a la devolución.",
+            reparos.append(_reparo_no_localizada(
+                evidencia.cita, f"del patrón «{p.nombre}»",
+                f"La evidencia del patrón «{p.nombre}» no se ha "
+                "localizado en el documento; no pasará a la devolución.",
             ))
         patrones.append(PatronVerificado(
             nombre=p.nombre,
@@ -484,10 +593,10 @@ def verificar(
         if reparo_recorte is not None:
             reparos.append(reparo_recorte)
         if not localizada:
-            reparos.append(Reparo(
-                regla="evidencia_localizable",
-                detalle="La evidencia de una fortaleza no se ha localizado en "
-                        "el documento; no pasará a la devolución.",
+            reparos.append(_reparo_no_localizada(
+                evidencia.cita, "de una fortaleza",
+                "La evidencia de una fortaleza no se ha localizado en "
+                "el documento; no pasará a la devolución.",
             ))
         fortalezas.append(FortalezaVerificada(
             descripcion=f.descripcion,
@@ -503,10 +612,10 @@ def verificar(
         if reparo_recorte is not None:
             reparos.append(reparo_recorte)
         if not localizada:
-            reparos.append(Reparo(
-                regla="evidencia_localizable",
-                detalle="La evidencia de un indicio de autoría no se ha "
-                        "localizado en el documento.",
+            reparos.append(_reparo_no_localizada(
+                evidencia.cita, "de un indicio de autoría",
+                "La evidencia de un indicio de autoría no se ha "
+                "localizado en el documento.",
             ))
 
         # La garantía del §13, no un realce: TODO indicio lleva este aviso,

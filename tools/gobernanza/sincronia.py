@@ -21,7 +21,23 @@ from tools.gobernanza.resultado import Infraccion
 # dentro de una sola, y en cuanto exista una segunda -que es justo lo que R4
 # prescribe para cualquier cambio- sellar tocaria una carpeta congelada.
 FICHERO_SINCRONIA = "criteria/.sincronia.json"
-PATRON_CUALQUIER_ANCLA = re.compile(r"^<!-- ancla: (?:maestro|indice|guia)#[a-z0-9-]+ -->$", re.M)
+# Bug encontrado el 2026-08-31: a "calibracion" se le dio fuente propia en
+# _DOCUMENTOS (más abajo) para el §14.1, pero este patrón se quedó con solo
+# los tres primeros documentos. Como docs/maestro/04-calibracion.md no
+# contiene NINGÚN ancla de maestro, indice o guia, `hash_de_seccion` nunca
+# encontraba un límite dentro de ese fichero: el "cuerpo" de cualquier
+# sección citada de la calibración se extendía siempre hasta el final del
+# documento entero, nunca solo hasta la siguiente sección. El efecto no era
+# silencioso -R2 no dejaba pasar un cambio real sin avisar-, pero sí un
+# falso positivo permanente: añadir contenido en cualquier punto posterior
+# del documento (una sección nueva al final, por ejemplo) invalidaba el
+# hash de TODAS las secciones de calibración citadas anteriores a ese
+# punto, aunque su prosa no hubiera cambiado ni una letra. Ver
+# tests/gobernanza/test_sincronia.py::test_una_seccion_de_calibracion_no_se_ve_alterada_por_un_cambio_posterior_en_otra
+# para la regresión.
+PATRON_CUALQUIER_ANCLA = re.compile(
+    r"^<!-- ancla: (?:maestro|indice|guia|calibracion)#[a-z0-9-]+ -->$", re.M
+)
 
 _DOCUMENTOS = {
     "maestro": "01-documento-maestro.md",
