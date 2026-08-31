@@ -753,3 +753,158 @@ constancia de qué se pidió y qué no se ha construido todavía.
 `_lectura_de_consumo`, `PRESUPUESTO_CALIBRACION`, `UMBRALES_DE_ALERTA_PCT`,
 `PROYECCIONES_DE_ANALISIS`, `--presupuesto-usd`) y
 `tests/tools/test_calibrar.py`.
+
+## D-019 · La categoría de una incidencia sale de la dimensión ya verificada, nunca del motor
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, a la espera de que el
+docente la valide · **Responsable:** Agente
+
+El docente pidió sustituir la medida de cobertura del §11.1 -búsqueda
+literal de frases del banco de casos sobre las observaciones del
+informe, que en la calibración real del 2026-08-30 localizó 2 de 26 y «no
+significa nada»- por una comparación mediante una taxonomía estable de
+diez categorías de incidencia (§13 del calibrador). Quedaba una decisión
+abierta que el propio encargo señalaba como la importante: de dónde sale
+la categoría de cada observación del sistema.
+
+Se decidió que sale de la **dimensión** que ya trae la valoración
+verificada (`ValoracionVerificada.dimension`, una de las D01-D12 que
+valida el esquema estricto del proveedor en
+`backend/analisis/contrato.py`), nunca de una etiqueta que el motor
+elija y devuelva. Dos motivos, no uno:
+
+1. Pedírsela al motor sería una afirmación más del motor sin manera de
+   comprobarla -justo el tipo de dato que este sistema entero se niega a
+   dar por bueno sin evidencia (§13 del Maestro, y toda
+   `backend/analisis/verificacion.py`)-.
+2. La categoría se usa para **medir al motor** en la calibración. Si el
+   motor eligiera también su propia categoría, la medida se apoyaría en
+   la misma fuente que intenta auditar: un motor sistemáticamente mal
+   calibrado en qué es, por ejemplo, una «aplicación insuficiente» se
+   autoconfirmaría sin que nada lo contradijera. Una dimensión ya
+   verificada, en cambio, es un dato auditable en un fichero
+   (`criteria/v2026-2027/taxonomia-incidencias.yaml`) que el docente puede
+   corregir sin depender de una decisión nueva del motor en cada llamada.
+
+**El precio, no escondido.** Una dimensión no siempre implica una única
+categoría: D07 (Desarrollo aplicado) puede ser DEV-INSUF, TEO-EXCESO o
+APL-FALTA, y el sistema no elige por el docente cuál de las tres es. Por
+eso `categorias_de_dimension` (`backend/analisis/taxonomia.py`) devuelve
+una lista, y la comparación de `tools/calibrar.py::evaluar` acepta
+cualquiera de las categorías posibles de la dimensión, no una única
+calculada -«el sistema detectó A o B o C» es una medida más gruesa que
+«el sistema detectó exactamente A», y así se dice donde se usa-. Cuatro
+dimensiones (D01, D02, D06, D12) no tienen ninguna categoría en las diez
+del docente: no se fuerza ninguna, queda declarado con una lista vacía.
+
+**Coincide cuando la categoría, la severidad y la evidencia coinciden.**
+El criterio del docente -«la misma categoría con una severidad
+equivalente y evidencias compatibles»- se implementa exigiendo las tres
+cosas a la vez: `esperada.codigo in codigos_posibles`, `esperada.
+severidad == prioridad` (P1-P4, la misma escala que ya usa el sistema; se
+lee «equivalente» como «igual», la lectura más literal, no se inventa una
+tabla de tolerancias) y `evidencia_localizada`. Que la evidencia tenga
+que estar localizada liga esta comparación con D-020, más abajo.
+
+**Arrastra:** `docs/maestro/04-calibracion.md` (§13),
+`criteria/v2026-2027/taxonomia-incidencias.yaml`,
+`backend/analisis/taxonomia.py`, `tools/calibrar.py` (`IncidenciaEsperada`,
+`mapa_de_categorias`, `_incidencias_del_informe`, `evaluar`),
+`docs/calibracion/casos.example.yaml`,
+`docs/changes/2026-08-31-taxonomia-de-incidencias.md`,
+`tests/analisis/test_taxonomia.py`,
+`tests/tools/test_calibrar_taxonomia.py`.
+
+## D-020 · Una afirmación de ausencia recibe un reparo distinto de una cita inventada; el apartado de una cita no se verifica
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, a la espera de que el
+docente la valide · **Responsable:** Agente
+
+El docente pidió un paso más en la verificación de evidencias: comprobar
+no solo que una cita existe, sino que sostiene la afirmación y no está
+sacada de contexto, con tres puntos concretos. Dos se implementan de
+formas muy distintas, y uno se decide no implementar; los tres se
+explican aquí juntos porque comparten el mismo límite de fondo -lo que
+este sistema puede comprobar con código, sin fingir comprensión del
+lenguaje que no tiene-.
+
+**1. «Una afirmación de ausencia debe comprobarse en todo el apartado o
+en todo el documento, no mediante una única cita.»** El motor a veces no
+cita nada: escribe, dentro del hueco de la cita, que algo no aparece
+-«No se localizan referencias a la incorporación de feedback o evolución
+entre versiones»-, y esa frase no tiene ningún tramo real que
+`recortar_cita` pueda rescatar. Antes de este cambio recibía el mismo
+reparo genérico (`evidencia_localizable`) que una cita inventada del
+todo, y el docente no podía distinguir un dato falso de una observación
+que el sistema, simplemente, no sabe comprobar por sí solo.
+
+`es_afirmacion_de_ausencia` (`backend/analisis/verificacion.py`)
+reconoce, por una lista de marcadores («no se localiza», «no consta»,
+«ausencia de»...), cuándo una cita que no se ha podido localizar
+describe una ausencia en vez de citar algo. Cuando la reconoce, el reparo
+pasa a ser `afirmacion_de_ausencia`, con un texto que dice claramente que
+no es necesariamente una cita inventada y que la comprobación de fondo
+-buscar en todo el apartado o el documento- queda para el docente. **Esto
+no verifica la ausencia.** No busca en el documento si el concepto
+aparece con otras palabras: extraer de la frase del motor qué concepto
+afirma ausente y buscarlo con tolerancia a sinónimos y paráfrasis es un
+problema de comprensión del lenguaje, no de coincidencia de cadenas, y
+una heurística de palabras clave fallaría en los dos sentidos -confirmaría
+ausencias que no lo son, contradiría ausencias reales-. `evidencia_
+localizada` sigue en `False` en ambos reparos: lo único que cambia es lo
+que lee el docente en el informe interno, nunca lo que llega al alumno
+(`backend/salidas/borrador.py` sigue filtrando por el mismo campo de
+siempre).
+
+**2. «La evidencia debe justificar la categoría y severidad asignadas.»**
+Se cubre indirectamente, no con un mecanismo nuevo: D-019 exige
+`evidencia_localizada` para que una incidencia cuente como detectada en
+la calibración. Una categoría o severidad sin evidencia localizada no
+llega a compararse como coincidencia.
+
+**3. «La cita debe pertenecer al apartado relevante.»** No se
+implementa, y se dice aquí por qué en vez de aproximarlo. `Evidencia.
+apartado` es un campo de texto libre que declara el propio motor -no se
+deriva de `backend/extraccion/estructura.py`, que localiza el índice por
+páginas de un `pymupdf.Document`, un objeto que ya está cerrado cuando
+`verificar()` recibe solo una cadena de texto (`texto: str`, además ya
+minimizado por `backend.privacidad.minimizacion`, con longitudes que no
+corresponden a las páginas originales)-. Verificarlo de verdad exigiría
+tres piezas que hoy no existen juntas: (a) saber en qué página cae la
+cita dentro de `texto`, cuando ni siquiera `Medidas.texto_plano` conserva
+límites de página fiables (`"\n".join(pagina.get_text() ...)` no permite
+recuperar la frontera sin ambigüedad); (b) casar el nombre libre que
+escribe el motor en `apartado` con una entrada real del índice
+-`estructura.py` ya documenta sus propias limitaciones de esa
+heurística-; y (c) decidir a partir de ahí un rango de páginas del
+apartado, con la misma incertidumbre que ya reconoce `estructura.py` para
+sus propios límites (anexos a media página, continuaciones de índice mal
+formadas). Encadenar tres heurísticas inciertas no produce una
+comprobación fiable, produce una que falla una fracción relevante de las
+veces -y una comprobación así es peor que no tenerla: el docente dejaría
+de fiarse también de las que sí funcionan-. Nada en la interfaz afirma
+hoy que `apartado` esté verificado -se muestra tal cual el motor lo
+escribe, en `frontend/src/componentes/Observacion.tsx`-, así que no
+implementarlo no introduce ninguna afirmación nueva que no se pueda
+sostener; simplemente deja sin construir una comprobación que, si se
+construyera mal, sí la introduciría.
+
+**Efecto colateral, no una decisión de esta tarea.** Al escribir la
+prosa del §13 se descubrió que `tools/gobernanza/sincronia.py` no
+reconocía anclas `calibracion#...` como límite de sección
+(`PATRON_CUALQUIER_ANCLA` solo incluía maestro/indice/guia): el «cuerpo»
+de cualquier sección citada del documento de calibración se extendía
+siempre hasta el final del fichero. No era un fallo silencioso -R2 nunca
+dejaba pasar un cambio real sin avisar-, pero sí un falso positivo
+permanente: cualquier cambio posterior en el documento invalidaba el
+hash de secciones anteriores sin tocar. Se corrige en el mismo cambio
+porque bloqueaba sellar limpiamente la sección nueva. Ver el comentario
+junto al patrón en `tools/gobernanza/sincronia.py` y las dos pruebas de
+regresión en `tests/gobernanza/test_sincronia.py`.
+
+**Arrastra:** `backend/analisis/verificacion.py`
+(`_MARCADORES_DE_AUSENCIA`, `es_afirmacion_de_ausencia`,
+`_reparo_no_localizada`), `tools/gobernanza/sincronia.py`
+(`PATRON_CUALQUIER_ANCLA`), `tests/analisis/test_verificacion_ausencia.py`,
+`tests/analisis/test_verificacion.py`,
+`tests/gobernanza/test_sincronia.py`.

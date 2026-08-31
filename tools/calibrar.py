@@ -80,6 +80,7 @@ from backend.analisis.proveedor import (  # noqa: E402
     ErrorDelProveedor,
     ProveedorAnalisis,
 )
+from backend.analisis.taxonomia import cargar_taxonomia  # noqa: E402
 from backend.analisis.verificacion import normalizar_para_buscar  # noqa: E402
 from backend.configuracion import VERSION_CRITERIOS_POR_OMISION  # noqa: E402
 from backend.extraccion import medir  # noqa: E402
@@ -145,12 +146,46 @@ PREGUNTAS_DEL_11_1: dict[str, str] = {
 _SEVERIDAD = {"VERDE": 0, "AMBAR": 1, "ROJO": 2}
 
 
+class IncidenciaEsperada(BaseModel):
+    """Una incidencia que el docente espera que el sistema detecte en un
+    caso, en el vocabulario cerrado del §13 -no como una frase literal-.
+
+    `codigo` es uno de los diez códigos de
+    `criteria/<version>/taxonomia-incidencias.yaml` (DEV-INSUF, FOR-DEF...).
+    `severidad` usa la misma escala P1-P4 que ya declara cada valoración del
+    sistema (`Valoracion.prioridad`, §7 del calibrador): no se inventa una
+    escala nueva de "severidad" solo para la calibración, se reutiliza la
+    que el sistema ya produce, que es también la que el docente ya conoce.
+
+    El docente, 2026-08-31: «coinciden cuando detectan la misma categoría
+    con una severidad equivalente». Aquí "equivalente" se traduce como
+    "igual" -P2 esperado solo coincide con P2 obtenido, no con P1 ni P3-,
+    la lectura más literal de la palabra y la que no exige inventar una
+    tabla de tolerancias que nadie ha pedido. Si el docente considera que
+    P1 y P2 deberían tratarse como equivalentes entre sí, es una ampliación
+    de este campo, no algo que este módulo decida por su cuenta.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    codigo: str
+    severidad: str
+    nota: str = ""
+
+
 class CasoDeCalibracion(BaseModel):
     """La ficha de un caso histórico del banco P01-P09.
 
     No lleva el PDF ni su texto: solo lo necesario para localizarlo
     (`archivo`, dentro de la carpeta que se indique al ejecutar) y para
     contrastar lo que el sistema proponga con lo que decidió el docente.
+
+    `incidencias_esperadas` es la comparación que pidió el docente el
+    2026-08-31: por categoría de una taxonomía estable, severidad y
+    evidencia localizada, no por coincidencia literal de una frase. Convive
+    con `debe_encontrar` y `no_debe` -no las sustituye en este fichero-,
+    pero ya no es la medida de la que depende el indicador de cobertura del
+    §11.1: ver `_indicadores` y el docstring de `evaluar`.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -161,6 +196,7 @@ class CasoDeCalibracion(BaseModel):
     semaforo_esperado: str
     debe_encontrar: list[str] = []
     no_debe: list[str] = []
+    incidencias_esperadas: list[IncidenciaEsperada] = []
     notas: str = ""
 
 
@@ -189,6 +225,15 @@ class ResultadoDeCaso(BaseModel):
     debe_encontrar_hallado: list[str] = []
     debe_encontrar_ausente: list[str] = []
     no_debe_hallado: list[str] = []
+
+    # La comparación por taxonomía (§13), en el vocabulario de
+    # `criteria/<version>/taxonomia-incidencias.yaml`: códigos, no frases.
+    # Un código cuenta como hallado cuando alguna valoración del informe
+    # trae esa categoría entre sus posibles (según la dimensión que la
+    # trajo), la misma severidad declarada en el caso, y su evidencia
+    # localizada -"evidencias compatibles" del criterio del docente-.
+    incidencias_halladas: list[str] = []
+    incidencias_ausentes: list[str] = []
 
     # Para el indicador de exactitud del §11.1: cuántas valoraciones del
     # informe llevan su evidencia localizada en el documento, sobre el
@@ -357,27 +402,101 @@ def _direccion(esperado: str, obtenido: str) -> str:
     return "MAS_DURO" if _SEVERIDAD[obtenido] > _SEVERIDAD[esperado] else "MAS_BLANDO"
 
 
-def evaluar(caso: CasoDeCalibracion, informe: Informe) -> ResultadoDeCaso:
+def mapa_de_categorias(raiz: Path, version: str) -> dict[str, list[str]]:
+    """La correspondencia dimensión -> códigos de incidencia posibles,
+    calculada una vez por tanda, no una vez por caso.
+
+    `categorias_de_dimension` (`backend/analisis/taxonomia.py`) relee el
+    YAML de la taxonomía en cada llamada; una tanda de nueve casos no tiene
+    por qué releerlo nueve veces para construir el mismo mapa.
+    """
+    mapa: dict[str, list[str]] = {}
+    for categoria in cargar_taxonomia(raiz, version):
+        for dimension in categoria.dimensiones:
+            mapa.setdefault(dimension, []).append(categoria.codigo)
+    return mapa
+
+
+def _incidencias_del_informe(
+    informe: Informe, mapa: dict[str, list[str]]
+) -> list[tuple[list[str], str, bool]]:
+    """Las valoraciones del informe, traducidas a la taxonomía.
+
+    Cada elemento es (códigos posibles, severidad P1-P4, evidencia
+    localizada) de una valoración con prioridad -sin prioridad no es una
+    incidencia, es un juicio SOLIDO o ADECUADO- cuya dimensión sí tiene
+    categoría en la taxonomía del §13. Una valoración sobre una dimensión
+    que la taxonomía no cubre (D01, D02, D06, D12) no aparece aquí: no
+    tiene nada con lo que compararse, y omitirla no es un error, es lo que
+    dice el propio fichero de criterios.
+    """
+    resultado = []
+    for v in informe.valoraciones:
+        if v.prioridad is None:
+            continue
+        codigos = mapa.get(v.dimension, [])
+        if not codigos:
+            continue
+        resultado.append((codigos, v.prioridad, v.evidencia_localizada))
+    return resultado
+
+
+def evaluar(
+    caso: CasoDeCalibracion,
+    informe: Informe,
+    mapa: dict[str, list[str]] | None = None,
+) -> ResultadoDeCaso:
     """Compara lo que el sistema propuso con la referencia del docente.
 
-    Recibe únicamente `informe`, nunca la `Devolucion`: `debe_encontrar` y
-    `no_debe` se buscan en las observaciones internas -lo que el docente lee
-    entero-, no en el texto que llegaría al alumno. Que esta función no
-    reciba el borrador no es un descuido de la firma: es lo que hace
-    imposible, por construcción, buscar en el sitio equivocado.
+    Recibe únicamente `informe`, nunca la `Devolucion`: la comparación se
+    hace sobre las observaciones internas -lo que el docente lee entero-,
+    no sobre el texto que llegaría al alumno. Que esta función no reciba el
+    borrador no es un descuido de la firma: es lo que hace imposible, por
+    construcción, buscar en el sitio equivocado.
 
-    La búsqueda es literal -normalizada como una cita: sin tildes, sin
-    mayúsculas, con los espacios colapsados- y no semántica. Encuentra
-    "bibliografía ausente" si el informe lo dice con esas palabras, no si lo
-    dice de otra forma; y no puede juzgar un rasgo de comportamiento como
-    "no enumerar cada defecto menor" -eso lo lee el docente en el informe
-    completo, esta función solo confirma que la frase exacta no aparece.
+    Dos mecanismos de comparación conviven aquí, y no miden lo mismo:
+
+    - `debe_encontrar`/`no_debe`: búsqueda literal -normalizada como una
+      cita: sin tildes, sin mayúsculas, con los espacios colapsados- de una
+      frase concreta sobre las observaciones. El docente, 2026-08-31: «que
+      el sistema use palabras distintas a las del banco no es un problema.
+      La métrica basada en coincidencia literal de expresiones no permite
+      saber si ambos diagnósticos son equivalentes». Sigue aquí -por
+      compatibilidad con casos ya escritos con este campo, y porque
+      `no_debe` sigue siendo una señal razonable sobre economía del
+      feedback-, pero ya no es de la que depende el indicador de cobertura
+      del §11.1: ver `_indicadores`.
+    - `incidencias_esperadas`: comparación por la taxonomía del §13. Dos
+      diagnósticos coinciden cuando el sistema trae, para una dimensión
+      cuya categoría posible incluye la esperada, una valoración con
+      prioridad igual a `IncidenciaEsperada.severidad` -la escala P1-P4 que
+      ya usa el sistema- y evidencia localizada -las "evidencias
+      compatibles" del criterio del docente-, sin exigir que la redacción
+      coincida en absoluto. `mapa` es el resultado de
+      `mapa_de_categorias(raiz, version)`; se recibe ya calculado, no se
+      recalcula aquí, para no releer el YAML de la taxonomía en cada caso
+      de la tanda. Con `None` -el valor por omisión-, ningún código puede
+      coincidir nunca: un caso que no declara `incidencias_esperadas` (el
+      valor por omisión de ese campo también es una lista vacía) no lo
+      necesita, y los tests que construyen un `CasoDeCalibracion` mínimo
+      sin pensar en la taxonomía siguen funcionando sin tener que
+      construir también un mapa que no van a usar.
     """
     corpus = normalizar_para_buscar(_texto_de_observaciones(informe))
 
     hallado = [t for t in caso.debe_encontrar if normalizar_para_buscar(t) in corpus]
     ausente = [t for t in caso.debe_encontrar if t not in hallado]
     no_debe_hallado = [t for t in caso.no_debe if normalizar_para_buscar(t) in corpus]
+
+    detectadas = _incidencias_del_informe(informe, mapa or {})
+    incidencias_halladas = []
+    incidencias_ausentes = []
+    for esperada in caso.incidencias_esperadas:
+        coincide = any(
+            esperada.codigo in codigos and esperada.severidad == severidad and localizada
+            for codigos, severidad, localizada in detectadas
+        )
+        (incidencias_halladas if coincide else incidencias_ausentes).append(esperada.codigo)
 
     return ResultadoDeCaso(
         codigo=caso.codigo,
@@ -388,6 +507,8 @@ def evaluar(caso: CasoDeCalibracion, informe: Informe) -> ResultadoDeCaso:
         debe_encontrar_hallado=hallado,
         debe_encontrar_ausente=ausente,
         no_debe_hallado=no_debe_hallado,
+        incidencias_halladas=incidencias_halladas,
+        incidencias_ausentes=incidencias_ausentes,
         valoraciones_totales=len(informe.valoraciones),
         valoraciones_con_evidencia=sum(
             1 for v in informe.valoraciones if v.evidencia_localizada
@@ -403,6 +524,7 @@ def _ejecutar_caso(
     almacen: Almacen,
     proveedor: ProveedorAnalisis,
     caso: CasoDeCalibracion,
+    mapa: dict[str, list[str]],
 ) -> ResultadoDeCaso:
     """Un caso, de principio a fin, sin dejar que su fallo se lleve a los
     demás.
@@ -413,6 +535,10 @@ def _ejecutar_caso(
     ausente, proveedor caído, una excepción que este módulo no había
     previsto- se convierte aquí en un resultado saltado con su motivo, no en
     una excepción que suba y tumbe la pasada entera.
+
+    `mapa` es el resultado de `mapa_de_categorias(raiz, version)`, calculado
+    una vez por `ejecutar()` para toda la tanda -ver el docstring de
+    `evaluar` para por qué no se recalcula aquí, caso por caso-.
     """
 
     def _saltado(motivo: str) -> ResultadoDeCaso:
@@ -459,7 +585,7 @@ def _ejecutar_caso(
     except Exception as fallo:  # noqa: BLE001 - un caso no debe tirar a los demás
         return _saltado(f"Fallo inesperado: {type(fallo).__name__}: {fallo}")
 
-    return evaluar(caso, informe)
+    return evaluar(caso, informe, mapa)
 
 
 def _lectura_de_sesgo(
@@ -512,6 +638,10 @@ def _indicadores(evaluados: list[ResultadoDeCaso]) -> dict[str, IndicadorDeCalib
         len(r.debe_encontrar_hallado) + len(r.debe_encontrar_ausente) for r in evaluados
     )
     total_hallado = sum(len(r.debe_encontrar_hallado) for r in evaluados)
+    total_incidencias = sum(
+        len(r.incidencias_halladas) + len(r.incidencias_ausentes) for r in evaluados
+    )
+    total_incidencias_halladas = sum(len(r.incidencias_halladas) for r in evaluados)
     aciertos = sum(1 for r in evaluados if r.acierta_semaforo)
     total_valoraciones = sum(r.valoraciones_totales for r in evaluados)
     con_evidencia = sum(r.valoraciones_con_evidencia for r in evaluados)
@@ -521,13 +651,33 @@ def _indicadores(evaluados: list[ResultadoDeCaso]) -> dict[str, IndicadorDeCalib
         "caso. El arnés no lo juzga por el docente."
     )
 
-    lectura_cobertura = (
-        f"{total_hallado}/{total_debe_encontrar} términos de «debe_encontrar» "
-        f"localizados en las observaciones, en {len(evaluados)} casos "
-        "evaluados."
-        if total_debe_encontrar
-        else "Ningún caso evaluado declara «debe_encontrar»."
-    )
+    # El docente, 2026-08-31: una coincidencia literal de frases «no
+    # significa nada». La medida de la que depende este indicador es ahora
+    # la taxonomía del §13 -misma categoría, misma severidad, evidencia
+    # localizada-, no `debe_encontrar`. `debe_encontrar` se sigue mostrando
+    # -convive con `incidencias_esperadas` en `CasoDeCalibracion`, y algún
+    # caso puede no tener todavía sus incidencias reescritas en la
+    # taxonomía-, pero marcado sin rodeos como lo que es: una señal léxica
+    # débil, heredada, que no demuestra equivalencia de diagnóstico.
+    if total_incidencias:
+        lectura_cobertura = (
+            f"{total_incidencias_halladas}/{total_incidencias} incidencias "
+            "esperadas -misma categoría de la taxonomía del §13, misma "
+            f"severidad y evidencia localizada- detectadas, en "
+            f"{len(evaluados)} casos evaluados."
+        )
+    else:
+        lectura_cobertura = (
+            "Ningún caso evaluado declara «incidencias_esperadas» (la "
+            "taxonomía del §13, ver docs/maestro/04-calibracion.md#13). Sin "
+            "esto, la cobertura no tiene con qué medirse de forma fiable."
+        )
+    if total_debe_encontrar:
+        lectura_cobertura += (
+            f" Señal léxica heredada, no una medida de equivalencia: "
+            f"{total_hallado}/{total_debe_encontrar} frases de "
+            "«debe_encontrar» localizadas tal cual en las observaciones."
+        )
     lectura_exactitud = (
         f"{con_evidencia}/{total_valoraciones} valoraciones del informe "
         "tienen su evidencia localizada en el documento."
@@ -856,6 +1006,9 @@ def ejecutar(
     """
     almacen = AlmacenEnMemoria()
     fichero_de_progreso = _progreso_por_omision(carpeta)
+    # Calculado una vez para la tanda entera, no una vez por caso: ver el
+    # docstring de `_ejecutar_caso`.
+    mapa = mapa_de_categorias(raiz, VERSION_CRITERIOS_POR_OMISION)
     resultados: list[ResultadoDeCaso] = []
     for numero, caso in enumerate(casos):
         # Antes del caso y no después: así el último no hace esperar de balde
@@ -863,7 +1016,7 @@ def ejecutar(
         if numero and espera:
             dormir(espera)
         resultado = _ejecutar_caso(
-            raiz, carpeta, VERSION_CRITERIOS_POR_OMISION, almacen, proveedor, caso
+            raiz, carpeta, VERSION_CRITERIOS_POR_OMISION, almacen, proveedor, caso, mapa
         )
         _registrar_progreso(raiz, fichero_de_progreso, resultado)
         resultados.append(resultado)
@@ -972,9 +1125,15 @@ def _formatear(informe: InformeDeCalibracion) -> str:
             f"  - {r.codigo}: esperado {r.semaforo_esperado}, obtenido "
             f"{r.semaforo_obtenido} ({r.direccion})."
         )
+        if r.incidencias_ausentes:
+            lineas.append(
+                "      Incidencias esperadas no detectadas (taxonomía §13): "
+                f"{', '.join(r.incidencias_ausentes)}"
+            )
         if r.debe_encontrar_ausente:
             lineas.append(
-                f"      No se localizó: {', '.join(r.debe_encontrar_ausente)}"
+                "      No se localizó (señal léxica heredada, no mide "
+                f"equivalencia): {', '.join(r.debe_encontrar_ausente)}"
             )
         if r.no_debe_hallado:
             lineas.append(

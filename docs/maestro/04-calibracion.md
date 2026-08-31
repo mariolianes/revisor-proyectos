@@ -252,6 +252,34 @@ Cuando lleguen nuevos casos, se incorporarán al banco sin modificar el Document
 >
 > La muestra histórica confirma que el sistema actual está bien orientado. El calibrador debe preservar el rigor, la proporcionalidad, la economía pedagógica y el control docente. Su misión es ayudar a que el alumnado avance y que el profesor corrija mejor y con menos carga, no perseguir una perfección impropia del nivel y del contexto.
 
+<!-- ancla: calibracion#13-taxonomia-de-incidencias -->
+## 13. Taxonomía de incidencias
+
+Aportación del docente, 2026-08-31, sobre cómo debe medirse si el sistema detecta bien un problema:
+
+> Hoy el arnés de calibración mide si el sistema «detecta el problema principal» buscando literalmente las frases con las que el profesor describió cada caso. El resultado es 2 de 26, y no significa nada: puede que el sistema vea los problemas y los llame de otro modo. Que el sistema use palabras distintas a las del banco no es un problema. La métrica basada en coincidencia literal de expresiones no permite saber si ambos diagnósticos son equivalentes. La comparación debería realizarse mediante una taxonomía estable de incidencias.
+
+La taxonomía:
+
+| Código | Categoría |
+|---|---|
+| DEV-INSUF | Desarrollo real insuficiente |
+| TEO-EXCESO | Exceso de teoría o contenido descriptivo |
+| APL-FALTA | Aplicación práctica insuficiente |
+| OBJ-DEF | Objetivos ausentes, vagos o incoherentes |
+| CUANT-BAS | Cuantificación o medición básica insuficiente |
+| EST-INCOH | Estructura, índice o numeración incoherentes |
+| CIERRE-FALTA | Conclusiones o cierre incompletos |
+| FOR-DEF | Formato, redacción o revisión formal deficientes |
+| FUE-INSUF | Fuentes insuficientes o mal integradas |
+| FB-NOAPL | Feedback anterior no aplicado |
+
+Y el criterio de equivalencia entre lo que dice el sistema y lo que decidió el docente:
+
+> El sistema y la referencia humana coinciden cuando detectan la misma categoría con una severidad equivalente y evidencias compatibles, aunque la redacción sea diferente.
+
+Esta taxonomía sustituye, como mecanismo de comparación del indicador «cobertura» del §11.1, a la búsqueda literal de frases sobre las observaciones del informe. No sustituye la taxonomía por otro juicio automático de si el sistema «acertó»: sigue siendo el docente quien decide si una categoría y una severidad equivalentes son, además, un diagnóstico correcto.
+
 <!-- ancla: calibracion#anexo-a-ficha -->
 ## Anexo A. Ficha de calibración por caso
 

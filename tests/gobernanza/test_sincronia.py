@@ -63,6 +63,73 @@ def test_hash_cambia_si_cambia_el_contenido(repo: Path):
     assert hash_de_seccion(repo, "maestro#8-dimensiones") != antes
 
 
+@pytest.fixture
+def repo_calibracion(tmp_path: Path) -> Path:
+    """Un `docs/maestro/04-calibracion.md` de mentira, con dos secciones y
+    ninguna de los otros tres documentos -así se aísla el bug del
+    2026-08-31: `PATRON_CUALQUIER_ANCLA` no reconocía `calibracion#...`
+    como límite de sección, y sin ningún ancla de maestro/indice/guia en el
+    fichero, ninguna sección de calibración encontraba nunca dónde acababa.
+    """
+    maestro = tmp_path / "docs" / "maestro"
+    maestro.mkdir(parents=True)
+    (maestro / "04-calibracion.md").write_text(
+        "<!-- ancla: calibracion#7-prioridades -->\n"
+        "## 7. Prioridades\n\n"
+        "P1 a P4.\n\n"
+        "<!-- ancla: calibracion#9-semaforo -->\n"
+        "## 9. Semáforo\n\n"
+        "Verde, ambar, rojo, gris.\n",
+        encoding="utf-8",
+    )
+    criterios = tmp_path / "criteria" / "v2026-2027"
+    criterios.mkdir(parents=True)
+    (criterios / "prioridades.yaml").write_text(
+        "- codigo: P1\n  fuente: calibracion#7-prioridades\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_una_seccion_de_calibracion_no_se_ve_alterada_por_un_cambio_posterior_en_otra(
+    repo_calibracion: Path,
+) -> None:
+    """Regresión del bug del 2026-08-31: `calibracion#7-prioridades` es la
+    primera sección del documento de mentira; `calibracion#9-semaforo` va
+    detrás. Editar la segunda -o añadir una tercera sección al final- no
+    debe cambiar el hash de la primera: solo su propio cuerpo, de su ancla
+    a la siguiente, cuenta.
+    """
+    antes = hash_de_seccion(repo_calibracion, "calibracion#7-prioridades")
+
+    ruta = repo_calibracion / "docs" / "maestro" / "04-calibracion.md"
+    ruta.write_text(
+        ruta.read_text(encoding="utf-8").replace(
+            "Verde, ambar, rojo, gris.", "Verde, ambar, rojo, gris. Texto nuevo."
+        ),
+        encoding="utf-8",
+    )
+
+    assert hash_de_seccion(repo_calibracion, "calibracion#7-prioridades") == antes
+
+
+def test_r2_no_protesta_por_una_seccion_de_calibracion_sin_tocar(
+    repo_calibracion: Path,
+) -> None:
+    """La misma regresión, pero de punta a punta por `verificar_r2`: sellar,
+    tocar una sección de calibración que ningún criterio cita, y comprobar
+    que R2 sigue en verde para la que sí se cita."""
+    escribir_sincronia(repo_calibracion)
+    ruta = repo_calibracion / "docs" / "maestro" / "04-calibracion.md"
+    ruta.write_text(
+        ruta.read_text(encoding="utf-8") + "\n<!-- ancla: calibracion#12-limitaciones -->\n"
+        "## 12. Limitaciones\n\nTexto añadido después, sin tocar el §7.\n",
+        encoding="utf-8",
+    )
+
+    assert verificar_r2(repo_calibracion) == []
+
+
 def test_calcular_sincronia_solo_incluye_anclas_referenciadas(repo: Path):
     calculada = calcular_sincronia(repo)
     assert set(calculada) == {"maestro#8-dimensiones"}
