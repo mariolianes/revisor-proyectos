@@ -7,12 +7,80 @@
 # comprobables sobre el texto ya generado.
 
 economia_pedagogica:
+  # Tope absoluto, para cuando el semaforo no puede calcularse -sin
+  # valoraciones fiables- o para cualquier color que
+  # 'prioridades_maximas_por_semaforo' no mencione.
   prioridades_maximas: 4
+  # El limite no es fijo: depende del estado del trabajo, no de un número
+  # que alguien elige a mano por análisis. AMBAR ("tiene base, pero necesita
+  # prioridades concretas", semaforo.yaml) es el trabajo sólido del §2.3: dos
+  # o tres bastan casi siempre, y tres es el techo. ROJO ("carencia crítica
+  # o bloqueo académico") es el trabajo débil: ahí el techo sube a cuatro,
+  # bien agrupadas por causa -ver 'agrupacion_de_causa', más abajo-. VERDE y
+  # GRIS no aparecen aquí porque nunca tienen una valoración P1-P3 fiable de
+  # la que partir -ver 'semaforo_por_valoraciones' en
+  # backend/analisis/verificacion.py-: el límite nunca llega a aplicarse
+  # sobre ellos, y forzar un número ahí sería inventar un caso que no ocurre.
+  prioridades_maximas_por_semaforo:
+    AMBAR: 3
+    ROJO: 4
   caracter: orientativo
   regla: >-
     Si existen diez errores, no se trasladan los diez. Se identifica cuales
     desbloquean el desarrollo, cuales afectan al cierre y cuales quedan como
-    observaciones secundarias internas.
+    observaciones secundarias internas. El máximo depende del estado del
+    trabajo -dos o tres en uno sólido, tres o cuatro en uno con carencias
+    más profundas-, y cuenta causas agrupadas, no hallazgos aislados por
+    dimensión.
+  fuente: calibracion#2-rigor-proporcional
+
+# Como se agrupan las doce dimensiones del §8 para elegir las prioridades
+# del alumno por la causa que explican, no por dimensión aislada. No es un
+# criterio académico nuevo -no cambia que se valora en cada dimensión ni con
+# que exigencia, y las doce siguen valorandose todas-: es organización de la
+# selección, para que "estructura", "índice" y "numeración" -o "objetivos" y
+# "conclusiones"- no cuenten como dos o tres prioridades distintas cuando
+# son la misma causa vista desde dos dimensiones oficiales.
+# `backend/salidas/seleccion.py` colapsa cada grupo a su hallazgo de mayor
+# prioridad; el resto va a `descartadas`, no desaparece.
+agrupacion_de_causa:
+  grupos:
+    - codigo: PLANTEAMIENTO
+      nombre: Planteamiento y encaje
+      dimensiones: [D01, D02, D03]
+    - codigo: ESTRUCTURA
+      nombre: Estructura y presentación
+      dimensiones: [D04, D11]
+    - codigo: BASE
+      nombre: Base documental y método
+      dimensiones: [D05, D06]
+    - codigo: APLICACION
+      nombre: Aplicación y resultados
+      dimensiones: [D07, D08]
+    - codigo: CIERRE
+      nombre: Cierre y evolución
+      dimensiones: [D09, D10]
+    - codigo: AUTORIA
+      nombre: Autoría y defendibilidad
+      dimensiones: [D12]
+  fuente: calibracion#2-rigor-proporcional
+  fuente_adicional: maestro#8-dimensiones
+
+# Lo que el sistema debe priorizar antes que cualquier carencia puntual. Sin
+# esto, "detectar una debilidad" se convertia facilmente en "exigirla": el
+# ejemplo real que motivo este bloque fue un proyecto de importacion textil
+# al que se le pidieron indicadores de logro, flujo de caja y ratios
+# financieros como si fueran requisitos generales.
+priorizar_siempre:
+  aspectos:
+    - Objetivos claros y coherentes
+    - Desarrollo real
+    - Aplicación práctica
+    - Decisiones justificadas
+    - Datos básicos razonables
+    - Estructura comprensible
+    - Conclusiones relacionadas con el trabajo
+    - Cumplimiento del formato mínimo
   fuente: calibracion#2-rigor-proporcional
 
 extension_devolucion:
@@ -65,4 +133,10 @@ no_exigir:
     - Verificación exhaustiva de cada cifra, precio o normativa externa
     - Perfeccion formal o bibliografica de posgrado
     - Afirmaciones categoricas de autoría basadas solo en el estilo
+    - >-
+      Herramientas de análisis financiero avanzado como exigencia general
+      -indicadores de logro, tablas de flujo de caja, ratios como el ROI o
+      el margen neto, o un análisis de sensibilidad de precios, existencias
+      o costes-, salvo que el propio proyecto las anuncie como su objeto
+      central
   fuente: calibracion#2-rigor-proporcional

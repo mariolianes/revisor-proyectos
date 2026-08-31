@@ -284,8 +284,13 @@ def test_las_prioridades_descartadas_son_solo_lo_que_sobro_por_el_limite(
         _analisis(siete_p1 + nunca_candidatos), "simulado",
     )
 
-    assert [v.dimension for v in i.prioridades] == ["D01", "D02", "D03", "D04"]
-    assert [v.dimension for v in i.prioridades_descartadas] == ["D05", "D06", "D07"]
+    # Agrupadas por causa (§2.5 del calibrador): D01-D03 son la misma causa
+    # -"Planteamiento y encaje"- y D05-D06 también -"Base documental y
+    # método"-, así que de cada grupo solo entra la de mayor prioridad
+    # -D01 y D05- y el resto de su mismo grupo -D02, D03, D06- se descarta
+    # aunque hubiera hueco, porque la causa ya está representada.
+    assert [v.dimension for v in i.prioridades] == ["D01", "D04", "D05", "D07"]
+    assert [v.dimension for v in i.prioridades_descartadas] == ["D02", "D03", "D06"]
     dimensiones_descartadas = {v.dimension for v in i.prioridades_descartadas}
     assert "D08" not in dimensiones_descartadas
     assert "D09" not in dimensiones_descartadas

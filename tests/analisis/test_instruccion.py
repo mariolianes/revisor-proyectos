@@ -114,6 +114,61 @@ def test_el_limite_de_economia_pedagogica_aparece_y_cambia_con_el_criterio(
     assert con_limite != con_otro_limite
 
 
+def test_pide_priorizar_lo_que_el_criterio_marca(criterios_de_analisis: Path) -> None:
+    """El 2026-08-31 el docente pidió que «objetivos claros», «desarrollo
+    real» y compañía se prioricen siempre, y no de memoria: si
+    `priorizar_siempre` desaparece de `feedback.yaml`, la instrucción deja
+    de pedirlo."""
+    texto = construir(criterios_de_analisis, "v2026-2027", "E2")
+
+    assert "Objetivos claros y coherentes" in texto
+    assert "Cumplimiento del formato mínimo" in texto
+
+
+def test_sin_priorizar_siempre_no_se_inventa_la_lista(tmp_path: Path) -> None:
+    """Sin el criterio, no hay lista que pedir -no una lista escrita a mano
+    aquí como red de seguridad-."""
+    import shutil
+
+    from tests.conftest import RAIZ_DEL_REPOSITORIO
+
+    destino = tmp_path / "criteria" / "v2026-2027"
+    shutil.copytree(RAIZ_DEL_REPOSITORIO / "criteria" / "v2026-2027", destino)
+    feedback = destino / "feedback.yaml"
+    contenido = feedback.read_text(encoding="utf-8")
+    inicio = contenido.index("priorizar_siempre:")
+    fin = contenido.index("\n\n", inicio)
+    feedback.write_text(contenido[:inicio] + contenido[fin + 2:], encoding="utf-8")
+
+    texto = construir(tmp_path, "v2026-2027", "E2")
+
+    assert "Objetivos claros y coherentes" not in texto
+
+
+def test_pide_no_exigir_lo_que_el_criterio_marca(criterios_de_analisis: Path) -> None:
+    """El ejemplo real que motivó este bloque: un proyecto de importación
+    textil al que se le pidieron indicadores de logro, flujo de caja y
+    ratios financieros como si fueran requisitos generales. La instrucción
+    tiene que decir explícitamente que no se exijan, no solo hablar de
+    "rigor proporcional" en abstracto."""
+    texto = construir(criterios_de_analisis, "v2026-2027", "E2")
+
+    assert "indicadores de logro" in texto.lower()
+    assert "flujo de caja" in texto.lower()
+    assert "no exijas" in texto.lower()
+
+
+def test_el_limite_de_prioridades_menciona_la_agrupacion_por_causa(
+    criterios_de_analisis: Path,
+) -> None:
+    """El límite ya no se pide como "cuatro hallazgos", sino como "cuatro
+    causas": si el texto vuelve a hablar solo de un número, el modelo puede
+    volver a elegir cuatro observaciones aisladas."""
+    texto = construir(criterios_de_analisis, "v2026-2027", "E2")
+
+    assert "causa" in texto.lower()
+
+
 def test_las_dimensiones_salen_en_el_orden_del_criterio(
     criterios_de_analisis: Path,
 ) -> None:

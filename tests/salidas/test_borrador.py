@@ -324,7 +324,12 @@ def test_nada_del_informe_interno_entra_en_la_instruccion(
 
     assert "copiado" not in texto.lower()
     assert "reparo interno" not in texto.lower()
-    assert "D06" not in texto and "D07" not in texto  # descartadas por el límite
+    # D02 y D03 se descartan por ser la misma causa que D01 ("Planteamiento
+    # y encaje", §2.5 del calibrador); D06, por ser la misma causa que D05
+    # ("Base documental y método"). D07 sí entra: es su propia causa
+    # ("Aplicación y resultados") y hay hueco para las cuatro del límite en
+    # ROJO.
+    assert "D02" not in texto and "D03" not in texto and "D06" not in texto
 
 
 # --- El recorte de lo que el motor añade de su cosecha ----------------------

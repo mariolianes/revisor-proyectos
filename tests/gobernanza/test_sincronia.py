@@ -184,6 +184,38 @@ def test_r2_detecta_un_ancla_sobrante_en_el_registro(repo: Path):
     assert "maestro#8-dimensiones" in infracciones[0].detalle
 
 
+def test_hash_no_se_extiende_a_la_siguiente_ancla_calibracion(tmp_path: Path):
+    """`04-calibracion.md` solo lleva anclas 'calibracion#...': si el patrón
+    que busca "la siguiente ancla" no reconoce ese prefijo, el cuerpo de la
+    primera sección se traga el de todas las que vienen después, hasta el
+    final del fichero. Antes de que 'calibracion' se sumara al patrón, este
+    test fallaba tal como se describe: editar la SEGUNDA sección cambiaba el
+    hash de la PRIMERA sin que su texto se hubiera tocado."""
+    maestro = tmp_path / "docs" / "maestro"
+    maestro.mkdir(parents=True)
+    (maestro / "04-calibracion.md").write_text(
+        "<!-- ancla: calibracion#2-rigor-proporcional -->\n"
+        "## 2. Rigor proporcional\n\n"
+        "Texto del rigor.\n\n"
+        "<!-- ancla: calibracion#3-muestra-historica -->\n"
+        "## 3. Muestra historica\n\n"
+        "Texto de la muestra.\n",
+        encoding="utf-8",
+    )
+
+    antes = hash_de_seccion(tmp_path, "calibracion#2-rigor-proporcional")
+
+    ruta = maestro / "04-calibracion.md"
+    ruta.write_text(
+        ruta.read_text(encoding="utf-8").replace(
+            "Texto de la muestra.", "Texto nuevo de la muestra."
+        ),
+        encoding="utf-8",
+    )
+
+    assert hash_de_seccion(tmp_path, "calibracion#2-rigor-proporcional") == antes
+
+
 def test_r2_pasa_sobre_el_repositorio_real():
     # Sin esta prueba, un .sincronia.json desactualizado dejaba la suite en
     # verde: R1, R3, R5 y R6 ya se comprobaban contra el repositorio real y

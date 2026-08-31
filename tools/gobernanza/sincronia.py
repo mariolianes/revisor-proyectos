@@ -35,6 +35,10 @@ FICHERO_SINCRONIA = "criteria/.sincronia.json"
 # punto, aunque su prosa no hubiera cambiado ni una letra. Ver
 # tests/gobernanza/test_sincronia.py::test_una_seccion_de_calibracion_no_se_ve_alterada_por_un_cambio_posterior_en_otra
 # para la regresión.
+# Lo encontraron dos trabajos distintos el mismo dia, por separado, cada uno
+# desde su lado: la calibracion del 2026-08-31 toco el §2 y el sello del §4
+# cambio sin que su texto se hubiera tocado. Ver también
+# test_hash_no_se_extiende_a_la_siguiente_ancla_calibracion.
 PATRON_CUALQUIER_ANCLA = re.compile(
     r"^<!-- ancla: (?:maestro|indice|guia|calibracion)#[a-z0-9-]+ -->$", re.M
 )
