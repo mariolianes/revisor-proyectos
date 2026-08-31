@@ -9,6 +9,35 @@
 #
 # 'calibrado' recoge la lectura afinada con la muestra historica. No sustituye
 # al significado: lo precisa.
+#
+# Decisión del docente, 2026-08-31: la escala pasa a cuatro niveles, con una
+# regla fronteriza que invierte el criterio de antes -ante la duda, el sistema
+# elegía siempre el color más severo-. Tal como la dio:
+#
+#   «Entre ámbar y verde, usar verde con alertas cuando todos los mínimos
+#   estén cumplidos. Entre rojo y ámbar, usar rojo únicamente cuando exista
+#   una carencia crítica demostrable. La prudencia no significa elegir
+#   siempre el color más bajo.»
+#
+# La mitad rojo/ámbar ya la cumplía el código: ROJO solo sale de un hallazgo
+# P1, y P1 es -en prioridades.yaml, calibracion#7-prioridades- precisamente
+# lo que "bloquea o compromete la fase", verificado además contra
+# evidencia_localizada. Un P1 fiable ES la carencia crítica demostrable; no
+# hay una duda que resolver ahí. La mitad ámbar/verde sí exigía un nivel que
+# no existía: antes, tanto un P2 como un P3 -"refina, pero no cambia el nivel
+# global", la propia definición de prioridades.yaml- llegaban igual a AMBAR,
+# lo que empujaba al color más severo justo en el caso que la regla fronteriza
+# pide tratar con más prudencia. VERDE_CON_ALERTAS, más abajo, es ese nivel.
+#
+# 'VERDE_CON_ALERTAS' no aparece en el §12.1 del Documento Maestro ni en el §9
+# del calibrador -los dos siguen enumerando solo VERDE, ÁMBAR, ROJO y GRIS-;
+# la palabra sí aparece, aplicada a un caso real (P05), en
+# calibracion#6-banco-de-casos, y de ahí sale la 'fuente' de esta entrada, no
+# de §12.1 ni de §9. Es un origen parcial, no inventado -el término está en la
+# prosa normativa, pero no como nivel formal de la escala-, y se deja así a
+# propósito: no se toca docs/maestro/ sin que el docente lo pida. Ver
+# docs/changes/2026-08-31-semaforo-de-cuatro-niveles-y-coherencia-del-borrador.md
+# para el detalle completo y la decisión pendiente que queda para él.
 
 - codigo: VERDE
   significado: Cumple la fase y puede avanzar
@@ -18,6 +47,28 @@
     avanzar ni defender el planteamiento.
   fuente: maestro#12-errores-y-semaforo
   fuente_calibracion: calibracion#9-semaforo
+
+- codigo: VERDE_CON_ALERTAS
+  significado: >-
+    Cumple los mínimos, es coherente y defendible, aunque conserva defectos
+    importantes o recomendaciones que conviene atender.
+  accion: Atender los defectos importantes señalados antes del cierre
+  calibrado: >-
+    Regla fronteriza del docente (2026-08-31): entre ámbar y verde, se usa
+    verde con alertas cuando todos los mínimos están cumplidos. En la
+    práctica, un proyecto sin ningún P1 ni P2 fiable pero con algún P3 -que
+    prioridades.yaml define como algo que "refina, pero no cambia el nivel
+    global"-: cumple para avanzar y defenderse, pero conserva algo que
+    conviene corregir antes del cierre. No es un nivel que exista todavía en
+    el §12.1 del Documento Maestro ni en el §9 del calibrador -los dos
+    enumeran solo VERDE, ÁMBAR, ROJO y GRIS-; la palabra "verde con alertas"
+    sí aparece, para el caso P05, en calibracion#6-banco-de-casos. Pendiente
+    de que el docente decida si lo formaliza en el Documento Maestro.
+  fuente: calibracion#6-banco-de-casos
+  fuente_pendiente_en_maestro: >-
+    §12.1 (maestro#12-errores-y-semaforo) y §9 del calibrador
+    (calibracion#9-semaforo) todavía no listan este nivel. Decisión pendiente
+    del docente, no un ajuste ya validado por la fuente superior.
 
 - codigo: AMBAR
   significado: Avanza, pero existen correcciones prioritarias

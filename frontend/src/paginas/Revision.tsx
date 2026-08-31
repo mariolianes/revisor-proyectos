@@ -23,8 +23,21 @@ const ETIQUETA_DE_CONTINUIDAD: Record<ContinuidadFeedback["estado"], string> = {
 // `backend/salidas/informe.py`: GRIS por debajo de VERDE a propósito, para
 // que la comprobación de aquí -de anticipo, no la que de verdad decide- dé
 // el mismo resultado que dará el servidor al guardar. Ver D-016 en
-// `docs/decisions.md`.
-const SEVERIDAD_SEMAFORO: Record<string, number> = { GRIS: -1, VERDE: 0, AMBAR: 1, ROJO: 2 }
+// `docs/decisions.md`. Desde D-019 (2026-08-31), cinco niveles en vez de
+// cuatro: VERDE_CON_ALERTAS entre VERDE y AMBAR.
+const SEVERIDAD_SEMAFORO: Record<string, number> = {
+  GRIS: -1, VERDE: 0, VERDE_CON_ALERTAS: 1, AMBAR: 2, ROJO: 3,
+}
+
+// A qué color lleva cada prioridad, cuando es la más severa presente. Mismo
+// mapeo que `_SEMAFORO_POR_PRIORIDAD` en `backend/salidas/informe.py`: un P1
+// es ROJO, un P2 es AMBAR, y un P3 -sin P1 ni P2- es VERDE_CON_ALERTAS, no
+// AMBAR. Antes P2 y P3 llegaban los dos a AMBAR: la regla fronteriza del
+// docente ("la prudencia no significa elegir siempre el color más bajo")
+// es justo lo que invierte ese comportamiento.
+const COLOR_POR_PRIORIDAD: Record<string, string> = {
+  P1: "ROJO", P2: "AMBAR", P3: "VERDE_CON_ALERTAS",
+}
 
 /**
  * El color mínimo que sostienen las valoraciones fiables que siguen
@@ -45,7 +58,7 @@ function colorMinimo(
   if (fiables.length === 0) return "GRIS"
   for (const prioridad of ["P1", "P2", "P3"]) {
     if (fiables.some((v) => v.prioridad === prioridad)) {
-      return prioridad === "P1" ? "ROJO" : "AMBAR"
+      return COLOR_POR_PRIORIDAD[prioridad]
     }
   }
   return "VERDE"

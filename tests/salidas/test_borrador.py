@@ -400,3 +400,88 @@ def test_el_borrador_no_se_pide_con_el_texto_vacio(criterios_de_analisis) -> Non
     # Y no es el trabajo: ninguna cita del análisis viaja en ese hueco.
     for v in analisis.valoraciones:
         assert v.evidencia.cita not in texto
+
+
+# --- D-020: el borrador no puede decir menos de lo que dice el semáforo ----
+
+
+def test_un_rojo_con_su_p1_en_elegidas_no_se_bloquea(
+    criterios_de_analisis: Path,
+) -> None:
+    """Control: el caso normal -un P1 fiable que sí llega a `elegidas`,
+    porque `seleccionar_prioridades` lo ordena primero- no dispara la
+    comprobación de coherencia. Sin esto, no se podría distinguir un falso
+    positivo de la protección real."""
+    proveedor = ProveedorSimulado(respuestas=[_devolucion()])
+
+    d = componer(criterios_de_analisis, "v2026-2027", proveedor, _analisis([_v("D05", "P1")]))
+
+    assert d.apertura
+
+
+def test_un_p1_excluido_del_alumno_rechaza_un_borrador_rojo(
+    criterios_de_analisis: Path,
+) -> None:
+    """Rotura deliberada: si `prioridades.yaml` marcara P1 con
+    `llega_al_alumno: nunca` -un error de configuración, no el valor real del
+    repositorio-, `seleccionar_prioridades` dejaría `elegidas` vacía aunque
+    exista un P1 fiable, porque ya no está en el `orden` que decide quién
+    puede llegar al alumno (`backend/salidas/seleccion.py`). El semáforo
+    seguiría diciendo ROJO -`semaforo_por_valoraciones` no mira
+    `llega_al_alumno`, solo `evidencia_localizada`-, y el borrador se
+    quedaría sin ninguna acción que lo explique: exactamente lo que describió
+    el docente sobre P07, un color severo con un texto que no lo sostiene.
+    `componer` tiene que rechazarlo antes de llamar al motor.
+
+    Nótese que la mutación «obvia» -bajar
+    `economia_pedagogica.prioridades_maximas` a 0 en `feedback.yaml`- NO
+    sirve para esta prueba: `_maximo` en `seleccion.py` lee ese valor con
+    `... or _MAXIMO_POR_OMISION`, y en Python `0 or 4` da `4` -un 0 explícito
+    se trata como «no puesto» y el límite por omisión sigue aplicando-. Es un
+    quirk de ese módulo, no de esta comprobación, y por eso esta prueba
+    fuerza el hueco por el lado de `prioridades.yaml` en su lugar.
+    """
+    import yaml
+
+    fichero = criterios_de_analisis / "criteria" / "v2026-2027" / "prioridades.yaml"
+    datos = yaml.safe_load(fichero.read_text(encoding="utf-8"))
+    for entrada in datos:
+        if entrada["codigo"] == "P1":
+            entrada["llega_al_alumno"] = "nunca"
+    fichero.write_text(yaml.safe_dump(datos, allow_unicode=True), encoding="utf-8")
+
+    proveedor = ProveedorSimulado(respuestas=[_devolucion()])
+
+    with pytest.raises(BorradorNoValido):
+        componer(criterios_de_analisis, "v2026-2027", proveedor, _analisis([_v("D05", "P1")]))
+
+    assert proveedor.llamadas == [], "no hacía falta llamar al motor: el dato ya era incoherente"
+
+
+def test_un_p3_en_verde_con_alertas_no_se_bloquea(
+    criterios_de_analisis: Path,
+) -> None:
+    """Control adicional: con el mapeo de D-019, un P3 sin P1 ni P2 propone
+    VERDE_CON_ALERTAS, y esa misma prioridad sí llega a `elegidas` -no hay
+    incoherencia que bloquear en el caso normal de la nueva escala."""
+    proveedor = ProveedorSimulado(respuestas=[_devolucion(acciones=["La única prioridad."])])
+
+    d = componer(criterios_de_analisis, "v2026-2027", proveedor, _analisis([_v("D05", "P3")]))
+
+    assert d.apertura
+
+
+def test_la_instruccion_incluye_el_color_calculado_y_su_lectura_calibrada(
+    criterios_de_analisis: Path,
+) -> None:
+    """La mitigación de D-020 para el tono: el motor recibe el color y su
+    texto `calibrado` -tal cual lo declara `semaforo.yaml`-, no un texto
+    inventado en este módulo, para anclar la severidad de `apertura` y
+    `cierre` a lo que ya se calculó."""
+    analisis = _analisis([_v("D05", "P1")])
+    elegidas = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis).elegidas
+
+    texto = instruccion_de_devolucion(criterios_de_analisis, "v2026-2027", analisis, elegidas)
+
+    assert "ROJO" in texto
+    assert "carencia" in texto.lower()  # del texto `calibrado` de ROJO en semaforo.yaml

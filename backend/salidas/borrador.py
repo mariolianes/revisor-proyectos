@@ -27,6 +27,51 @@ nada: el profesor no llega a ver un texto que parece limpio y no lo está. Es
 la misma filosofía que el resto del sistema -se propone y se detiene-,
 aplicada al único momento en que lo que se compone podría llegar a otra
 persona que no es él.
+
+Desde D-019 (`docs/decisions.md`, 2026-08-31), `componer` aplica una
+comprobación hermana de `_viola_una_regla_dura`, pero de naturaleza distinta:
+`_semaforo_y_acciones_incoherentes`. El docente pidió que apertura,
+prioridades, cierre y semáforo «cuenten la misma historia»; un ejemplo real
+-un proyecto ROJO cuyo borrador hablaba de «avance sólido» y «cuatro
+retoques»- mostró que el semáforo y el texto podían contradecirse. Detectar
+esa contradicción en la prosa libre de `apertura` y `cierre` exigiría un
+catálogo de frases -«suena a retoques», «suena a insuficiencia»- que es
+exactamente la clase de comprobación que ya falló una vez en este proyecto,
+con la detección de afirmaciones de autoría por palabra clave: cualquier
+lista de expresiones es un catálogo que hay que perseguir para siempre y que
+un modelo esquiva sin querer con un sinónimo.
+
+Por eso esta comprobación no lee `apertura` ni `cierre`: compara el color
+que se propuso -`semaforo_por_valoraciones(analisis.valoraciones)`,
+`backend/salidas/informe.py`- contra el color que sostienen, por sí solas,
+las prioridades que de verdad van a generar las `acciones` del borrador
+-`color_sostenido_por_prioridades(elegidas)`, en el mismo módulo-. Es
+estructural, no textual: no juzga si la redacción "suena" a poco, comprueba
+si lo que se le va a pedir al alumno se corresponde con la gravedad que ya
+se calculó.
+
+En el uso normal casi nunca dispara: `seleccionar_prioridades`
+(`backend/salidas/seleccion.py`) ordena P1 antes que P2 y P2 antes que P3,
+así que la prioridad que decide el color -la más severa presente- siempre
+cae en los primeros puestos, y el límite de la economía pedagógica solo
+recorta la cola. Su valor es de red de seguridad, igual que
+`_con_evidencia_localizada` vuelve a filtrar por si acaso: si
+`prioridades.yaml` marcara la prioridad que sostiene el color con
+`llega_al_alumno: nunca` -sacándola del `orden` que decide quién puede
+llegar al alumno, no del límite de cuántas caben-, o si un cambio futuro en
+`seleccionar_prioridades` dejara de ordenar por severidad primero, un color
+severo llegaría con un borrador sin ninguna acción que lo explique. Eso sí
+se rechaza aquí, antes incluso de llamar al motor.
+
+Esto no cierra el problema entero: el tono de `apertura` y `cierre` sigue
+siendo texto libre que ningún validador estructural puede garantizar. La
+mitigación de ese resto está en `instruccion_de_devolucion`, no en una
+comprobación posterior: se le dice al motor, con el mismo texto `calibrado`
+que ya declara `criteria/<version>/semaforo.yaml` -no uno inventado aquí-,
+qué estado se ha calculado, para que redacte sobre ese nivel en vez de
+inferirlo solo de cuántas acciones ve. Es una instrucción, no una garantía
+-el resto del módulo ya asume que una instrucción se puede desobedecer-, pero
+ataca la causa en vez de perseguir el síntoma en el texto ya escrito.
 """
 
 import re
@@ -44,6 +89,11 @@ from backend.analisis.verificacion import (
     FortalezaVerificada,
     ValoracionVerificada,
     normalizar_para_buscar,
+)
+from backend.salidas.informe import (
+    SEVERIDAD_SEMAFORO,
+    color_sostenido_por_prioridades,
+    semaforo_por_valoraciones,
 )
 from backend.salidas.seleccion import seleccionar_prioridades
 
@@ -82,6 +132,27 @@ def _feedback(raiz: Path, version: str) -> dict:
     if not fichero.is_file():
         return {}
     return yaml.safe_load(fichero.read_text(encoding="utf-8")) or {}
+
+
+def _calibrado_por_color(raiz: Path, version: str) -> dict[str, str]:
+    """El texto `calibrado` de cada color, leído de `semaforo.yaml`.
+
+    Mismo patrón que `_recomendaciones_por_color`
+    (`backend/salidas/informe.py`): no se redacta un texto nuevo aquí, se
+    reutiliza la columna que `semaforo.yaml` ya declara -con su propia
+    `fuente` al documento de calibración- para anclar la instrucción del
+    motor a la severidad ya calculada, en vez de dejar que la infiera solo de
+    cuántas acciones ve.
+    """
+    fichero = raiz / "criteria" / version / "semaforo.yaml"
+    if not fichero.is_file():
+        return {}
+    catalogo = yaml.safe_load(fichero.read_text(encoding="utf-8")) or []
+    return {
+        c["codigo"]: c["calibrado"]
+        for c in catalogo
+        if isinstance(c, dict) and "codigo" in c and "calibrado" in c
+    }
 
 
 def _con_evidencia_localizada(elementos: list[_T]) -> list[_T]:
@@ -149,6 +220,14 @@ def instruccion_de_devolucion(
     Los límites de extensión, el estilo y lo que no se debe exigir salen de
     `feedback.yaml`, no de una frase fija en este módulo: si el profesor
     cambia el fichero, la instrucción cambia con él sin tocar código.
+
+    Desde D-019, también se le dice al motor qué color de semáforo se ha
+    calculado y su lectura calibrada -tal cual la declara
+    `criteria/<version>/semaforo.yaml`, no una frase nueva-, para que la
+    apertura y el cierre partan de esa severidad en vez de que el motor la
+    infiera solo de cuántas fortalezas o acciones ve. Es una instrucción, no
+    una garantía: `componer` sigue sin confiar en que se obedezca (ver el
+    docstring del módulo y `_semaforo_y_acciones_incoherentes`).
     """
     criterios = _feedback(raiz, version)
     extension = criterios.get("extension_devolucion") or {}
@@ -171,6 +250,17 @@ def instruccion_de_devolucion(
         f"si {ampliar_solo_si.lower()}, no por defecto. Cercano, directo, "
         "firme y constructivo. Sin condescendencia.",
     ]
+
+    color = semaforo_por_valoraciones(analisis.valoraciones)
+    calibrado = _calibrado_por_color(raiz, version).get(color)
+    if calibrado:
+        partes.append("")
+        partes.append(
+            f"Estado calculado del proyecto: {color}. {calibrado} La "
+            "apertura y el cierre tienen que sonar acordes a este nivel: ni "
+            "más alarmantes ni más tranquilizadores de lo que dice, para que "
+            "todo el borrador cuente la misma historia que el semáforo."
+        )
 
     contenido = extension.get("debe_contener") or []
     if contenido:
@@ -263,6 +353,34 @@ def _viola_una_regla_dura(devolucion: Devolucion) -> str | None:
     return None
 
 
+def _semaforo_y_acciones_incoherentes(
+    valoraciones: list[ValoracionVerificada], elegidas: list[ValoracionVerificada],
+) -> bool:
+    """`True` si el color propuesto dice más de lo que sostienen, por sí
+    solas, las prioridades que van a generar `acciones`.
+
+    Comprobación estructural, hermana de `_viola_una_regla_dura` pero de
+    naturaleza distinta: esa lee el texto que redactó el motor; esta compara
+    dos colores que ya se sabían antes de pedirle nada al motor, así que
+    `componer` la aplica primero y se ahorra la llamada si ya falla aquí. Ver
+    el docstring del módulo para el porqué de no intentar detectar la
+    incoherencia en la prosa de `apertura` o `cierre`.
+
+    `elegidas` siempre sostiene, en la práctica, el mismo color que
+    `valoraciones`: `seleccionar_prioridades` ordena por severidad primero,
+    así que la prioridad que decide el color siempre cae en los primeros
+    puestos y el límite de la economía pedagógica solo recorta la cola.
+    Esta comprobación es una red de seguridad para cuando esa garantía se
+    rompe por otra vía -`prioridades.yaml` con `llega_al_alumno: nunca` en
+    la prioridad que sostiene el color, un cambio futuro en
+    `seleccionar_prioridades` que deje de ordenar por severidad-, no una que
+    se espere disparar en el uso normal.
+    """
+    color_propuesto = semaforo_por_valoraciones(valoraciones)
+    color_de_las_acciones = color_sostenido_por_prioridades(elegidas)
+    return SEVERIDAD_SEMAFORO[color_propuesto] > SEVERIDAD_SEMAFORO[color_de_las_acciones]
+
+
 # Lo que va en el hueco del texto al pedir el borrador. **No es el trabajo del
 # alumno, y esa es la clave**: la instrucción ya lleva las prioridades
 # verificadas y sus citas, así que el documento no tiene que viajar una
@@ -296,10 +414,28 @@ def componer(
     aplicado donde se puede aplicar sin interpretar texto, más la comprobación
     de que el motor no ha colado, dentro de un campo de texto libre, algo que
     el tipo `Devolucion` no podía impedir por sí solo.
+
+    Antes de llamar al motor -ni siquiera hace falta pedirle nada- se
+    comprueba también que el color propuesto lo sostienen las prioridades que
+    van a llegar al alumno: `_semaforo_y_acciones_incoherentes`. Se hace aquí
+    y no después porque no depende de lo que redacte el motor, y porque un
+    fallo aquí significaría entregar un borrador vacío o casi vacío sobre un
+    color severo -el atajo de la línea siguiente, sin ninguna acción con la
+    que explicarlo-, que es peor que no entregar nada.
     """
     seleccion = seleccionar_prioridades(raiz, version, analisis)
     elegidas = _con_evidencia_localizada(seleccion.elegidas)
     fortalezas = _con_evidencia_localizada(analisis.fortalezas)
+
+    if _semaforo_y_acciones_incoherentes(analisis.valoraciones, elegidas):
+        raise BorradorNoValido(
+            "El semáforo propuesto no lo sostienen las prioridades que van a "
+            "llegar al alumno: el color dice más de lo que el borrador podría "
+            "pedirle que corrija. No se entrega. Revisa "
+            "'llega_al_alumno' en prioridades.yaml para la prioridad que "
+            "sostiene este color, o las prioridades de este análisis, antes "
+            "de volver a intentarlo."
+        )
 
     if not elegidas and not fortalezas:
         return Devolucion(apertura="", fortalezas=[], acciones=[], cierre="")
