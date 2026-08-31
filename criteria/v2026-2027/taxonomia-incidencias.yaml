@@ -1,0 +1,99 @@
+# Taxonomía de incidencias. Derivado de docs/maestro/04-calibracion.md#13.
+# NO EDITAR sin cambiar antes la prosa. Ver GOVERNANCE.md.
+#
+# El docente, 2026-08-31: "el sistema y la referencia humana coinciden
+# cuando detectan la misma categoría con una severidad equivalente y
+# evidencias compatibles, aunque la redacción sea diferente". Este fichero
+# es el vocabulario cerrado de categorías que hace posible esa comparación:
+# antes de que existiera, "coincidir" solo podía significar "usar las
+# mismas palabras que el banco de casos", que es justo la medida que el
+# docente pidió dejar de usar.
+#
+# De dónde sale la categoría de cada observación -la decisión que pedía
+# esta tarea-: de la DIMENSIÓN que trae la valoración verificada (D01-D12,
+# criteria/v2026-2027/dimensiones.yaml), nunca del motor. Dos motivos:
+#
+# 1. Pedírsela al motor añadiría una afirmación más del motor sin manera de
+#    comprobarla -exactamente el tipo de dato que este sistema entero se
+#    niega a dar por bueno sin evidencia-, y la categoría se usa para MEDIR
+#    al motor en la calibración: si el motor eligiera también su propia
+#    categoría, la medida se apoyaría en la misma fuente que intenta
+#    auditar, y un motor sistemáticamente mal calibrado en qué es una
+#    "aplicación insuficiente" se autoconfirmaría sin que nada lo
+#    contradijera.
+# 2. La dimensión ya es un dato verificado -sale de
+#    `backend.analisis.contrato.Valoracion.dimension`, una de las doce que
+#    valida el esquema estricto del proveedor- y auditable por el docente
+#    en un fichero, no una decisión nueva del motor en cada llamada.
+#
+# El precio de esta decisión, y no se esconde: una dimensión no siempre
+# implica una sola categoría. D07 (Desarrollo aplicado) es el caso de
+# manual que puso el propio encargo de esta tarea -una insuficiencia ahí
+# puede ser DEV-INSUF, APL-FALTA o TEO-EXCESO, y este fichero no elige por
+# el motor cuál de las tres es-. Por eso 'dimensiones' vive en cada
+# categoría y no al revés (una tabla dimensión -> categoría única): la
+# comparación de calibración (tools/calibrar.py) considera que una
+# categoría esperada "coincide" con una valoración del sistema cuando esa
+# categoría está entre las posibles de la dimensión que trajo la
+# valoración, no cuando coincide una única categoría calculada. Es una
+# medida más gruesa que "acierto exacto", y así se dice en el informe de
+# calibración: sigue siendo mucho más informativa que buscar una frase
+# literal, pero no sustituye la lectura del docente sobre el caso concreto.
+#
+# No toda dimensión tiene una categoría de esta lista: D01 (adecuación al
+# ciclo), D02 (tema y justificación), D06 (metodología) y D12 (autoría) no
+# aparecen en ninguna lista de 'dimensiones' de abajo. No es un olvido: la
+# taxonomía del docente tiene diez categorías y no pretende cubrir las doce
+# dimensiones del §8 una por una. Una valoración sobre una de esas cuatro
+# dimensiones sigue existiendo en el informe igual que siempre; sencillamente
+# no participa en la comparación por categoría de la calibración.
+
+- codigo: DEV-INSUF
+  nombre: Desarrollo real insuficiente
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D07]
+
+- codigo: TEO-EXCESO
+  nombre: Exceso de teoría o contenido descriptivo
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D07]
+
+- codigo: APL-FALTA
+  nombre: Aplicación práctica insuficiente
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D07]
+
+- codigo: OBJ-DEF
+  nombre: Objetivos ausentes, vagos o incoherentes
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D03]
+
+- codigo: CUANT-BAS
+  nombre: Cuantificación o medición básica insuficiente
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D08]
+
+- codigo: EST-INCOH
+  nombre: Estructura, índice o numeración incoherentes
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D04]
+
+- codigo: CIERRE-FALTA
+  nombre: Conclusiones o cierre incompletos
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D09]
+
+- codigo: FOR-DEF
+  nombre: Formato, redacción o revisión formal deficientes
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D11]
+
+- codigo: FUE-INSUF
+  nombre: Fuentes insuficientes o mal integradas
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D05]
+
+- codigo: FB-NOAPL
+  nombre: Feedback anterior no aplicado
+  fuente: calibracion#13-taxonomia-de-incidencias
+  dimensiones: [D10]

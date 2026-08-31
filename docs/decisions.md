@@ -753,3 +753,432 @@ constancia de qué se pidió y qué no se ha construido todavía.
 `_lectura_de_consumo`, `PRESUPUESTO_CALIBRACION`, `UMBRALES_DE_ALERTA_PCT`,
 `PROYECCIONES_DE_ANALISIS`, `--presupuesto-usd`) y
 `tests/tools/test_calibrar.py`.
+
+## D-019 · El semáforo pasa a cuatro niveles, y la duda ya no elige el color más severo
+
+**Fecha:** 2026-08-31 · **Estado:** Validada, con un hueco pendiente de que
+el docente lo cierre · **Responsable:** Marcos
+
+El docente dio una regla fronteriza, literal: «Entre ámbar y verde, usar
+verde con alertas cuando todos los mínimos estén cumplidos. Entre rojo y
+ámbar, usar rojo únicamente cuando exista una carencia crítica demostrable.
+La prudencia no significa elegir siempre el color más bajo.» Es lo contrario
+de lo que hacía `_SEMAFORO_POR_PRIORIDAD`: un P2 y un P3 llegaban los dos a
+AMBAR, aunque el propio §7 del calibrador (`calibracion#7-prioridades`)
+describe P3 como algo que «refina, pero no cambia el nivel global» -la
+propia definición de un defecto que conviene atender, no de una mejora que
+haga falta antes de cerrar-.
+
+La mitad ROJO/ÁMBAR de la regla no exigía ningún cambio de código: ROJO solo
+sale de un P1, y P1 ya es, en `criteria/v2026-2027/prioridades.yaml`, lo que
+«bloquea o compromete la fase», verificado además contra
+`evidencia_localizada`. Un P1 fiable ES la carencia crítica demostrable; ahí
+no había una duda que resolver a favor del color más severo. La mitad
+ÁMBAR/VERDE sí la exigía: hacía falta un nivel intermedio que no existía,
+VERDE_CON_ALERTAS, para los casos con algún P3 fiable pero ningún P1 ni P2.
+
+**El nombre ya estaba en la prosa, pero no como nivel formal.** El §12.1 del
+Documento Maestro y el §9 del calibrador (`maestro#12-errores-y-semaforo`,
+`calibracion#9-semaforo`) siguen enumerando solo VERDE, ÁMBAR, ROJO y GRIS.
+Pero "verde con alertas" aparece, aplicado al caso P05, en el banco de casos
+del §6 del calibrador (`calibracion#6-banco-de-casos`): «Transición de moda
+al modelo D2C [...] Verde con alertas: recomendar cierre general, objetivos
+numéricos de KPIs [...]». Y el propio banco ya trataba varios casos como
+fronterizos entre dos colores -P02 «Amarillo / puerta formal», P06 «Amarillo
+/ verde», P08 «Verde / amarillo»-, resueltos siempre hacia el más severo
+(`docs/calibracion/casos.example.yaml` lo dice explícitamente: «se ha
+elegido el más prudente de los dos»). Ese «siempre el más prudente» es
+exactamente la prudencia-como-severidad que esta regla fronteriza pide dejar
+de aplicar por defecto.
+
+R1 exige que ningún criterio exista sin `fuente` a una sección real de
+`docs/maestro/`. `criteria/v2026-2027/semaforo.yaml` registra
+VERDE_CON_ALERTAS con `fuente: calibracion#6-banco-de-casos` -el ancla real
+donde el término aparece- y dos campos que dicen, sin adornarlo, que es un
+origen parcial: la palabra está en la prosa normativa, pero no como nivel
+formal de la escala del §12.1 ni del §9. **Esto queda pendiente de que el
+docente decida** si formaliza VERDE_CON_ALERTAS en el Documento Maestro -lo
+que exigiría editar `docs/maestro/01-documento-maestro.md` y
+`docs/maestro/04-calibracion.md`, algo que esta tarea no hace porque el
+docente pidió expresamente no rehacer el Maestro- o si prefiere que el nivel
+siga viviendo solo en la calibración.
+
+`backend/salidas/informe.py` cambia en consecuencia:
+`_SEMAFORO_POR_PRIORIDAD["P3"]` pasa de `"AMBAR"` a `"VERDE_CON_ALERTAS"`,
+`CODIGOS_SEMAFORO` y `SEVERIDAD_SEMAFORO` ganan el quinto código
+(`GRIS: -1, VERDE: 0, VERDE_CON_ALERTAS: 1, AMBAR: 2, ROJO: 3`), y se añade
+`color_sostenido_por_prioridades` -mismo mapeo que `semaforo_por_
+valoraciones`, sin su rama GRIS, para uso de D-020-. `revisar()`
+(`backend/api/analisis.py`) y `Revision.tsx` no necesitaron ningún cambio de
+lógica: los dos ya comparaban por `SEVERIDAD_SEMAFORO`/`CODIGOS_SEMAFORO`
+como constantes genéricas, no como una enumeración de tres colores escrita a
+mano. El quinto valor también se añade al `enum semaforo` de Postgres
+(`supabase/migrations/20260831093000_semaforo_verde_con_alertas.sql`); esa
+migración la aplica el docente desde el panel, no este cambio.
+
+Se ha comprobado rompiendo la tabla a propósito -devolviendo `"AMBAR"` para
+P3 otra vez- y viendo caer `test_p3_sin_p1_ni_p2_dice_verde_con_alertas` y
+`test_semaforo_por_valoraciones_distingue_p2_de_p3` en
+`tests/salidas/test_informe.py`.
+
+**Arrastra:** `criteria/v2026-2027/semaforo.yaml`,
+`backend/salidas/informe.py` (`_SEMAFORO_POR_PRIORIDAD`,
+`_RECOMENDACION_POR_OMISION`, `CODIGOS_SEMAFORO`, `SEVERIDAD_SEMAFORO`,
+`color_sostenido_por_prioridades`), `frontend/src/lib/tipos.ts`
+(`CODIGOS_SEMAFORO`), `frontend/src/paginas/Revision.tsx`
+(`SEVERIDAD_SEMAFORO`, `colorMinimo`),
+`supabase/migrations/20260831093000_semaforo_verde_con_alertas.sql`,
+`docs/changes/2026-08-31-semaforo-de-cuatro-niveles-y-coherencia-del-borrador.md`.
+
+## D-020 · El borrador se rechaza si el semáforo dice más de lo que sostienen las acciones que va a pedir
+
+**Fecha:** 2026-08-31 · **Estado:** Validada · **Responsable:** Marcos
+
+Objeción del docente sobre un caso real: un borrador de ejemplo para P07
+-ROJO- le decía al alumno que mostraba «un avance sólido», que estaba «en
+fase de afinado» y que bastaban «cuatro retoques». Pidió un validador que
+compruebe, antes de liberar el borrador, que apertura, prioridades, cierre y
+semáforo cuentan la misma historia.
+
+Detectar «esto suena a retoques menores» en `apertura` o `cierre` exigiría
+un catálogo de frases, y este proyecto ya tiene un precedente de que eso
+falla: la detección de afirmaciones de autoría por palabra clave, que se
+convirtió en una lista que perseguir sin fin y que un modelo esquiva con un
+sinónimo cualquiera. No se repite ese patrón aquí.
+
+En su lugar, la garantía se mueve a una relación estructural que sí se puede
+comprobar contando, no leyendo: qué prioridad sostiene el color propuesto,
+frente a qué prioridad sostienen -por sí solas- las observaciones que de
+verdad van a convertirse en `acciones` del borrador. `Devolucion.acciones`
+es, por construcción (`componer`), como mucho las mismas `elegidas` que ya
+pasaron `seleccionar_prioridades`: si el color dice ROJO pero ninguna de las
+`elegidas` es P1 -la única forma en que `semaforo_por_valoraciones` puede
+devolver ROJO-, el borrador va a pedirle al alumno algo que no explica por
+qué el proyecto está en rojo, y eso es la misma incoherencia que describió
+el docente, solo que verificable sin abrir el texto.
+
+`_semaforo_y_acciones_incoherentes` (`backend/salidas/borrador.py`) hace
+justo esa comparación, con `SEVERIDAD_SEMAFORO` de D-019, y `componer` la
+aplica **antes** de llamar al motor -no depende de lo que redacte, y evita
+gastar una llamada real cuando el dato ya es incoherente-. `seleccionar_
+prioridades` ordena por severidad primero -P1 antes que P2, P2 antes que
+P3-, así que la prioridad que decide el color siempre cae en los primeros
+puestos, y el límite de la economía pedagógica solo recorta la cola: en el
+uso normal, esta comprobación casi nunca dispara. Es una red de seguridad
+para cuando esa garantía se rompe por otra vía -`prioridades.yaml` con
+`llega_al_alumno: nunca` en la prioridad que sostiene el color, o un cambio
+futuro en `seleccionar_prioridades` que deje de ordenar por severidad-, no
+una que se espere ver saltar cada día. (Se descartó, al escribir la prueba,
+la mutación más obvia -bajar `economia_pedagogica.prioridades_maximas` a
+0-: `_maximo`, en `seleccion.py`, lee ese valor con `... or
+_MAXIMO_POR_OMISION`, y en Python `0 or 4` da `4`; un 0 explícito no baja el
+límite, vuelve al valor por omisión.) Mismo patrón que
+`_con_evidencia_localizada`, que vuelve a filtrar en la frontera hacia el
+alumno «por si acaso»: la garantía real vive en dos sitios porque no cuesta
+nada tenerla en los dos.
+
+**Qué pasa cuando falla, y por qué se decide así.** Se levanta
+`BorradorNoValido`, exactamente la misma excepción que ya usa
+`_viola_una_regla_dura`. No hay un camino especial para esta regla: el
+mismo `except (ErrorDelProveedor, BorradorNoValido)` en `analizar_entrega`
+(`backend/servicios/analisis_de_entrega.py`) ya revierte la entrega a
+`ANALIZADO` con el informe guardado -el análisis no se pierde, el semáforo
+propuesto sigue siendo la prueba de auditoría de D-016- y envuelve el fallo
+en `InformeSinBorrador`, que la API traduce a un aviso legible: el informe
+es válido y usable, el borrador no se generó, hay que escribirlo a mano.
+Tratar esta regla de otra forma -devolver un borrador recortado, o solo un
+aviso sin bloquear- rompería la misma garantía que ya sostiene el resto del
+módulo: «se propone y se detiene» no admite una excepción para el único
+caso en que el propio dato de severidad no cuadra con lo que se le va a
+pedir al alumno.
+
+Se le dice también al motor, en `instruccion_de_devolucion`, qué color se ha
+calculado y su lectura `calibrado` -tal cual la declara `semaforo.yaml`, sin
+inventar un texto nuevo-, para que redacte sobre esa severidad en vez de
+inferirla solo de cuántas fortalezas o acciones ve. Esto no es una segunda
+comprobación: es una instrucción, y como cualquier instrucción de este
+módulo, se puede desobedecer. No se ha añadido ningún filtro posterior sobre
+el tono de `apertura` o `cierre`: sería el mismo catálogo de frases que se
+evitó arriba. Queda como límite conocido, no como omisión: el docente sigue
+siendo quien revisa el borrador antes de enviarlo (§13), y esta tarea reduce
+el riesgo de que le llegue una contradicción evidente sin pretender
+eliminarlo del todo.
+
+Se ha comprobado rompiendo la comprobación a propósito -marcando P1 con
+`llega_al_alumno: nunca` en una copia de `prioridades.yaml`, para que un P1
+fiable deje de estar en `elegidas` sin dejar de sostener un ROJO- y viendo
+caer `test_un_p1_excluido_del_alumno_rechaza_un_borrador_rojo` en
+`tests/salidas/test_borrador.py`; y también invirtiendo el operador de la
+comparación, viendo caer el resto de la batería de ese fichero que sigue
+esperando un borrador válido.
+
+**Arrastra:** `backend/salidas/borrador.py`
+(`_semaforo_y_acciones_incoherentes`, `_calibrado_por_color`,
+`instruccion_de_devolucion`, `componer`) y `tests/salidas/test_borrador.py`.
+
+## D-021 · La categoría de una incidencia sale de la dimensión ya verificada, nunca del motor
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, a la espera de que el
+docente la valide · **Responsable:** Agente
+
+El docente pidió sustituir la medida de cobertura del §11.1 -búsqueda
+literal de frases del banco de casos sobre las observaciones del
+informe, que en la calibración real del 2026-08-30 localizó 2 de 26 y «no
+significa nada»- por una comparación mediante una taxonomía estable de
+diez categorías de incidencia (§13 del calibrador). Quedaba una decisión
+abierta que el propio encargo señalaba como la importante: de dónde sale
+la categoría de cada observación del sistema.
+
+Se decidió que sale de la **dimensión** que ya trae la valoración
+verificada (`ValoracionVerificada.dimension`, una de las D01-D12 que
+valida el esquema estricto del proveedor en
+`backend/analisis/contrato.py`), nunca de una etiqueta que el motor
+elija y devuelva. Dos motivos, no uno:
+
+1. Pedírsela al motor sería una afirmación más del motor sin manera de
+   comprobarla -justo el tipo de dato que este sistema entero se niega a
+   dar por bueno sin evidencia (§13 del Maestro, y toda
+   `backend/analisis/verificacion.py`)-.
+2. La categoría se usa para **medir al motor** en la calibración. Si el
+   motor eligiera también su propia categoría, la medida se apoyaría en
+   la misma fuente que intenta auditar: un motor sistemáticamente mal
+   calibrado en qué es, por ejemplo, una «aplicación insuficiente» se
+   autoconfirmaría sin que nada lo contradijera. Una dimensión ya
+   verificada, en cambio, es un dato auditable en un fichero
+   (`criteria/v2026-2027/taxonomia-incidencias.yaml`) que el docente puede
+   corregir sin depender de una decisión nueva del motor en cada llamada.
+
+**El precio, no escondido.** Una dimensión no siempre implica una única
+categoría: D07 (Desarrollo aplicado) puede ser DEV-INSUF, TEO-EXCESO o
+APL-FALTA, y el sistema no elige por el docente cuál de las tres es. Por
+eso `categorias_de_dimension` (`backend/analisis/taxonomia.py`) devuelve
+una lista, y la comparación de `tools/calibrar.py::evaluar` acepta
+cualquiera de las categorías posibles de la dimensión, no una única
+calculada -«el sistema detectó A o B o C» es una medida más gruesa que
+«el sistema detectó exactamente A», y así se dice donde se usa-. Cuatro
+dimensiones (D01, D02, D06, D12) no tienen ninguna categoría en las diez
+del docente: no se fuerza ninguna, queda declarado con una lista vacía.
+
+**Coincide cuando la categoría, la severidad y la evidencia coinciden.**
+El criterio del docente -«la misma categoría con una severidad
+equivalente y evidencias compatibles»- se implementa exigiendo las tres
+cosas a la vez: `esperada.codigo in codigos_posibles`, `esperada.
+severidad == prioridad` (P1-P4, la misma escala que ya usa el sistema; se
+lee «equivalente» como «igual», la lectura más literal, no se inventa una
+tabla de tolerancias) y `evidencia_localizada`. Que la evidencia tenga
+que estar localizada liga esta comparación con D-020, más abajo.
+
+**Arrastra:** `docs/maestro/04-calibracion.md` (§13),
+`criteria/v2026-2027/taxonomia-incidencias.yaml`,
+`backend/analisis/taxonomia.py`, `tools/calibrar.py` (`IncidenciaEsperada`,
+`mapa_de_categorias`, `_incidencias_del_informe`, `evaluar`),
+`docs/calibracion/casos.example.yaml`,
+`docs/changes/2026-08-31-taxonomia-de-incidencias.md`,
+`tests/analisis/test_taxonomia.py`,
+`tests/tools/test_calibrar_taxonomia.py`.
+
+## D-022 · Una afirmación de ausencia recibe un reparo distinto de una cita inventada; el apartado de una cita no se verifica
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, a la espera de que el
+docente la valide · **Responsable:** Agente
+
+El docente pidió un paso más en la verificación de evidencias: comprobar
+no solo que una cita existe, sino que sostiene la afirmación y no está
+sacada de contexto, con tres puntos concretos. Dos se implementan de
+formas muy distintas, y uno se decide no implementar; los tres se
+explican aquí juntos porque comparten el mismo límite de fondo -lo que
+este sistema puede comprobar con código, sin fingir comprensión del
+lenguaje que no tiene-.
+
+**1. «Una afirmación de ausencia debe comprobarse en todo el apartado o
+en todo el documento, no mediante una única cita.»** El motor a veces no
+cita nada: escribe, dentro del hueco de la cita, que algo no aparece
+-«No se localizan referencias a la incorporación de feedback o evolución
+entre versiones»-, y esa frase no tiene ningún tramo real que
+`recortar_cita` pueda rescatar. Antes de este cambio recibía el mismo
+reparo genérico (`evidencia_localizable`) que una cita inventada del
+todo, y el docente no podía distinguir un dato falso de una observación
+que el sistema, simplemente, no sabe comprobar por sí solo.
+
+`es_afirmacion_de_ausencia` (`backend/analisis/verificacion.py`)
+reconoce, por una lista de marcadores («no se localiza», «no consta»,
+«ausencia de»...), cuándo una cita que no se ha podido localizar
+describe una ausencia en vez de citar algo. Cuando la reconoce, el reparo
+pasa a ser `afirmacion_de_ausencia`, con un texto que dice claramente que
+no es necesariamente una cita inventada y que la comprobación de fondo
+-buscar en todo el apartado o el documento- queda para el docente. **Esto
+no verifica la ausencia.** No busca en el documento si el concepto
+aparece con otras palabras: extraer de la frase del motor qué concepto
+afirma ausente y buscarlo con tolerancia a sinónimos y paráfrasis es un
+problema de comprensión del lenguaje, no de coincidencia de cadenas, y
+una heurística de palabras clave fallaría en los dos sentidos -confirmaría
+ausencias que no lo son, contradiría ausencias reales-. `evidencia_
+localizada` sigue en `False` en ambos reparos: lo único que cambia es lo
+que lee el docente en el informe interno, nunca lo que llega al alumno
+(`backend/salidas/borrador.py` sigue filtrando por el mismo campo de
+siempre).
+
+**2. «La evidencia debe justificar la categoría y severidad asignadas.»**
+Se cubre indirectamente, no con un mecanismo nuevo: D-019 exige
+`evidencia_localizada` para que una incidencia cuente como detectada en
+la calibración. Una categoría o severidad sin evidencia localizada no
+llega a compararse como coincidencia.
+
+**3. «La cita debe pertenecer al apartado relevante.»** No se
+implementa, y se dice aquí por qué en vez de aproximarlo. `Evidencia.
+apartado` es un campo de texto libre que declara el propio motor -no se
+deriva de `backend/extraccion/estructura.py`, que localiza el índice por
+páginas de un `pymupdf.Document`, un objeto que ya está cerrado cuando
+`verificar()` recibe solo una cadena de texto (`texto: str`, además ya
+minimizado por `backend.privacidad.minimizacion`, con longitudes que no
+corresponden a las páginas originales)-. Verificarlo de verdad exigiría
+tres piezas que hoy no existen juntas: (a) saber en qué página cae la
+cita dentro de `texto`, cuando ni siquiera `Medidas.texto_plano` conserva
+límites de página fiables (`"\n".join(pagina.get_text() ...)` no permite
+recuperar la frontera sin ambigüedad); (b) casar el nombre libre que
+escribe el motor en `apartado` con una entrada real del índice
+-`estructura.py` ya documenta sus propias limitaciones de esa
+heurística-; y (c) decidir a partir de ahí un rango de páginas del
+apartado, con la misma incertidumbre que ya reconoce `estructura.py` para
+sus propios límites (anexos a media página, continuaciones de índice mal
+formadas). Encadenar tres heurísticas inciertas no produce una
+comprobación fiable, produce una que falla una fracción relevante de las
+veces -y una comprobación así es peor que no tenerla: el docente dejaría
+de fiarse también de las que sí funcionan-. Nada en la interfaz afirma
+hoy que `apartado` esté verificado -se muestra tal cual el motor lo
+escribe, en `frontend/src/componentes/Observacion.tsx`-, así que no
+implementarlo no introduce ninguna afirmación nueva que no se pueda
+sostener; simplemente deja sin construir una comprobación que, si se
+construyera mal, sí la introduciría.
+
+**Efecto colateral, no una decisión de esta tarea.** Al escribir la
+prosa del §13 se descubrió que `tools/gobernanza/sincronia.py` no
+reconocía anclas `calibracion#...` como límite de sección
+(`PATRON_CUALQUIER_ANCLA` solo incluía maestro/indice/guia): el «cuerpo»
+de cualquier sección citada del documento de calibración se extendía
+siempre hasta el final del fichero. No era un fallo silencioso -R2 nunca
+dejaba pasar un cambio real sin avisar-, pero sí un falso positivo
+permanente: cualquier cambio posterior en el documento invalidaba el
+hash de secciones anteriores sin tocar. Se corrige en el mismo cambio
+porque bloqueaba sellar limpiamente la sección nueva. Ver el comentario
+junto al patrón en `tools/gobernanza/sincronia.py` y las dos pruebas de
+regresión en `tests/gobernanza/test_sincronia.py`.
+
+**Arrastra:** `backend/analisis/verificacion.py`
+(`_MARCADORES_DE_AUSENCIA`, `es_afirmacion_de_ausencia`,
+`_reparo_no_localizada`), `tools/gobernanza/sincronia.py`
+(`PATRON_CUALQUIER_ANCLA`), `tests/analisis/test_verificacion_ausencia.py`,
+`tests/analisis/test_verificacion.py`,
+
+## D-023 · El límite de prioridades se agrupa por causa raíz y varía con el semáforo
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, a la espera de que el
+docente la valide sobre casos reales · **Responsable:** Marcos / colaborador
+técnico
+
+El docente pidió dos ajustes de calibración a partir de un caso real -un
+proyecto de importación textil al que el sistema le pidió indicadores de
+logro, tablas de flujo de caja, ratios financieros y un análisis de
+sensibilidad como si fueran requisitos generales, y al que se le trasladaron
+cuatro observaciones sueltas cuando la causa real eran tres o cuatro
+problemas de fondo-:
+
+1. Que el rigor proporcional a la FP -§2 del calibrador- se aplique también
+   dentro de la instrucción de análisis, no solo en la de redacción del
+   borrador.
+2. Que el límite de prioridades -§2.3 del calibrador- deje de ser un tope
+   fijo de cuatro y pase a depender del estado del trabajo, y que agrupe por
+   la causa que explica la calidad del proyecto, no por hallazgo aislado.
+
+**El primer ajuste era un hueco real, no una ambigüedad.** `no_exigir` y
+`priorizar_siempre` ya existían -o se han añadido, ver más abajo- en
+`criteria/<version>/feedback.yaml`, pero `backend/analisis/instruccion.py`
+nunca los leía: solo `backend/salidas/borrador.py` los usaba, y eso ocurre
+al redactar el texto para el alumno, no al analizar el documento. El motor
+podía -y, según el caso real, lo hacía- generar hallazgos P1/P2 pidiendo
+herramientas financieras avanzadas como requisito general, y ese hallazgo ya
+había pasado el filtro de evidencia antes de que `borrador.py` tuviera
+oportunidad de no trasladarlo. `construir()` ahora lee los dos bloques y se
+lo dice explícitamente al motor, con el ejemplo concreto -indicadores de
+logro, flujo de caja, ratios, sensibilidad- para que no dependa de que el
+modelo generalice bien una frase abstracta sobre «rigor proporcional».
+
+**El segundo ajuste es el que exige justificar una elección de diseño.** El
+docente pidió agrupar por «la causa que más explica la calidad global», no
+por hallazgo aislado, y dio dos caminos posibles: pedirle al motor que
+agrupe -texto libre, que habría que verificar otra vez, igual que una cita-,
+o derivarlo de lo que el sistema ya sabe. Se elige el segundo camino, con
+una pieza nueva: `agrupacion_de_causa` en `feedback.yaml`, un mapa fijo de
+las doce dimensiones del §8 en seis grupos -Planteamiento y encaje;
+Estructura y presentación; Base documental y método; Aplicación y
+resultados; Cierre y evolución; Autoría y defendibilidad-, con la misma
+disciplina de fuente que cualquier otro criterio (`fuente:
+calibracion#2-rigor-proporcional`, `fuente_adicional: maestro#8-dimensiones`).
+`backend/salidas/seleccion.py` colapsa cada grupo a su hallazgo de mayor
+prioridad antes de aplicar el límite; el resto de ese mismo grupo se
+descarta -y sigue en `descartadas`, íntegro, no un recuento- salvo que
+sobre hueco tras cubrir todas las causas distintas, en cuyo caso sí se
+rellena con él.
+
+**Qué se pierde con este camino, y por qué se acepta.** La agrupación fija
+por dimensión es más tosca que el juicio caso por caso del docente: su
+propio ejemplo -P07, ahora en el §6 del calibrador- reparte una misma causa
+real («reducir teoría general y reforzar aplicación y criterio propio»)
+entre D05 y D07, que este mapa no fusiona porque quedan en grupos distintos
+("Base documental y método" y "Aplicación y resultados"). Un mapa fijo no
+puede seguir esa clase de relación contextual, específica de cada proyecto,
+sin dejar de ser verificable: fusionar D05 con D07 solo en ese caso exigiría
+un juicio semántico sobre el contenido del trabajo, que es exactamente lo
+que el §13 y la cultura de este repositorio reservan a una cita localizable,
+no a una inferencia. Lo que el mapa fijo sí evita, con seguridad, es el caso
+más frecuente y más dañino del ejemplo real: tres observaciones sobre
+estructura, índice y numeración -todas D04 o D11- contando como tres
+prioridades en vez de una. Se acepta la pérdida de precisión en los casos
+límite a cambio de una regla que no hay que verificar caso por caso, y que
+el docente puede corregir él mismo editando `agrupacion_de_causa` sin tocar
+código.
+
+**El número máximo ahora sale del semáforo, no de una constante.** El
+docente pidió «dos o tres en un trabajo sólido, tres o cuatro en uno
+débil», no un número fijo. La señal de qué tan sólido o débil es un trabajo
+ya existía: `semaforo_por_valoraciones` -movida de `backend/salidas/informe.py`
+a `backend/analisis/verificacion.py` para que `seleccion.py` pudiera
+importarla sin crear un ciclo- calcula el mismo color que
+`Informe.semaforo_propuesto` va a mostrar. AMBAR («tiene base, pero necesita
+prioridades concretas») se lee como el trabajo sólido del §2.3 y ahora tope
+tres; ROJO («carencia crítica o bloqueo académico») se lee como el trabajo
+débil y tope cuatro. VERDE y GRIS no llevan una entrada en
+`prioridades_maximas_por_semaforo` porque los dos implican que no hay
+ninguna valoración P1-P3 fiable -la lista de candidatas ya está vacía antes
+de que el límite se aplique-, así que no hay caso real que obligue a fijar
+un número ahí.
+
+**Un efecto secundario, descubierto al resellar R2 tras este cambio.**
+`tools/gobernanza/sincronia.py` buscaba «la siguiente ancla» con un patrón
+que no incluía el prefijo `calibracion`, así que dentro de
+`04-calibracion.md` -que solo lleva anclas de ese tipo- el cuerpo de cada
+sección se extendía hasta el final del fichero en vez de hasta la sección
+siguiente. El síntoma no era que R2 dejara pasar un cambio real -al
+contrario, avisaba de más: cualquier edición en cualquier punto posterior
+del documento hacía cambiar el hash de todas las secciones de calibración
+anteriores a ella, aunque su propio texto no se hubiera tocado una letra-,
+pero eso también significa que ningún test lo notó hasta que este cambio
+tocó el §2 y el sello del §4 -sin relación con este cambio- saltó con él.
+Se corrige el patrón y se añade
+`test_hash_no_se_extiende_a_la_siguiente_ancla_calibracion` en
+`tests/gobernanza/test_sincronia.py`, con dos anclas `calibracion#...`
+seguidas, que antes no existía en ningún fixture.
+
+**Arrastra:** `docs/maestro/04-calibracion.md` (§2.2-2.5 nuevos, fila P07 del
+§6), `criteria/v2026-2027/feedback.yaml` (`no_exigir` ampliado,
+`priorizar_siempre` y `agrupacion_de_causa` nuevos, `economia_pedagogica`
+con `prioridades_maximas_por_semaforo`), `backend/analisis/instruccion.py`
+(lee `priorizar_siempre` y `no_exigir`), `backend/analisis/verificacion.py`
+(`semaforo_por_valoraciones`, `CODIGOS_SEMAFORO`, `SEVERIDAD_SEMAFORO`,
+movidas desde `informe.py`), `backend/salidas/informe.py` (reexporta los
+tres nombres anteriores), `backend/salidas/seleccion.py` (agrupación por
+causa y límite variable), `tools/gobernanza/sincronia.py`
+(`PATRON_CUALQUIER_ANCLA` incluye `calibracion`), y los tests de
+`tests/analisis/test_instruccion.py`, `tests/salidas/test_seleccion.py`,
+`tests/salidas/test_informe.py`, `tests/salidas/test_borrador.py` y
+`tests/gobernanza/test_sincronia.py`.

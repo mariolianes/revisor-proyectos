@@ -61,10 +61,43 @@ El sistema debe detectar errores y carencias con rigor, pero no convertir la cor
 - Una lista extensa de observaciones técnicas que el alumno no pueda aplicar de forma realista.
 - Perfección formal o bibliográfica propia de un trabajo universitario de posgrado.
 - Afirmaciones categóricas sobre autoría o uso de inteligencia artificial basadas únicamente en el estilo.
+- Herramientas de análisis financiero avanzado como exigencia general -indicadores de logro, tablas de flujo de caja, ratios como el ROI o el margen neto, o un análisis de sensibilidad de precios, existencias o costes-, salvo que el propio proyecto las anuncie como su objeto central. Detectar que un proyecto podría enriquecerse con ellas no las convierte en un requisito máximo ni en una prioridad automática para aprobar.
 
 ### 2.3. Regla de economía pedagógica
 
 Cada corrección debe seleccionar un máximo orientativo de tres o cuatro prioridades reales. Si existen diez errores, el sistema no debe trasladar automáticamente los diez: debe identificar cuáles desbloquean el desarrollo, cuáles afectan al cierre y cuáles pueden quedar como observaciones secundarias internas.
+
+El límite no es un tope fijo: en un trabajo sólido suelen bastar dos o tres prioridades; en un trabajo con carencias más profundas, hasta tres o cuatro, bien agrupadas. No se trata de escoger cuatro errores aislados, sino las causas que más explican la calidad global del trabajo: varias observaciones repartidas entre dimensiones distintas -por ejemplo, sobre estructura, índice y numeración- pueden ser la misma causa vista más de una vez, y deben tratarse como una sola prioridad, no como varias.
+
+### 2.4. Qué debe priorizarse siempre
+
+Detectar una debilidad no obliga a convertirla en un requisito máximo. Antes que cualquier carencia puntual, el sistema debe priorizar:
+
+- Objetivos claros y coherentes.
+- Desarrollo real.
+- Aplicación práctica.
+- Decisiones justificadas.
+- Datos básicos razonables.
+- Estructura comprensible.
+- Conclusiones relacionadas con el trabajo.
+- Cumplimiento del formato mínimo.
+
+Estos ocho aspectos son la base de la corrección proporcional al nivel de FP. Una debilidad que no toque ninguno de ellos puede enriquecer un proyecto excelente, pero no debe convertirse en una exigencia general ni en una prioridad automática para aprobar.
+
+### 2.5. Agrupación por causa raíz
+
+Las doce dimensiones del §8 no son compartimentos independientes: varias observaciones repartidas entre dimensiones distintas pueden responder a la misma causa. Para elegir las prioridades del alumno por lo que explican y no por la dimensión en la que se registraron, se agrupan así:
+
+| Grupo | Dimensiones | Qué cubre |
+|---|---|---|
+| Planteamiento y encaje | D01, D02, D03 | Ciclo, tema, necesidad, justificación y objetivos |
+| Estructura y presentación | D04, D11 | Orden, índice, numeración, redacción y formato |
+| Base documental y método | D05, D06 | Fuentes y procedimiento |
+| Aplicación y resultados | D07, D08 | Desarrollo aplicado, cifras y resultados |
+| Cierre y evolución | D09, D10 | Conclusiones y progreso entre entregas |
+| Autoría y defendibilidad | D12 | Comprensión y decisiones propias |
+
+De cada grupo con más de una observación se traslada la de mayor prioridad; el resto queda en el informe interno como la misma causa vista más de una vez, no como una prioridad adicional para el alumno.
 
 <!-- ancla: calibracion#3-muestra-historica -->
 ## 3. Muestra histórica analizada
@@ -135,7 +168,7 @@ Los diagnósticos siguientes son referencias de comportamiento, no calificacione
 | P04 | Exportación de vino de nicho | Amarillo | No dejarse llevar por la presentación. Señalar ausencia de fuentes y confusión entre ingresos y costes. Mantener un feedback breve y orientado a justificar la viabilidad. |
 | P05 | Transición de moda al modelo D2C | Verde con alertas | Reconocer un desarrollo aplicado y sólido. Recomendar cierre general, objetivos numéricos de KPIs y conexión entre inversión y retorno sin exigir una auditoría financiera. |
 | P06 | Marca de ropa identitaria | Amarillo / verde | Valorar profundidad y medición. Alertar sobre lenguaje poco neutral y contradicción entre comunicación polémica y contingencia. Juzgar coherencia y ética, no la ideología. |
-| P07 | Importación textil desde China | Rojo | Detectar errores técnicos centrales, cálculos frágiles, redacción irregular y cierre insuficiente. Priorizar tres correcciones estructurales; evitar una lista exhaustiva. |
+| P07 | Importación textil desde China | Rojo | Detectar errores técnicos centrales, cálculos frágiles, redacción irregular y cierre insuficiente. Agrupar las prioridades por causa, no por hallazgo aislado: reorganizar estructura y numeración; reducir teoría general y reforzar aplicación y criterio propio; formular objetivos claros y cerrar con conclusiones globales; revisar coherencia de cifras, redacción y presentación. No exigir indicadores de logro, flujo de caja, ratios financieros ni análisis de sensibilidad como requisito general. |
 | P08 | Exportación de AOVE a EAU | Verde / amarillo | Reconocer fuentes, estructura y aplicación. Pedir verificación regulatoria y revisar un cálculo de margen representativo. No exigir demostrar una rentabilidad real absoluta. |
 | P09 | Gimnasio con cafetería en Zúrich | Amarillo | Reconocer coherencia del plan. Señalar una inconsistencia entre beneficio, recuperación y punto de equilibrio, además de costes incompletos. Feedback centrado en prudencia financiera. |
 
@@ -251,6 +284,34 @@ Cuando lleguen nuevos casos, se incorporarán al banco sin modificar el Document
 > **CONCLUSIÓN OPERATIVA**
 >
 > La muestra histórica confirma que el sistema actual está bien orientado. El calibrador debe preservar el rigor, la proporcionalidad, la economía pedagógica y el control docente. Su misión es ayudar a que el alumnado avance y que el profesor corrija mejor y con menos carga, no perseguir una perfección impropia del nivel y del contexto.
+
+<!-- ancla: calibracion#13-taxonomia-de-incidencias -->
+## 13. Taxonomía de incidencias
+
+Aportación del docente, 2026-08-31, sobre cómo debe medirse si el sistema detecta bien un problema:
+
+> Hoy el arnés de calibración mide si el sistema «detecta el problema principal» buscando literalmente las frases con las que el profesor describió cada caso. El resultado es 2 de 26, y no significa nada: puede que el sistema vea los problemas y los llame de otro modo. Que el sistema use palabras distintas a las del banco no es un problema. La métrica basada en coincidencia literal de expresiones no permite saber si ambos diagnósticos son equivalentes. La comparación debería realizarse mediante una taxonomía estable de incidencias.
+
+La taxonomía:
+
+| Código | Categoría |
+|---|---|
+| DEV-INSUF | Desarrollo real insuficiente |
+| TEO-EXCESO | Exceso de teoría o contenido descriptivo |
+| APL-FALTA | Aplicación práctica insuficiente |
+| OBJ-DEF | Objetivos ausentes, vagos o incoherentes |
+| CUANT-BAS | Cuantificación o medición básica insuficiente |
+| EST-INCOH | Estructura, índice o numeración incoherentes |
+| CIERRE-FALTA | Conclusiones o cierre incompletos |
+| FOR-DEF | Formato, redacción o revisión formal deficientes |
+| FUE-INSUF | Fuentes insuficientes o mal integradas |
+| FB-NOAPL | Feedback anterior no aplicado |
+
+Y el criterio de equivalencia entre lo que dice el sistema y lo que decidió el docente:
+
+> El sistema y la referencia humana coinciden cuando detectan la misma categoría con una severidad equivalente y evidencias compatibles, aunque la redacción sea diferente.
+
+Esta taxonomía sustituye, como mecanismo de comparación del indicador «cobertura» del §11.1, a la búsqueda literal de frases sobre las observaciones del informe. No sustituye la taxonomía por otro juicio automático de si el sistema «acertó»: sigue siendo el docente quien decide si una categoría y una severidad equivalentes son, además, un diagnóstico correcto.
 
 <!-- ancla: calibracion#anexo-a-ficha -->
 ## Anexo A. Ficha de calibración por caso

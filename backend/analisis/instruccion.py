@@ -93,10 +93,18 @@ def construir(
         "Profesional. Detectar no es perseguir: no conviertas la corrección en "
         "una auditoría empresarial ni en una tesis. No exijas viabilidad "
         "empresarial absoluta ni verifiques cada cifra externa; acepta "
-        "estimaciones razonables si están identificadas y explicadas.",
-        "",
-        "Valora estas dimensiones, y solo estas:",
+        "estimaciones razonables si están identificadas y explicadas. Detectar "
+        "una debilidad no obliga a convertirla en un requisito máximo: puede "
+        "enriquecer un proyecto excelente sin ser una exigencia general ni una "
+        "prioridad automática para aprobar.",
     ]
+
+    priorizar = (feedback.get("priorizar_siempre") or {}).get("aspectos")
+    if priorizar:
+        partes += ["", "Antes que cualquier carencia puntual, prioriza siempre:"]
+        partes += [f"- {aspecto}" for aspecto in priorizar]
+
+    partes += ["", "Valora estas dimensiones, y solo estas:"]
     for d in activas:
         linea = f"- {d['codigo']}: {d.get('nombre', '')}"
         if d.get("observa"):
@@ -114,8 +122,17 @@ def construir(
             "",
             f"Si encuentras muchos problemas, identifica cuáles desbloquean el "
             f"desarrollo y cuáles pueden esperar. El profesor solo trasladará "
-            f"al alumno {economia} como mucho.",
+            f"al alumno {economia} como mucho, y agrupadas por la causa que "
+            f"explican -si varias observaciones repartidas entre dimensiones "
+            f"distintas son en realidad la misma causa, cuentan como una-, "
+            f"no como hallazgos aislados.",
         ]
+
+    no_exigir = (feedback.get("no_exigir") or {}).get("limites")
+    if no_exigir:
+        partes += ["", "No exijas lo siguiente como requisito general ni como "
+                   "prioridad automática para aprobar:"]
+        partes += [f"- {limite}" for limite in no_exigir]
 
     partes += ["", _PROHIBICIONES]
     return "\n".join(partes)

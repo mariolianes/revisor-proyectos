@@ -42,9 +42,45 @@ def test_un_p4_no_llega_nunca(criterios_de_analisis: Path) -> None:
     assert seleccion.elegidas == []
 
 
-def test_como_mucho_cuatro(criterios_de_analisis: Path) -> None:
-    """Economía pedagógica: si hay diez errores, no se trasladan los diez."""
-    muchas = [_v(f"D0{i}", "P2") for i in range(1, 8)]
+def test_el_limite_en_ambar_es_tres(criterios_de_analisis: Path) -> None:
+    """Economía pedagógica: un trabajo sin ningún P1 -AMBAR, "tiene base
+    pero necesita prioridades concretas"- no traslada más de tres, aunque
+    haya cinco causas distintas con evidencia."""
+    cinco_causas = [
+        _v("D01", "P2"), _v("D04", "P2"), _v("D05", "P2"),
+        _v("D07", "P2"), _v("D12", "P2"),
+    ]
+
+    seleccion = seleccionar_prioridades(criterios_de_analisis, "v2026-2027",
+                                        _analisis(cinco_causas))
+
+    assert len(seleccion.elegidas) == 3
+
+
+def test_el_limite_en_rojo_es_cuatro(criterios_de_analisis: Path) -> None:
+    """Un trabajo con un P1 -ROJO, carencia crítica- sube el límite a
+    cuatro, siempre que haya cuatro causas distintas para llenarlo."""
+    cinco_causas_con_un_critico = [
+        _v("D01", "P1"), _v("D04", "P2"), _v("D05", "P2"),
+        _v("D07", "P2"), _v("D12", "P2"),
+    ]
+
+    seleccion = seleccionar_prioridades(
+        criterios_de_analisis, "v2026-2027", _analisis(cinco_causas_con_un_critico),
+    )
+
+    assert len(seleccion.elegidas) == 4
+
+
+def test_diez_errores_de_la_misma_causa_no_se_trasladan_los_diez(
+    criterios_de_analisis: Path,
+) -> None:
+    """Si hay diez errores, no se trasladan los diez: se identifican los que
+    desbloquean el desarrollo, agrupados por causa. Siete P1 repartidos en
+    solo cuatro causas -D01-D03 son "Planteamiento y encaje"; D05-D06,
+    "Base documental y método"- no llenan más de cuatro huecos con causas
+    distintas, así que caben todos los que hay sitio para agrupar."""
+    muchas = [_v(f"D0{i}", "P1") for i in range(1, 8)]
 
     seleccion = seleccionar_prioridades(criterios_de_analisis, "v2026-2027",
                                         _analisis(muchas))
@@ -99,21 +135,53 @@ def test_una_valoracion_sin_prioridad_no_es_una_accion(
 
 
 def test_el_limite_sale_del_fichero_de_criterios(criterios_de_analisis: Path) -> None:
-    """Cambiar el criterio cambia el límite, sin tocar código."""
+    """Cambiar el criterio cambia el límite, sin tocar código. Se toca el
+    límite específico de AMBAR -`prioridades_maximas_por_semaforo`-, no el
+    absoluto: es el que de verdad aplica cuando el trabajo no tiene ningún
+    P1, y cambiarlo tiene que bastar sin tocar `prioridades_maximas`."""
+    fichero = criterios_de_analisis / "criteria" / "v2026-2027" / "feedback.yaml"
+    cinco_causas = [
+        _v("D01", "P2"), _v("D04", "P2"), _v("D05", "P2"),
+        _v("D07", "P2"), _v("D12", "P2"),
+    ]
+
+    antes = seleccionar_prioridades(criterios_de_analisis, "v2026-2027",
+                                    _analisis(cinco_causas))
+    assert len(antes.elegidas) == 3
+
+    fichero.write_text(
+        fichero.read_text(encoding="utf-8").replace("AMBAR: 3", "AMBAR: 2"),
+        encoding="utf-8",
+    )
+
+    despues = seleccionar_prioridades(criterios_de_analisis, "v2026-2027",
+                                      _analisis(cinco_causas))
+    assert len(despues.elegidas) == 2
+
+
+def test_sin_el_mapa_por_semaforo_se_usa_el_maximo_absoluto(
+    criterios_de_analisis: Path,
+) -> None:
+    """Si `prioridades_maximas_por_semaforo` no trae el color que llega -o
+    no existe siquiera-, se cae en `prioridades_maximas`: el mismo tope de
+    siempre, no un error ni un límite inventado."""
     fichero = criterios_de_analisis / "criteria" / "v2026-2027" / "feedback.yaml"
     fichero.write_text(
         fichero.read_text(encoding="utf-8").replace(
-            "prioridades_maximas: 4", "prioridades_maximas: 2"
+            "prioridades_maximas: 4", "prioridades_maximas: 1"
+        ).replace(
+            "prioridades_maximas_por_semaforo:\n    AMBAR: 3\n    ROJO: 4",
+            "prioridades_maximas_por_semaforo: {}",
         ),
         encoding="utf-8",
     )
 
     seleccion = seleccionar_prioridades(
         criterios_de_analisis, "v2026-2027",
-        _analisis([_v(f"D0{i}", "P2") for i in range(1, 6)]),
+        _analisis([_v("D01", "P2"), _v("D04", "P2")]),
     )
 
-    assert len(seleccion.elegidas) == 2
+    assert len(seleccion.elegidas) == 1
 
 
 def test_llega_al_alumno_sale_del_fichero_de_prioridades(
@@ -180,13 +248,15 @@ def test_el_exceso_por_el_limite_va_en_descartadas(
     (Task 9) tiene que poder ver que hubo más candidatas de las que llegaron
     a la devolución, y cuáles son -no un recuento, las observaciones mismas-:
     una selección callada haría creer que solo hay cuatro problemas cuando
-    hay siete."""
+    hay siete. De las siete, D01-D03 son la misma causa -"Planteamiento y
+    encaje"- y D05-D06 también -"Base documental y método"-: solo entra la
+    de mayor prioridad de cada una."""
     analisis = _analisis([_v(f"D0{i}", "P1") for i in range(1, 8)])
 
     seleccion = seleccionar_prioridades(criterios_de_analisis, "v2026-2027", analisis)
 
-    assert [v.dimension for v in seleccion.elegidas] == ["D01", "D02", "D03", "D04"]
-    assert [v.dimension for v in seleccion.descartadas] == ["D05", "D06", "D07"]
+    assert [v.dimension for v in seleccion.elegidas] == ["D01", "D04", "D05", "D07"]
+    assert [v.dimension for v in seleccion.descartadas] == ["D02", "D03", "D06"]
     for v in seleccion.descartadas:
         assert v.prioridad == "P1"
         assert v.observacion
@@ -243,3 +313,63 @@ def test_el_desempate_por_dimension_es_estable_ante_el_orden_de_entrada(
 
     assert [v.dimension for v in primer_orden.elegidas] == esperado
     assert [v.dimension for v in segundo_orden.elegidas] == esperado
+
+
+def test_dos_causas_no_llenan_el_hueco_con_una_tercera_inventada(
+    criterios_de_analisis: Path,
+) -> None:
+    """Un trabajo con solo dos causas reales no debe inventarse una tercera
+    para llenar el límite: si solo hay dos, la selección tiene dos, aunque
+    el límite de ese color sea más alto."""
+    seleccion = seleccionar_prioridades(
+        criterios_de_analisis, "v2026-2027",
+        _analisis([_v("D01", "P2"), _v("D04", "P2")]),  # dos causas distintas
+    )
+
+    assert len(seleccion.elegidas) == 2
+
+
+def test_huecos_libres_se_rellenan_con_la_misma_causa_si_de_verdad_caben(
+    criterios_de_analisis: Path,
+) -> None:
+    """Si cubrir todas las causas distintas no llena el límite, los huecos
+    que sobran sí se rellenan con más observaciones de una causa ya
+    representada -el límite es sobre cuántas prioridades le llegan al
+    alumno, no sobre cuántas causas hay-, y el orden final sigue siendo por
+    prioridad, no por en qué pasada entró cada una."""
+    # D01 y D02 son la misma causa (Planteamiento y encaje); D04 es otra
+    # (Estructura y presentación). Con un P1 el color es ROJO y el límite
+    # sube a cuatro, pero solo hay dos causas: la segunda pasada rellena el
+    # hueco que deja la primera con el D02 que se había apartado.
+    seleccion = seleccionar_prioridades(
+        criterios_de_analisis, "v2026-2027",
+        _analisis([_v("D01", "P1"), _v("D02", "P1"), _v("D04", "P2")]),
+    )
+
+    assert [v.dimension for v in seleccion.elegidas] == ["D01", "D02", "D04"]
+    assert [v.prioridad for v in seleccion.elegidas] == ["P1", "P1", "P2"]
+    assert seleccion.descartadas == []
+
+
+def test_sin_agrupacion_de_causa_cada_dimension_es_su_propia_causa(
+    tmp_path: Path,
+) -> None:
+    """Si `agrupacion_de_causa` no está en `feedback.yaml` -o el fichero no
+    existe-, ninguna dimensión se fusiona con otra: es la misma selección
+    de antes de que existiera el agrupado, no un fallo silencioso."""
+    import shutil
+
+    from tests.conftest import RAIZ_DEL_REPOSITORIO
+
+    destino = tmp_path / "criteria" / "v2026-2027"
+    shutil.copytree(RAIZ_DEL_REPOSITORIO / "criteria" / "v2026-2027", destino)
+    feedback = destino / "feedback.yaml"
+    contenido = feedback.read_text(encoding="utf-8")
+    inicio = contenido.index("agrupacion_de_causa:")
+    fin = contenido.index("\npriorizar_siempre:")
+    feedback.write_text(contenido[:inicio] + contenido[fin + 1:], encoding="utf-8")
+
+    siete_p1 = [_v(f"D0{i}", "P1") for i in range(1, 8)]
+    seleccion = seleccionar_prioridades(tmp_path, "v2026-2027", _analisis(siete_p1))
+
+    assert [v.dimension for v in seleccion.elegidas] == ["D01", "D02", "D03", "D04"]

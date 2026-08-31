@@ -226,7 +226,14 @@ def test_el_reparo_de_recorte_deja_ver_la_cita_original_y_la_recortada(
 def test_una_cita_sin_ningun_prefijo_real_se_sigue_descartando(criterios_de_analisis: Path) -> None:
     """El límite del recorte: una observación que describe una ausencia -en
     vez de citar algo que exista- no tiene ningún prefijo que recortar y se
-    descarta exactamente igual que antes de que existiera el recorte."""
+    descarta exactamente igual que antes de que existiera el recorte.
+
+    Desde el 2026-08-31 esto ya no cae en el reparo genérico
+    `evidencia_localizable`: una frase de ausencia como esta tiene su propio
+    reparo, `afirmacion_de_ausencia` (ver
+    `test_verificacion_ausencia.py`). Lo que este test sigue comprobando es
+    el límite del recorte en sí -sin prefijo real, no hay recorte-, no cuál
+    de los dos reparos se deja."""
     v = verificar(
         criterios_de_analisis, "v2026-2027", "E2", TRABAJO,
         _analisis([_val(
@@ -237,7 +244,8 @@ def test_una_cita_sin_ningun_prefijo_real_se_sigue_descartando(criterios_de_anal
 
     assert v.valoraciones[0].evidencia_localizada is False
     assert not any(r.regla == "cita_recortada" for r in v.reparos)
-    assert any(r.regla == "evidencia_localizable" for r in v.reparos)
+    assert any(r.regla == "afirmacion_de_ausencia" for r in v.reparos)
+    assert not any(r.regla == "evidencia_localizable" for r in v.reparos)
 
 
 def test_un_patron_con_prefijo_real_tambien_se_recorta(criterios_de_analisis: Path) -> None:
