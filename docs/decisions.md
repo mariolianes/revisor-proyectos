@@ -1182,3 +1182,72 @@ causa y límite variable), `tools/gobernanza/sincronia.py`
 `tests/analisis/test_instruccion.py`, `tests/salidas/test_seleccion.py`,
 `tests/salidas/test_informe.py`, `tests/salidas/test_borrador.py` y
 `tests/gobernanza/test_sincronia.py`.
+
+## D-024 · La arquitectura de expedientes vive en un YAML, nunca en constantes de Python
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, punto 1 de la orden de
+implantación del docente · **Responsable:** colaborador técnico
+
+El docente entregó un documento de arquitectura aprobado -distinto de los
+cuatro de `docs/maestro/`, y externo a este repositorio- con el árbol de
+carpetas que va a usar en su equipo para recibir, procesar y archivar los
+trabajos de varias comunidades autónomas, y pidió expresamente que «no deba
+interpretarse de nuevo en cada ejecución»: sus reglas estables debían
+traducirse a una configuración estructurada. Se adopta el mismo patrón que
+ya usa `config/precios_openai.yaml` con `backend/analisis/precios.py`:
+`config/estructura_expedientes.yaml` declara los nombres de carpeta, los
+códigos de comunidad, fase y ciclo, y el patrón de código de centro y de ID
+de expediente; `backend/expedientes/estructura.py` solo lee ese fichero y no
+declara ningún nombre por su cuenta.
+
+Esta arquitectura es distinta de la que ya vigilaba `backend/vigilancia/`
+-una única carpeta plana (`REVISOR_CARPETA_ENTREGAS`), con el alumno y la
+fase deducidos del nombre del archivo, §15.2-15.3 del Documento Maestro-.
+Este punto 1 no toca `backend/vigilancia/` ni lo sustituye: crea la base
+-carpetas, códigos, configuración- de una arquitectura nueva y más amplia,
+multi-comunidad y multi-centro, que un punto posterior de la orden de
+implantación tendrá que decidir cómo conecta con lo que ya existe, o si lo
+reemplaza. Queda explícitamente sin resolver aquí.
+
+**Dos guardas nuevas, mismo patrón que ya usan `backend/configuracion.py` y
+`tools/calibrar.py`:** la raíz de esta arquitectura -la carpeta
+`CESUR_2026-2027`- vive fuera del repositorio, apuntada por
+`REVISOR_RAIZ_EXPEDIENTES` y comprobada con la misma `revisar_carpeta` que ya
+protege `REVISOR_CARPETA_ENTREGAS` y `REVISOR_DATOS_LOCALES`; y
+`backend/expedientes/creacion.py` no escribe ninguna carpeta sin haber
+contado antes cuántas va a crear, con un tope duro
+(`LIMITE_DIRECTORIOS_DE_SEGURIDAD`) que ni siquiera una confirmación explícita
+puede saltar, y un umbral más bajo (`LIMITE_LOTE_SIN_CONFIRMAR`) para que
+crear el expediente de muchos alumnos de golpe exija una confirmación
+explícita. Ningún test de este cambio toca una carpeta real del docente:
+todos escriben dentro de `tmp_path`.
+
+**No se inventa lo que el documento no fijó.** El propio documento del
+docente enumera seis cosas que la configuración debe recoger «al menos»:
+rutas y carpetas vigiladas, códigos, extensiones y tamaños admitidos, reglas
+de identificación, política de versiones y reintentos, versión de criterios
+y calibrador, y retención y limpieza. Este punto 1 solo tiene una respuesta
+firme para la primera -rutas, carpetas y códigos-; las demás quedan en
+`pendiente_de_definir`, a `null`, dentro del propio YAML, con el mismo
+criterio que ya aplican `docs/PENDIENTE_OFICIAL.md` y la tabla de tarifas de
+OpenAI ante un dato que nadie ha fijado todavía: no se inventa un valor
+razonable en su lugar.
+
+**Queda abierto, a confirmar por el docente:** el documento dice «cada
+carpeta de entrega lleva dentro» las cinco subcarpetas
+(`00_ORIGINAL`...`04_EVIDENCIAS`) sin enumerar cuáles carpetas del
+expediente cuentan como «de entrega». Este punto 1 lo ha leído en el sentido
+más literal -las cuatro que llevan la palabra ENTREGA en su nombre-, dejando
+`00_FICHA`, `01_TEMA`, `06_DEFENSA` y `07_HISTORICO` como carpetas simples.
+En particular, `01_TEMA` y `06_DEFENSA` también reciben un documento del
+alumno y podrían merecer la misma subestructura; la interpretación está
+marcada como tal en el propio `config/estructura_expedientes.yaml`, para que
+el docente la corrija si no es la que él quería.
+
+**Arrastra:** `config/estructura_expedientes.yaml` (nuevo),
+`backend/expedientes/estructura.py` y `backend/expedientes/creacion.py`
+(nuevos), `backend/configuracion.py` (`REVISOR_RAIZ_EXPEDIENTES`,
+`raiz_expedientes`, `problema_raiz_expedientes`),
+`tools/crear_estructura_expedientes.py` (nuevo), y los tests de
+`tests/expedientes/`, `tests/tools/test_crear_estructura_expedientes.py` y
+las ampliaciones de `tests/backend/test_configuracion.py`.
