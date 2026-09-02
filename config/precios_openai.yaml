@@ -38,3 +38,37 @@
   entrada_por_millon: 0.10
   entrada_cacheada_por_millon: 0.025
   salida_por_millon: 0.40
+
+# Los tres modelos gpt-5.6 facturan a dos tramos según la longitud del
+# contexto. Aquí se anota el tramo corto porque es el que aplica a este
+# sistema: un proyecto intermodular completo ronda las 60 páginas, muy por
+# debajo del umbral del tramo largo. Si algún día se le mandara un contexto
+# mayor, el coste real sería el doble a la entrada y algo más a la salida, y
+# esta tabla se quedaría corta: consultada el 2026-09-02 en
+# https://developers.openai.com/api/docs/pricing
+- modelo: gpt-5.6-luna
+  vigente_desde: 2026-09-02
+  entrada_por_millon: 0.20
+  entrada_cacheada_por_millon: 0.02
+  salida_por_millon: 1.20
+
+- modelo: gpt-5.6-terra
+  vigente_desde: 2026-09-02
+  entrada_por_millon: 2.00
+  entrada_cacheada_por_millon: 0.20
+  salida_por_millon: 12.00
+
+- modelo: gpt-5.6-sol
+  vigente_desde: 2026-09-02
+  entrada_por_millon: 4.00
+  entrada_cacheada_por_millon: 0.40
+  salida_por_millon: 20.00
+
+# o3 no estaba en esta tabla, así que ninguna calibracion hecha con el
+# pudo dar un coste: el sistema lo daba por no calculable, que es lo
+# correcto, pero dejaba al docente sin la cifra.
+- modelo: o3
+  vigente_desde: 2026-09-02
+  entrada_por_millon: 2.00
+  entrada_cacheada_por_millon: 0.50
+  salida_por_millon: 8.00

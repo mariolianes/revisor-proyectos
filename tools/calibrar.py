@@ -1266,7 +1266,7 @@ def _configurar_argumentos() -> argparse.ArgumentParser:
         "--presupuesto-usd", type=float, default=None, dest="presupuesto_usd",
         metavar="USD",
         help=(
-            "Límite de gasto contra el que avisar al 50 %, 75 % y 90 % en "
+            "Límite de gasto contra el que avisar al 50 %%, 75 %% y 90 %% en "
             f"el bloque de capacidad. Si se omite, se lee de "
             f"{PRESUPUESTO_CALIBRACION}, en el entorno o en .env. Sin "
             "ninguno de los dos, el bloque no calcula ningún porcentaje: "
