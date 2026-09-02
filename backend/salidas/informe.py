@@ -44,10 +44,12 @@ al cerrar la revisión y que `revisar()` no deja fijar con un color más
 benévolo del que las observaciones que siguen aprobadas sostienen. Ver
 `semaforo_por_valoraciones` y el docstring de `revisar()`.
 
-Desde D-019 (`docs/decisions.md`), la escala tiene cuatro niveles, no tres:
-entre AMBAR y VERDE se añade VERDE_CON_ALERTAS, con la regla fronteriza del
-docente del 2026-08-31 -"la prudencia no significa elegir siempre el color
-más bajo"-. `color_sostenido_por_prioridades`, más abajo, es la misma tabla
+La escala tiene los cuatro estados del §12.1 del Documento Maestro, que el
+docente confirmó el 2026-09-02 (`decisiones#12-semaforo`). Su regla
+fronteriza del 31 de agosto -"la prudencia no significa elegir siempre el
+color más bajo"- se aplica sin un color nuevo: un P3 fiable sin P1 ni P2 da
+VERDE, y lo que queda por atender viaja en `con_alertas`, no en el color.
+`color_sostenido_por_prioridades`, más abajo, es la misma tabla
 de prioridades que `semaforo_por_valoraciones`, pero pensada para que
 `backend/salidas/borrador.py` compruebe que el color propuesto no dice más
 de lo que las prioridades que de verdad llegan al alumno sostienen.
@@ -75,6 +77,7 @@ from backend.analisis.verificacion import (
     IndicioDeAutoriaVerificado,
     Reparo,
     ValoracionVerificada,
+    hay_alertas,
     semaforo_por_valoraciones,
 )
 from backend.evolucion.continuidad import ContinuidadFeedback, clasificar_continuidad
@@ -87,7 +90,6 @@ from backend.servicios.lectura_objetiva import FichaDeLectura
 # para inventar un texto que el criterio no ha fijado.
 _RECOMENDACION_POR_OMISION = {
     "VERDE": "Mantener fortalezas y aplicar ajustes menores",
-    "VERDE_CON_ALERTAS": "Atender los defectos importantes señalados antes del cierre",
     "AMBAR": "Aplicar cambios antes de cerrar la siguiente fase",
     "ROJO": "Revisión docente y plan de corrección",
     "GRIS": "Resolver incidencia; no emitir juicio académico automático",
@@ -310,6 +312,11 @@ class Informe(BaseModel):
     # como prueba de auditoría de lo que se propuso antes de que nadie
     # revisara ninguna observación.
     semaforo_propuesto: str
+    # «Verde con alertas»: un VERDE que conserva algo por atender antes del
+    # cierre. El docente decidió expresamente que no fuera un quinto color
+    # (`decisiones#12-semaforo`), así que viaja al lado y no dentro de
+    # `semaforo_propuesto`. Siempre `False` cuando el color no es VERDE.
+    con_alertas: bool = False
     # El que el docente confirma al cerrar la revisión, o `None` mientras no
     # lo haya hecho -«borrador» de cierre, no una decisión tomada-.
     # `revisar()` no permite guardar aquí un color menos severo del que
@@ -752,6 +759,7 @@ def componer_informe(
         continuidad=continuidad,
         continuidad_nota=continuidad_nota,
         semaforo_propuesto=color,
+        con_alertas=hay_alertas(analisis.valoraciones),
         semaforo_final_docente=None,
         # `.get()` y no indexado: si `semaforo.yaml` no declarara `accion`
         # para este color -un criterio alterado a mano, por ejemplo- el

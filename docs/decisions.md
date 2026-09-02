@@ -1337,3 +1337,38 @@ el primer alumno reciba un `student_id` con el que no pueda entregar nada.
 un alumno se daba de alta por el listado antes que por una entrega),
 `backend/persistencia/supabase.py`, `backend/privacidad/listado_local.py`
 (`importar_pares`, `todos`), `requirements-dev.txt` (`openpyxl`).
+
+## D-026 · El semáforo se queda en cuatro estados; «verde con alertas» es una marca sobre VERDE
+
+**Fecha:** 2026-09-02 · **Estado:** Firme · **Responsable:** Marcos
+
+Revoca la mitad de D-019 que introducía VERDE_CON_ALERTAS como quinto color.
+La regla que lo motivaba se mantiene intacta -un P3 fiable sin ningún P1 ni
+P2 no sube a ÁMBAR-; lo que cambia es cómo se expresa: da VERDE, y lo que
+queda por atender viaja en `con_alertas`, no en el color.
+
+Lo decidió él en `decisiones#12-semaforo`: «Mantener el enum de cuatro
+estados del Documento Maestro. El calibrador puede añadir alertas o matices,
+pero no crear un color oficial nuevo.» Es una decisión de jerarquía, no de
+gusto: el calibrador concreta lo que el Maestro deja abierto, pero no
+inventa un valor que el Maestro no reconoce.
+
+**Lo que hace que esto importe más de lo que parece.** La columna `semaforo`
+es un `enum` de PostgreSQL, y **un valor añadido a un enum no se puede
+quitar**. La migración que iba a añadir el quinto color estaba escrita y
+esperando a que el docente la aplicara desde su panel. Si la hubiera
+ejecutado antes de esta respuesta, la base habría quedado con un estado que
+el Documento Maestro no reconoce y sin forma de eliminarlo. Se retiró antes
+de aplicarse.
+
+El coste de equivocarse es asimétrico -un color de menos se añade cuando haga
+falta; uno de más es permanente-, y por eso el test que lo protege compara
+conjuntos y no pertenencia: `test_los_codigos_son_los_cuatro_oficiales_y_
+ninguno_mas`.
+
+**Arrastra:** `criteria/v2026-2027/semaforo.yaml`,
+`backend/analisis/verificacion.py` (`hay_alertas`, nueva),
+`backend/salidas/informe.py` (`Informe.con_alertas`),
+`frontend/src/lib/tipos.ts`, `frontend/src/paginas/Revision.tsx`,
+`supabase/migrations/20260902190000_alertas_sobre_verde.sql` (sustituye a la
+retirada), y `docs/changes/2026-09-02-el-semaforo-vuelve-a-cuatro-estados.md`.
