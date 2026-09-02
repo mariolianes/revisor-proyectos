@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Annotated
 
 import yaml
-from pydantic import AfterValidator, BaseModel, ConfigDict, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 FICHERO_ESTRUCTURA = "config/estructura_expedientes.yaml"
 
@@ -131,6 +131,143 @@ class Raiz(BaseModel):
     variable_de_entorno: str
 
 
+class Archivos(BaseModel):
+    """Qué se admite por la puerta de entrada. `decisiones#5-extensiones`.
+
+    Las dos listas de extensiones son distintas a propósito: una presentación
+    de defensa no sustituye nunca al proyecto final, así que lo que vale para
+    una no vale para el otro.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    extensiones_del_proyecto: list[str]
+    extensiones_de_defensa: list[str]
+    tamano_maximo_mb: int = Field(gt=0)
+    politica_doc_antiguo: str
+    otras_extensiones: str
+
+
+class PrioridadDeIdentificacion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prioridad: int = Field(ge=1)
+    condicion: str
+    resultado: str
+
+
+class Identificacion(BaseModel):
+    """Cómo se decide de quién es un trabajo. `decisiones#6-identificacion`.
+
+    `umbral_de_parecido` es `None` **por decisión, no por hueco**: el docente
+    lo descartó expresamente -«no estableceremos un porcentaje de parecido
+    para asignar automáticamente un trabajo»-. Por eso el campo existe y vale
+    `None`, en vez de no existir: quien lo lea tiene que ver que la pregunta
+    se hizo y se contestó que no.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    politica: str
+    umbral_de_parecido: float | None = None
+    normalizacion_ignora: list[str]
+    prioridades: list[PrioridadDeIdentificacion]
+
+    @model_validator(mode="after")
+    def _determinista_no_admite_umbral(self) -> "Identificacion":
+        if self.politica == "determinista" and self.umbral_de_parecido is not None:
+            raise ValueError(
+                "La identificación determinista no admite un umbral de "
+                "parecido: el docente lo descartó expresamente. O se quita "
+                "el umbral, o se cambia la política y se documenta por qué."
+            )
+        return self
+
+
+class DuplicadoExacto(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    marca: str
+    analizar: bool
+    sobrescribir_original: bool
+    aviso_bloqueante: bool
+
+
+class ArchivoDistintoMismaFase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    marca: str
+    conservar_como_version_nueva: bool
+    detener_analisis_hasta_decision_docente: bool
+
+
+class VersionElegida(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    anteriores_pasan_a: str
+    eliminar_anteriores: bool
+
+
+class Versiones(BaseModel):
+    """Qué hacer con una segunda entrega de la misma fase.
+    `decisiones#7-versiones`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    duplicado_exacto: DuplicadoExacto
+    archivo_distinto_misma_fase: ArchivoDistintoMismaFase
+    version_elegida: VersionElegida
+
+    @model_validator(mode="after")
+    def _nada_se_elimina_ni_se_sobrescribe(self) -> "Versiones":
+        """Su regla no admite matices: «nunca se eliminan», «no sobrescribir
+        el original». Se comprueba aquí para que un cambio de configuración
+        no pueda activar un borrado sin que nadie lo vea."""
+        if self.version_elegida.eliminar_anteriores:
+            raise ValueError(
+                "Las versiones anteriores no se eliminan nunca. Lo fijó el "
+                "docente en decisiones#7-versiones."
+            )
+        if self.duplicado_exacto.sobrescribir_original:
+            raise ValueError(
+                "Un duplicado exacto no sobrescribe el original. Lo fijó el "
+                "docente en decisiones#7-versiones."
+            )
+        return self
+
+
+class AlCerrarElCurso(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mover_a: NombreDeCarpeta
+    comprobar_copia_de_seguridad: bool
+
+
+class Retencion(BaseModel):
+    """Cuánto se conserva. `decisiones#8-retencion`.
+
+    `borrar_pasados_dias: null` es la regla, no un dato que falte: «no habrá
+    borrado automático de proyectos, versiones, informes o evidencias».
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    politica: str
+    borrado_automatico: bool
+    borrar_pasados_dias: int | None = None
+    al_cerrar_el_curso: AlCerrarElCurso
+
+    @model_validator(mode="after")
+    def _sin_borrado_automatico(self) -> "Retencion":
+        if self.borrado_automatico or self.borrar_pasados_dias is not None:
+            raise ValueError(
+                "No hay borrado automático. Lo fijó el docente en "
+                "decisiones#8-retencion: todo se conserva hasta autorización "
+                "expresa suya. Un plazo aquí lo contradiría."
+            )
+        return self
+
+
 class ConfiguracionExpedientes(BaseModel):
     """La arquitectura entera, tal como la describe el YAML.
 
@@ -151,6 +288,10 @@ class ConfiguracionExpedientes(BaseModel):
     ciclos: list[str]
     centros: Centros
     expediente_alumno: ExpedienteAlumno
+    archivos: Archivos
+    identificacion: Identificacion
+    versiones: Versiones
+    retencion: Retencion
     pendiente_de_definir: dict[str, object]
 
     @model_validator(mode="after")

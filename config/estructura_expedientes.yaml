@@ -34,7 +34,7 @@
 # `backend.configuracion.VERSION_CRITERIOS_POR_OMISION`: no se repite aquí,
 # para no crear dos sitios que puedan decir cosas distintas.
 
-version_configuracion: "2026-08-31"
+version_configuracion: "2026-09-02"
 
 raiz:
   nombre_carpeta: CESUR_2026-2027
@@ -200,18 +200,97 @@ expediente_alumno:
     - 03_FEEDBACK_DOCENTE
     - 04_EVIDENCIAS
 
-# Lo que el documento aprobado pide que exista en esta configuración y todavía
-# no tiene una respuesta firme del docente. Se deja a `null`: ningún valor
-# razonable sustituye a uno que nadie ha fijado. Cuando llegue la respuesta,
-# se rellena aquí -y solo aquí-, sin tocar ningún módulo de Python.
+# Las reglas que el docente fijó el 2026-09-02 al responder a las ocho
+# preguntas (docs/maestro/05-decisiones-arquitectura.md). Hasta esa fecha
+# estaban aquí a `null` bajo `pendiente_de_definir`, sin inventarles un valor
+# razonable. Ahora tienen el suyo, y cada bloque dice de qué sección sale.
+
+# decisiones#5-extensiones. El proyecto y la presentación de defensa admiten
+# cosas distintas a propósito: una presentación no sustituye nunca al
+# proyecto final, y por eso no comparten lista.
+archivos:
+  extensiones_del_proyecto: [pdf, docx]
+  extensiones_de_defensa: [pdf, pptx]
+  tamano_maximo_mb: 20
+  # .doc antiguo: no se analiza directamente. Va a incidencia técnica, y si
+  # se convierte, la conversión es un acto explícito y no un apaño silencioso.
+  politica_doc_antiguo: incidencia
+  otras_extensiones: incidencia
+
+# decisiones#6-identificacion. NO hay umbral de parecido, y eso es la
+# decisión, no un hueco: «no estableceremos un porcentaje de parecido para
+# asignar automáticamente un trabajo». Las tres primeras prioridades asignan;
+# las dos últimas van a Incidencias. Un caso ambiguo no se resuelve solo
+# jamás.
+identificacion:
+  politica: determinista
+  umbral_de_parecido: null   # deliberado: ver arriba, no es un pendiente
+  # La normalización puede ignorar todo esto al comparar nombres.
+  normalizacion_ignora:
+    - mayusculas
+    - tildes
+    - guiones
+    - comas
+    - dobles_espacios
+    - orden_apellidos_nombre
+  prioridades:
+    - prioridad: 1
+      condicion: Identificador exacto de CESUR o metadato fiable disponible
+      resultado: asignacion_automatica
+    - prioridad: 2
+      condicion: >-
+        Nombre completo normalizado y único dentro del curso y comunidad
+        esperados
+      resultado: asignacion_automatica
+    - prioridad: 3
+      condicion: >-
+        Nombre más al menos un apellido, candidato único y portada compatible
+      resultado: asignacion_automatica
+    - prioridad: 4
+      condicion: >-
+        Nombre parcial sin confirmación, varios candidatos o datos
+        insuficientes
+      resultado: incidencias
+    - prioridad: 5
+      condicion: >-
+        Contradicción entre identificador, nombre, portada o matrícula
+      resultado: incidencias
+
+# decisiones#7-versiones. Un duplicado exacto no vuelve a analizarse -no
+# generar coste API es parte de la regla, no una optimización nuestra-, y un
+# archivo distinto para la misma fase detiene el análisis hasta que el
+# docente elija cuál vale.
+versiones:
+  duplicado_exacto:
+    marca: DUPLICATE_EXACT
+    analizar: false
+    sobrescribir_original: false
+    aviso_bloqueante: false
+  archivo_distinto_misma_fase:
+    marca: VERSION_CONFLICT
+    conservar_como_version_nueva: true
+    detener_analisis_hasta_decision_docente: true
+  version_elegida:
+    anteriores_pasan_a: historica
+    eliminar_anteriores: false
+
+# decisiones#8-retencion. No hay borrado automático de nada, y el valor nulo
+# de `borrar_pasados_dias` es la regla, no un dato que falte.
+retencion:
+  politica: retencion_manual
+  borrado_automatico: false
+  borrar_pasados_dias: null
+  al_cerrar_el_curso:
+    mover_a: 99_ARCHIVO_CERRADO
+    comprobar_copia_de_seguridad: true
+
+# Lo que sigue sin respuesta firme. Se queda a `null` por el mismo criterio
+# de siempre: ningún valor razonable sustituye a uno que nadie ha fijado.
 pendiente_de_definir:
-  extensiones_admitidas: null
-  tamano_maximo_mb: null
-  umbral_confianza_identificacion: null
-  politica_versiones: null
-  politica_duplicados: null
+  # Cuántas veces se reintenta un análisis que falla por un corte del
+  # proveedor. Hoy la entrega vuelve a RECIBIDO y se pide a mano; encolar o
+  # reintentar solo es alcance nuevo, y él no lo ha pedido.
   politica_reintentos: null
+  # La versión del calibrador, cuando el calibrador se versione aparte de los
+  # criterios. Hoy van juntos en REVISOR_VERSION_CRITERIOS.
   version_calibrador: null
-  retencion_local_dias: null
-  politica_limpieza: null
-  tratamiento_incidencias: null

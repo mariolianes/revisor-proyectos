@@ -280,3 +280,119 @@ def test_el_total_de_carpetas_por_expediente_es_el_esperado(
     """8 carpetas de primer nivel + 4 entregas x 5 subcarpetas = 28."""
     rutas = rutas_del_expediente(cfg, "ALU-260087")
     assert len(rutas) == 28
+
+
+# --- Las reglas que el docente fijó el 2026-09-02 --------------------------
+#
+# Estos tests no comprueban código: comprueban que la configuración dice lo
+# que él dijo. Es donde se notaría que alguien "afina" un valor suyo.
+
+
+def test_las_extensiones_y_el_tamano_son_los_que_fijo_el_docente(cfg) -> None:
+    """`decisiones#5-extensiones`. Proyecto y defensa admiten cosas distintas
+    a propósito: una presentación no sustituye al proyecto final."""
+    assert cfg.archivos.extensiones_del_proyecto == ["pdf", "docx"]
+    assert cfg.archivos.extensiones_de_defensa == ["pdf", "pptx"]
+    assert cfg.archivos.tamano_maximo_mb == 20
+    assert cfg.archivos.politica_doc_antiguo == "incidencia"
+
+
+def test_la_identificacion_es_determinista_y_sin_umbral(cfg) -> None:
+    """`decisiones#6-identificacion`: «no estableceremos un porcentaje de
+    parecido para asignar automáticamente un trabajo».
+
+    El `None` no es un hueco pendiente: es la respuesta."""
+    assert cfg.identificacion.politica == "determinista"
+    assert cfg.identificacion.umbral_de_parecido is None
+
+
+def test_las_dos_ultimas_prioridades_de_identificacion_van_a_incidencias(cfg) -> None:
+    """Las tres primeras asignan; las dos últimas no deciden nunca solas."""
+    por_prioridad = {
+        p.prioridad: p.resultado for p in cfg.identificacion.prioridades
+    }
+
+    assert por_prioridad == {
+        1: "asignacion_automatica",
+        2: "asignacion_automatica",
+        3: "asignacion_automatica",
+        4: "incidencias",
+        5: "incidencias",
+    }
+
+
+def test_un_duplicado_exacto_no_se_analiza_ni_sobrescribe(cfg) -> None:
+    """`decisiones#7-versiones`. Que no se analice no es una optimización
+    nuestra: «no generar coste API» es parte de su regla."""
+    duplicado = cfg.versiones.duplicado_exacto
+
+    assert duplicado.analizar is False
+    assert duplicado.sobrescribir_original is False
+
+
+def test_un_archivo_distinto_para_la_misma_fase_detiene_el_analisis(cfg) -> None:
+    conflicto = cfg.versiones.archivo_distinto_misma_fase
+
+    assert conflicto.conservar_como_version_nueva is True
+    assert conflicto.detener_analisis_hasta_decision_docente is True
+
+
+def test_no_hay_borrado_automatico(cfg) -> None:
+    """`decisiones#8-retencion`: «no habrá borrado automático de proyectos,
+    versiones, informes o evidencias»."""
+    assert cfg.retencion.borrado_automatico is False
+    assert cfg.retencion.borrar_pasados_dias is None
+    assert cfg.versiones.version_elegida.eliminar_anteriores is False
+
+
+def test_una_configuracion_que_active_el_borrado_no_se_carga() -> None:
+    """La guarda, no el valor. Un plazo de borrado escrito a mano en el YAML
+    contradice una decisión suya, y el sistema tiene que negarse a arrancar
+    con ella en vez de empezar a borrar trabajos de alumnos."""
+    from backend.expedientes.estructura import Retencion
+
+    with pytest.raises(ValidationError, match="No hay borrado automático"):
+        Retencion(
+            politica="retencion_manual",
+            borrado_automatico=False,
+            borrar_pasados_dias=90,
+            al_cerrar_el_curso={
+                "mover_a": "99_ARCHIVO_CERRADO",
+                "comprobar_copia_de_seguridad": True,
+            },
+        )
+
+
+def test_una_configuracion_que_borre_versiones_anteriores_no_se_carga() -> None:
+    """Misma guarda para la otra mitad: «nunca se eliminan»."""
+    from backend.expedientes.estructura import Versiones
+
+    with pytest.raises(ValidationError, match="no se eliminan nunca"):
+        Versiones(
+            duplicado_exacto={
+                "marca": "DUPLICATE_EXACT", "analizar": False,
+                "sobrescribir_original": False, "aviso_bloqueante": False,
+            },
+            archivo_distinto_misma_fase={
+                "marca": "VERSION_CONFLICT",
+                "conservar_como_version_nueva": True,
+                "detener_analisis_hasta_decision_docente": True,
+            },
+            version_elegida={
+                "anteriores_pasan_a": "historica", "eliminar_anteriores": True,
+            },
+        )
+
+
+def test_un_umbral_de_parecido_con_politica_determinista_no_se_carga() -> None:
+    """Lo que impide que vuelva a colarse la coincidencia difusa que él
+    descartó."""
+    from backend.expedientes.estructura import Identificacion
+
+    with pytest.raises(ValidationError, match="no admite un umbral"):
+        Identificacion(
+            politica="determinista",
+            umbral_de_parecido=0.85,
+            normalizacion_ignora=["tildes"],
+            prioridades=[],
+        )
