@@ -215,6 +215,10 @@ class ResultadoDeCaso(BaseModel):
     saltado: bool = False
     motivo_salto: str | None = None
 
+    # El caso se ejecutó, pero su fase no está confirmada: se mira, no se
+    # compara por color. Ver `FASE_DESCONOCIDA`.
+    fase_desconocida: bool = False
+
     semaforo_esperado: str | None = None
     semaforo_obtenido: str | None = None
     acierta_semaforo: bool | None = None
@@ -344,6 +348,9 @@ class InformeDeCalibracion(BaseModel):
     evaluados: int
     saltados: int
     aciertos_semaforo: int
+    # Casos ejecutados cuya fase el docente no ha podido confirmar: se miran,
+    # pero su color no entra en ningún recuento. Ver `FASE_DESCONOCIDA`.
+    sin_fase_confirmada: int = 0
     mas_duro: int
     mas_blando: int
     no_comparable: int
@@ -383,6 +390,28 @@ def _texto_de_observaciones(informe: Informe) -> str:
     partes += list(informe.dudas)
     partes += [i.descripcion for i in informe.indicios]
     return "\n".join(partes)
+
+
+# La fase que el docente no pudo confirmar. Él la cerró así el 2026-09-02
+# (`decisiones#11-fases-desconocidas`): «registrar phase: UNKNOWN», «no
+# utilizarlos en métricas o comparaciones sensibles a la fase», «mantenerlos
+# como pruebas generales de estructura, calidad y detección», «no asumir E03
+# ni FINAL sin evidencia».
+#
+# En castellano, como el resto del sistema. Hasta esa fecha, cuatro de los
+# nueve casos del banco (P01, P02, P04 y P09) figuraban como E3 por
+# suposición nuestra, y el sistema activa dimensiones distintas según la
+# fase: estábamos comparando su color contra una vara que quizá no era la
+# suya. Esas comparaciones no eran informativas, y ahora no se hacen.
+FASE_DESCONOCIDA = "DESCONOCIDA"
+
+# Con qué vara se ejecuta un caso de fase desconocida. Hace falta una: el
+# motor no sabe analizar "sin fase". Se elige la entrega final porque es la
+# única que no deja ninguna dimensión fuera, así que el caso sigue sirviendo
+# como prueba de estructura, calidad y detección -que es para lo que él los
+# quiere-. NO es una suposición sobre su fase real: precisamente por eso su
+# semáforo no se compara con nada.
+FASE_PARA_EJECUTAR_SIN_FASE = "FINAL"
 
 
 def _direccion(esperado: str, obtenido: str) -> str:
@@ -498,12 +527,29 @@ def evaluar(
         )
         (incidencias_halladas if coincide else incidencias_ausentes).append(esperada.codigo)
 
+    # Un caso de fase desconocida se ejecuta y se mira, pero su color no se
+    # compara con nada: el sistema juzga con distinta vara según la fase, y
+    # comparar contra una referencia cuya fase nadie ha confirmado no mide el
+    # sistema, mide nuestra suposición. Lo cerró él en
+    # `decisiones#11-fases-desconocidas`: «no utilizarlos en métricas o
+    # comparaciones sensibles a la fase». El resto de lo que trae el caso
+    # -evidencias localizadas, incidencias por taxonomía, frases que no
+    # deberían aparecer- no depende de la fase y sigue contando.
+    sin_fase = caso.fase == FASE_DESCONOCIDA
+
     return ResultadoDeCaso(
         codigo=caso.codigo,
-        semaforo_esperado=caso.semaforo_esperado,
+        fase_desconocida=sin_fase,
+        semaforo_esperado=None if sin_fase else caso.semaforo_esperado,
         semaforo_obtenido=informe.semaforo_propuesto,
-        acierta_semaforo=(informe.semaforo_propuesto == caso.semaforo_esperado),
-        direccion=_direccion(caso.semaforo_esperado, informe.semaforo_propuesto),
+        acierta_semaforo=(
+            None if sin_fase
+            else informe.semaforo_propuesto == caso.semaforo_esperado
+        ),
+        direccion=(
+            None if sin_fase
+            else _direccion(caso.semaforo_esperado, informe.semaforo_propuesto)
+        ),
         debe_encontrar_hallado=hallado,
         debe_encontrar_ausente=ausente,
         no_debe_hallado=no_debe_hallado,
@@ -562,7 +608,11 @@ def _ejecutar_caso(
     entrega = almacen.registrar(EntregaNueva(
         codigo_alumno=caso.codigo,
         ciclo=CICLO_DE_CALIBRACION,
-        fase=caso.fase,
+        fase=(
+            FASE_PARA_EJECUTAR_SIN_FASE
+            if caso.fase == FASE_DESCONOCIDA
+            else caso.fase
+        ),
         version=1,
         nombre_archivo=caso.archivo,
         huella=huella,
@@ -642,7 +692,11 @@ def _indicadores(evaluados: list[ResultadoDeCaso]) -> dict[str, IndicadorDeCalib
         len(r.incidencias_halladas) + len(r.incidencias_ausentes) for r in evaluados
     )
     total_incidencias_halladas = sum(len(r.incidencias_halladas) for r in evaluados)
-    aciertos = sum(1 for r in evaluados if r.acierta_semaforo)
+    # Solo los casos con fase confirmada entran en el recuento de semáforos:
+    # comparar el color de un caso cuya fase nadie ha confirmado mide nuestra
+    # suposición, no el sistema (`decisiones#11-fases-desconocidas`).
+    comparables = [r for r in evaluados if not r.fase_desconocida]
+    aciertos = sum(1 for r in comparables if r.acierta_semaforo)
     total_valoraciones = sum(r.valoraciones_totales for r in evaluados)
     con_evidencia = sum(r.valoraciones_con_evidencia for r in evaluados)
 
@@ -685,7 +739,7 @@ def _indicadores(evaluados: list[ResultadoDeCaso]) -> dict[str, IndicadorDeCalib
         else "Ningún caso evaluado tiene valoraciones que contar."
     )
     lectura_prioridad = (
-        f"{aciertos}/{len(evaluados)} semáforos coinciden con la referencia "
+        f"{aciertos}/{len(comparables)} semáforos coinciden con la referencia "
         "del docente."
     )
 
@@ -878,21 +932,27 @@ def _componer_informe(
 ) -> InformeDeCalibracion:
     evaluados = [r for r in resultados if not r.saltado]
     saltados = [r for r in resultados if r.saltado]
-    mas_duro = [r for r in evaluados if r.direccion == "MAS_DURO"]
-    mas_blando = [r for r in evaluados if r.direccion == "MAS_BLANDO"]
-    no_comparable = [r for r in evaluados if r.direccion == "NO_COMPARABLE"]
+    # El sesgo y el recuento de colores se leen solo sobre los casos cuya
+    # fase está confirmada: los demás se ejecutan y se miran, pero su color
+    # no se compara (`decisiones#11-fases-desconocidas`).
+    comparables = [r for r in evaluados if not r.fase_desconocida]
+    sin_fase = [r for r in evaluados if r.fase_desconocida]
+    mas_duro = [r for r in comparables if r.direccion == "MAS_DURO"]
+    mas_blando = [r for r in comparables if r.direccion == "MAS_BLANDO"]
+    no_comparable = [r for r in comparables if r.direccion == "NO_COMPARABLE"]
 
     return InformeDeCalibracion(
         resultados=resultados,
         total_casos=len(resultados),
         evaluados=len(evaluados),
         saltados=len(saltados),
-        aciertos_semaforo=sum(1 for r in evaluados if r.acierta_semaforo),
+        sin_fase_confirmada=len(sin_fase),
+        aciertos_semaforo=sum(1 for r in comparables if r.acierta_semaforo),
         mas_duro=len(mas_duro),
         mas_blando=len(mas_blando),
         no_comparable=len(no_comparable),
         lectura_de_sesgo=_lectura_de_sesgo(
-            evaluados, len(mas_duro), len(mas_blando), len(no_comparable)
+            comparables, len(mas_duro), len(mas_blando), len(no_comparable)
         ),
         indicadores=_indicadores(evaluados),
         consumo=_resumen_de_consumo(registros_de_consumo or [], presupuesto_usd),
@@ -1103,6 +1163,19 @@ def _formatear(informe: InformeDeCalibracion) -> str:
         f"Semáforo: {informe.aciertos_semaforo} coinciden, {informe.mas_duro} "
         f"más duro, {informe.mas_blando} más blando, {informe.no_comparable} "
         "no comparables (GRIS).",
+        *(
+            [
+                f"De los {informe.evaluados} evaluados, "
+                f"{informe.sin_fase_confirmada} no entran en ese recuento "
+                "porque su fase no está confirmada: se ejecutan y se miran, "
+                "pero comparar su color contra una referencia de fase "
+                "desconocida mediría nuestra suposición, no el sistema. Los "
+                "colores de arriba salen de "
+                f"{informe.evaluados - informe.sin_fase_confirmada} casos.",
+            ]
+            if informe.sin_fase_confirmada
+            else []
+        ),
         "",
         informe.lectura_de_sesgo,
         "",
