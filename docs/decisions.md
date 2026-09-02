@@ -1251,3 +1251,89 @@ el docente la corrija si no es la que él quería.
 `tools/crear_estructura_expedientes.py` (nuevo), y los tests de
 `tests/expedientes/`, `tests/tools/test_crear_estructura_expedientes.py` y
 las ampliaciones de `tests/backend/test_configuracion.py`.
+## D-025 · Registro maestro de alumnos: el student_id reutiliza `alumno.codigo`, el nombre nunca sale del equipo del docente
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional · **Responsable:** Marcos
+
+El punto 2 del orden de implantación pide poder dar de alta a los 200-250
+alumnos de un curso desde un Excel por comunidad -que puede venir
+directamente de CESUR, con columnas que no coinciden entre comunidades-,
+antes de que llegue ninguna entrega, con centro, ciclo, comunidad autónoma,
+estado de matrícula y, si el centro lo facilita, un ID de plataforma
+preferible al nombre para emparejar.
+
+**El `student_id` (`ALU-AANNNN`, p.ej. `ALU-260001`) no es un segundo
+identificador en paralelo.** Reutiliza la misma columna `alumno.codigo` que
+ya llevaba `AF023` cuando el código lo elegía el nombre del archivo
+(`backend/vigilancia/nombres.py`, §15.3). El docstring de
+`backend/privacidad/listado_local.py` ya advertía contra crear un segundo
+ID: esta migración sigue esa misma regla, solo que ahora el código lo asigna
+el sistema (`backend/persistencia/alumnos.py`, `generar_student_id`) en vez
+de elegirlo el alumno. `alumno.ciclo` sigue siendo la misma columna de
+siempre, con el vocabulario cerrado MYP/CIN/AYF. Se amplía la tabla
+`alumno` con `centro_code`, `ccaa_code`, `curso`, `estado_matricula` y
+`platform_id` (`supabase/migrations/20260831210000_registro_maestro_de_
+alumnos.sql`); ninguna columna nueva admite un nombre.
+
+**El nombre no sale del equipo del docente, y eso tiene una consecuencia
+que hay que resolver: ¿cómo se ve un listado de quién no ha entregado, si
+la base de datos no sabe nombres?** La respuesta es la misma frontera que ya
+traza `listado_local.py` para minimizar una entrega: el informe se compone
+en dos pasos, nunca en uno. `Almacen.listar_alumnos()` (Supabase o memoria)
+da la lista de `student_id` sin entrega, con centro, ciclo y estado -eso
+viaja por la API sin problema, porque no lleva ningún dato personal-, y es
+la capa LOCAL, en el propio proceso del docente -la CLI, o una vista que
+lea `ListadoLocal.todos()` directamente en su equipo-, la que sustituye cada
+`student_id` por su nombre antes de que el docente lo lea. La API nunca ve
+esa sustitución: no hay ningún endpoint que devuelva un nombre, y no puede
+haberlo mientras `listado_local.py` sea la única fuente de esa
+correspondencia. El listado de faltas de entrega en pantalla, si algún día
+existe, se construye igual: pide `student_id`s a la API y resuelve nombres
+en el cliente que el docente ya tiene delante -su navegador o su terminal-,
+nunca en el servidor.
+
+**Fila dudosa: se detiene, no decide.** El importador
+(`backend/servicios/importacion_alumnos.py`) no registra una fila sin
+centro, con un centro fuera del catálogo (`config/centros.yaml`), con un
+ciclo o un estado de matrícula que no reconoce, repetida dentro del propio
+listado, o con un nombre que coincide con otra fila o con un alumno ya
+conocido y sin `platform_id` con el que confirmarlo. Ninguna de esas filas
+llega a `dar_de_alta_alumno`: quedan en `pendientes`, identificadas por
+número de fila -nunca por nombre, ni siquiera en la salida de la propia CLI
+del docente-, para que las revise a mano. Es la traducción literal del
+principio del §13: la automatización se detiene antes que asignar mal.
+
+**Pendiente, y a propósito no resuelto aquí: la estabilidad del
+`student_id` entre cursos.** `generar_student_id` numera dentro de un curso
+-el mismo alumno, dos cursos distintos, produce dos `student_id` distintos
+por construcción, porque el curso forma parte del número-. Un alumno
+repetidor con el mismo `platform_id` que un curso anterior NO se fusiona en
+automático con su identidad anterior: el importador lo detecta y lo manda a
+revisión (`REPETIDOR_POSIBLE`) en vez de decidir. Reutilizar el
+`student_id` del curso anterior para un repetidor, frente a darle uno
+nuevo y dejar rastro de la relación por otra vía, es una decisión que
+todavía no ha tomado el docente. Mientras siga abierta, cada repetidor que
+aparezca en un listado se detiene y se pregunta, uno por uno.
+
+**Pendiente, y fuera del alcance de esta tarea: la convención de nombre de
+archivo.** `backend/vigilancia/nombres.py` sigue esperando un código con
+forma `[A-Za-z]{1,4}\d{1,5}` (p.ej. `AF023`) en el nombre del PDF que
+entrega el alumno; no reconoce `ALU-260001` -el guion no encaja en ese
+patrón-. Un alumno dado de alta por el registro maestro no puede, todavía,
+nombrar su archivo con su `student_id` de forma que el sistema lo reconozca
+solo. Tocar esa convención no es parte de este punto del orden de
+implantación, y no se ha tocado: se dice aquí para que quien construya el
+siguiente punto -o el docente, al decidir- lo tenga en cuenta antes de que
+el primer alumno reciba un `student_id` con el que no pueda entregar nada.
+
+**Arrastra:** `backend/persistencia/alumnos.py` (nuevo),
+`backend/servicios/importacion_alumnos.py` (nuevo),
+`tools/importar_listado_alumnos.py` (nuevo), `config/centros.yaml` (nuevo),
+`supabase/migrations/20260831210000_registro_maestro_de_alumnos.sql`
+(nueva), `backend/persistencia/modelos.py` (el `Protocol` `Almacen` gana
+`dar_de_alta_alumno`, `listar_alumnos`, `alumnos_por_platform_id`),
+`backend/persistencia/memoria.py` (el registro maestro sustituye a
+`_ciclo_del_alumno`, que quedaba fuera de sincronía con Supabase en cuanto
+un alumno se daba de alta por el listado antes que por una entrega),
+`backend/persistencia/supabase.py`, `backend/privacidad/listado_local.py`
+(`importar_pares`, `todos`), `requirements-dev.txt` (`openpyxl`).
