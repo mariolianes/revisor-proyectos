@@ -9,6 +9,14 @@ aparenta guardar y no guarda es peor que uno que no guarda.
 import uuid
 from datetime import datetime
 
+from backend.persistencia.alumnos import (
+    ESTADO_MATRICULA_INICIAL,
+    AlumnoNuevo,
+    AlumnoRegistrado,
+    error_de_platform_id_duplicado,
+    generar_student_id,
+    validar_alumno,
+)
 from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
@@ -34,12 +42,18 @@ class AlmacenEnMemoria:
 
     def __init__(self) -> None:
         self._entregas: dict[str, EntregaRegistrada] = {}
-        # El ciclo es del alumno, no de la entrega: en la base de datos lo
-        # lleva la tabla `alumno` y la tabla `entrega` no lo tiene. Aquí
-        # hace falta guardarlo aparte para no comportarse distinto que
-        # AlmacenSupabase, que reutiliza el alumno ya existente con el
-        # ciclo con el que se creó. El primero que se registra manda.
-        self._ciclo_del_alumno: dict[str, str] = {}
+        # El registro maestro de alumnos (Task del importador de listados):
+        # student_id -> sus datos, sin nombre. Es también de aquí de donde
+        # sale el ciclo de un alumno para una entrega -antes vivía en un
+        # diccionario aparte, `_ciclo_del_alumno`-, porque en Supabase el
+        # ciclo lo lleva la misma fila `alumno` que ahora crea o consulta el
+        # registro maestro (`alumno.ciclo`), y tenerlo en dos sitios en
+        # memoria abría la puerta a que un alumno dado de alta por el
+        # listado con un ciclo, y luego declarado con otro por una entrega,
+        # respondiera un ciclo en Supabase y otro en memoria: justo la clase
+        # de divergencia que `tests/persistencia/test_paridad.py` existe
+        # para atrapar.
+        self._alumnos: dict[str, dict] = {}
         # La modalidad es del proyecto, no de la entrega: en la base de
         # datos la lleva la tabla `proyecto` -clave (alumno_id,
         # version_criterios), igual que `AlmacenSupabase._proyecto`- y
@@ -82,13 +96,26 @@ class AlmacenEnMemoria:
 
         # El ciclo con el que se dio de alta el alumno manda sobre el que se
         # declara ahora, igual que en Supabase: allí `_alumno` reutiliza la
-        # fila existente y el ciclo vive en ella. Sin esto, el mismo alumno
-        # registrado en dos ciclos salía con un ciclo distinto en cada
-        # entrega en memoria y con el primero en Supabase.
+        # fila existente y el ciclo vive en ella. Si el alumno no existe
+        # todavía en el registro maestro -no vino de un listado importado-,
+        # se crea aquí mismo con el ciclo declarado, igual que
+        # `AlmacenSupabase._alumno` inserta una fila mínima de `alumno` la
+        # primera vez que le llega una entrega de un código nuevo.
+        alumno_existente = self._alumnos.get(entrega.codigo_alumno)
+        if alumno_existente is None:
+            alumno_existente = {
+                "id": str(uuid.uuid4()),
+                "student_id": entrega.codigo_alumno,
+                "curso": "",
+                "ccaa_code": "",
+                "centro_code": "",
+                "ciclo_code": entrega.ciclo,
+                "estado_matricula": ESTADO_MATRICULA_INICIAL,
+                "platform_id": None,
+            }
+            self._alumnos[entrega.codigo_alumno] = alumno_existente
         datos = entrega.model_dump()
-        datos["ciclo"] = self._ciclo_del_alumno.setdefault(
-            entrega.codigo_alumno, entrega.ciclo
-        )
+        datos["ciclo"] = alumno_existente["ciclo_code"]
         clave_proyecto = (entrega.codigo_alumno, entrega.version_criterios)
         if entrega.modalidad is not None and clave_proyecto not in self._modalidad_del_proyecto:
             self._modalidad_del_proyecto[clave_proyecto] = entrega.modalidad
@@ -198,3 +225,51 @@ class AlmacenEnMemoria:
         histórico completo desde la base de datos es un consumo aparte que
         nadie ha pedido todavía."""
         return list(self._consumos)
+
+    def dar_de_alta_alumno(self, alumno: AlumnoNuevo) -> AlumnoRegistrado:
+        validar_alumno(alumno)
+
+        if alumno.platform_id is not None:
+            chocado = next(
+                (
+                    datos for sid, datos in self._alumnos.items()
+                    if sid != alumno.student_id and datos.get("platform_id") == alumno.platform_id
+                ),
+                None,
+            )
+            if chocado is not None:
+                raise error_de_platform_id_duplicado(
+                    alumno.platform_id, chocado["student_id"]
+                )
+
+        if alumno.student_id is not None:
+            student_id = alumno.student_id
+        else:
+            existentes_del_curso = [
+                sid for sid, datos in self._alumnos.items()
+                if datos["curso"] == alumno.curso
+            ]
+            student_id = generar_student_id(alumno.curso, existentes_del_curso)
+
+        existente = self._alumnos.get(student_id)
+        datos = {
+            "id": existente["id"] if existente else str(uuid.uuid4()),
+            "student_id": student_id,
+            "curso": alumno.curso,
+            "ccaa_code": alumno.ccaa_code,
+            "centro_code": alumno.centro_code,
+            "ciclo_code": alumno.ciclo_code,
+            "estado_matricula": alumno.estado_matricula,
+            "platform_id": alumno.platform_id,
+        }
+        self._alumnos[student_id] = datos
+        return AlumnoRegistrado(**datos)
+
+    def listar_alumnos(self) -> list[AlumnoRegistrado]:
+        return [AlumnoRegistrado(**datos) for datos in self._alumnos.values()]
+
+    def alumnos_por_platform_id(self, platform_id: str) -> list[AlumnoRegistrado]:
+        return [
+            AlumnoRegistrado(**datos) for datos in self._alumnos.values()
+            if datos.get("platform_id") == platform_id
+        ]

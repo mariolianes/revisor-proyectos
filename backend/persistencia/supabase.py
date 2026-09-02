@@ -17,6 +17,14 @@ from pathlib import Path
 import httpx
 import yaml
 
+from backend.persistencia.alumnos import (
+    ESTADO_MATRICULA_INICIAL,
+    AlumnoNuevo,
+    AlumnoRegistrado,
+    error_de_platform_id_duplicado,
+    generar_student_id,
+    validar_alumno,
+)
 from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
@@ -602,3 +610,72 @@ class AlmacenSupabase:
         que sí se completó-.
         """
         self._pedir("POST", "ejecucion_motor", json=registro.model_dump(mode="json"))
+
+    def _componer_alumno(self, fila: dict) -> AlumnoRegistrado:
+        """Una fila de `alumno` tal como la usa el registro maestro.
+
+        Los alumnos creados antes de esta tarea -o por el camino antiguo,
+        cuando llega una entrega de un código sin listado previo, en
+        `_alumno`- no tienen `centro_code`, `ccaa_code` ni `curso`: esas
+        columnas quedan `NULL`. Se leen aquí como cadena vacía, nunca como
+        `None`, porque `AlumnoRegistrado` no admite `None` en esos campos -
+        son un dato que falta, no una ausencia con significado propio-.
+        """
+        return AlumnoRegistrado(
+            id=fila["id"],
+            student_id=fila["codigo"],
+            curso=fila.get("curso") or "",
+            ccaa_code=fila.get("ccaa_code") or "",
+            centro_code=fila.get("centro_code") or "",
+            ciclo_code=fila.get("ciclo") or "",
+            estado_matricula=fila.get("estado_matricula") or ESTADO_MATRICULA_INICIAL,
+            platform_id=fila.get("platform_id"),
+        )
+
+    def dar_de_alta_alumno(self, alumno: AlumnoNuevo) -> AlumnoRegistrado:
+        validar_alumno(alumno)
+
+        if alumno.platform_id is not None:
+            chocado = self._uno("alumno", platform_id=f"eq.{alumno.platform_id}")
+            if chocado is not None and chocado["codigo"] != alumno.student_id:
+                raise error_de_platform_id_duplicado(alumno.platform_id, chocado["codigo"])
+
+        if alumno.student_id is not None:
+            student_id = alumno.student_id
+        else:
+            existentes = self._pedir("GET", "alumno", parametros={
+                "curso": f"eq.{alumno.curso}", "select": "codigo",
+            })
+            student_id = generar_student_id(
+                alumno.curso, (fila["codigo"] for fila in existentes)
+            )
+
+        payload = {
+            "codigo": student_id,
+            "ciclo": alumno.ciclo_code,
+            "ccaa_code": alumno.ccaa_code,
+            "centro_code": alumno.centro_code,
+            "curso": alumno.curso,
+            "estado_matricula": alumno.estado_matricula,
+            "platform_id": alumno.platform_id,
+        }
+        existente = self._uno("alumno", codigo=f"eq.{student_id}")
+        if existente is not None:
+            filas = self._pedir(
+                "PATCH", "alumno",
+                parametros={"id": f"eq.{existente['id']}"},
+                json=payload,
+            )
+        else:
+            filas = self._pedir("POST", "alumno", json=payload)
+        return self._componer_alumno(filas[0])
+
+    def listar_alumnos(self) -> list[AlumnoRegistrado]:
+        filas = self._pedir("GET", "alumno", parametros={"select": "*"})
+        return [self._componer_alumno(fila) for fila in filas]
+
+    def alumnos_por_platform_id(self, platform_id: str) -> list[AlumnoRegistrado]:
+        filas = self._pedir("GET", "alumno", parametros={
+            "platform_id": f"eq.{platform_id}", "select": "*",
+        })
+        return [self._componer_alumno(fila) for fila in filas]

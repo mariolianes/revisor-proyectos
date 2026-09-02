@@ -96,6 +96,46 @@ class ListadoLocal:
         """
         return self._leer().get(_normalizar_codigo(codigo)) or None
 
+    def todos(self) -> dict[str, str]:
+        """Toda la correspondencia código -> nombre, de una vez.
+
+        Existe para `backend.servicios.importacion_alumnos`, que necesita
+        poder detectar si el nombre de una fila del Excel ya está en el
+        listado -para no crear una segunda identidad para la misma persona,
+        ni fusionar en silencio dos que solo comparten nombre- sin poder
+        preguntar código por código, porque todavía no sabe qué código
+        tiene esa persona, si es que tiene alguno. Devuelve una copia: quien
+        llama no puede alterar el fichero a través del diccionario que
+        recibe.
+        """
+        return dict(self._leer())
+
+    def importar_pares(self, pares: dict[str, str]) -> int:
+        """Añade o actualiza altas desde `{codigo: nombre}` directamente, sin
+        pasar por un CSV. Devuelve cuántas filas se han incorporado.
+
+        Es el mismo `datos[codigo] = nombre` que hace `importar_csv` fila a
+        fila -actualiza, no sustituye, por el mismo motivo: un curso nuevo
+        no borra el nombre de un alumno de un curso anterior-, factorizado
+        para que el importador de listados de alumnos
+        (`tools/importar_listado_alumnos.py`) pueda escribir los nombres
+        que ha resuelto sin tener que volcarlos antes a un fichero
+        intermedio. Una clave o un valor vacíos se descartan sin fallar,
+        igual que una fila sin código o sin nombre en `importar_csv`.
+        """
+        datos = self._leer()
+        incorporadas = 0
+        for codigo_bruto, nombre_bruto in pares.items():
+            codigo = _normalizar_codigo(codigo_bruto or "")
+            nombre = (nombre_bruto or "").strip()
+            if not codigo or not nombre:
+                continue
+            datos[codigo] = nombre
+            incorporadas += 1
+
+        self._escribir(datos)
+        return incorporadas
+
     def importar_csv(self, ruta_csv: Path) -> int:
         """Añade o actualiza altas desde un CSV con columnas `codigo` y
         `nombre`. Devuelve cuántas filas se han incorporado.
@@ -118,15 +158,8 @@ class ListadoLocal:
                 )
             filas = list(lector)
 
-        datos = self._leer()
-        incorporadas = 0
-        for fila in filas:
-            codigo = _normalizar_codigo(fila.get(COLUMNA_CODIGO) or "")
-            nombre = (fila.get(COLUMNA_NOMBRE) or "").strip()
-            if not codigo or not nombre:
-                continue
-            datos[codigo] = nombre
-            incorporadas += 1
-
-        self._escribir(datos)
-        return incorporadas
+        pares = {
+            (fila.get(COLUMNA_CODIGO) or ""): (fila.get(COLUMNA_NOMBRE) or "")
+            for fila in filas
+        }
+        return self.importar_pares(pares)

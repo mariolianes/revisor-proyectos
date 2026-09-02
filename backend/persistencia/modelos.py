@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     # se ejecuta nunca fuera de un comprobador de tipos: si se ejecutara,
     # cerraría un ciclo, porque `salidas/informe.py` importa
     # `EntregaRegistrada` de este mismo módulo.
+    from backend.persistencia.alumnos import AlumnoNuevo, AlumnoRegistrado
     from backend.persistencia.correccion import Correccion
     from backend.salidas.borrador import Devolucion
     from backend.salidas.informe import Informe
@@ -243,6 +244,38 @@ class Almacen(Protocol):
         Supabase y otro para memoria: los dos devuelven exactamente el mismo
         tipo, `backend.persistencia.correccion.Correccion`, con sus dos
         salidas ya reconstruidas.
+        """
+        ...
+
+    def dar_de_alta_alumno(self, alumno: AlumnoNuevo) -> AlumnoRegistrado:
+        """Registra o actualiza una fila del registro maestro
+        (`backend/persistencia/alumnos.py`). Nunca lleva nombre.
+
+        Si `alumno.student_id` es `None`, asigna uno nuevo con
+        `generar_student_id`, contando solo los `student_id` ya usados en
+        `alumno.curso`. Si trae un valor, da de alta esa identidad si no
+        existía o actualiza sus datos si ya existía -es la misma operación
+        para un alta nueva y para una reimportación que corrige un dato-.
+
+        Un `platform_id` que ya pertenece a OTRO `student_id` es un
+        `ValueError` con el texto de `error_de_platform_id_duplicado`: dos
+        identidades no pueden compartir el mismo ID de CESUR, y esto se
+        comprueba antes de escribir nada, en los dos almacenes.
+        """
+        ...
+
+    def listar_alumnos(self) -> list[AlumnoRegistrado]:
+        """Todo el registro maestro. Sin nombre, como siempre."""
+        ...
+
+    def alumnos_por_platform_id(self, platform_id: str) -> list[AlumnoRegistrado]:
+        """Las identidades que llevan ese ID de CESUR -normalmente ninguna o
+        una, salvo el instante entre detectar un choque y resolverlo-.
+
+        Puede devolver identidades de cursos distintos: es justo lo que
+        `backend.servicios.importacion_alumnos` necesita para distinguir una
+        reimportación del mismo curso -actualiza sin más- de un posible
+        repetidor de un curso anterior -se detiene y lo pregunta, D-024-.
         """
         ...
 

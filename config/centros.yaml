@@ -1,0 +1,25 @@
+# Catálogo de centros conocidos, por comunidad autónoma.
+#
+# El importador de listados de alumnos (tools/importar_listado_alumnos.py)
+# valida el centro de cada fila contra esta lista antes de registrarla. Si la
+# comunidad que se importa no tiene ninguna entrada aquí -la lista está
+# vacía, o la clave no existe-, NINGÚN centro de esa comunidad se puede
+# verificar, y todas sus filas quedan pendientes de revisión: es el fallo
+# seguro, no "cualquier centro vale". Rellena primero los centros reales de
+# una comunidad antes de importar su primer listado.
+#
+# Formato: el código de comunidad (AND, MAD, CAN, MUR, ARA, EXT) y, debajo,
+# una lista de sus centros, por ejemplo:
+#
+#   AND:
+#     - AND-MAL-01
+#     - AND-SEV-03
+#
+# Los códigos se comparan en mayúsculas y sin espacios sobrantes.
+
+AND: []
+MAD: []
+CAN: []
+MUR: []
+ARA: []
+EXT: []
