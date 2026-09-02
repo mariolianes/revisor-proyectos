@@ -17,6 +17,7 @@ import pytest
 
 from backend.analisis.contrato import AnalisisDelMotor
 from backend.analisis.openai import (
+    admite_esfuerzo,
     admite_temperatura,
 )
 from backend.analisis.openai import ProveedorOpenAI
@@ -571,13 +572,17 @@ def test_el_modelo_se_expone_sin_el_prefijo_de_nombre() -> None:
     assert p.nombre == "openai:gpt-4.1"
 
 
-@pytest.mark.parametrize("modelo", ["gpt-4.1", "gpt-4o", "gpt-5.6-sol"])
+@pytest.mark.parametrize("modelo", ["gpt-4.1", "gpt-4o", "gpt-5.2", "gpt-5.4"])
 def test_a_los_modelos_que_la_admiten_se_les_pide_temperatura_cero(modelo) -> None:
     """Un juicio que cambia cada vez que se pulsa no es un juicio."""
     assert admite_temperatura(modelo)
 
 
-@pytest.mark.parametrize("modelo", ["o3", "o3-mini", "o4-mini", "o1-pro"])
+@pytest.mark.parametrize(
+    "modelo",
+    ["o3", "o3-mini", "o4-mini", "o1-pro", "gpt-5.5", "gpt-5.6-luna",
+     "gpt-5.6-sol", "gpt-5.6-terra"],
+)
 def test_a_los_modelos_de_razonamiento_no_se_les_manda_temperatura(modelo) -> None:
     """Responden 400 «Unsupported parameter» si se les manda: fijan la suya.
 
@@ -609,3 +614,55 @@ def test_el_modelo_que_si_la_admite_la_recibe() -> None:
     )
 
     assert cliente.recibido["temperature"] == 0
+
+
+@pytest.mark.parametrize(
+    "modelo", ["o3", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]
+)
+def test_a_los_modelos_de_razonamiento_se_les_puede_pedir_esfuerzo(modelo) -> None:
+    assert admite_esfuerzo(modelo)
+
+
+@pytest.mark.parametrize("modelo", ["gpt-4.1", "gpt-4o", "gpt-5.2", "gpt-5.4"])
+def test_a_los_demas_no_se_les_puede_pedir_esfuerzo(modelo) -> None:
+    """Responden 400 «Unsupported parameter: reasoning.effort».
+
+    Medido contra la API, no deducido del nombre: la familia gpt-5 está
+    partida por la mitad y el prefijo «gpt-5» habría roto gpt-4.1... y
+    habría dejado fuera a gpt-5.2, que sí acepta temperatura.
+    """
+    assert not admite_esfuerzo(modelo)
+
+
+def test_el_esfuerzo_configurado_viaja_en_la_llamada() -> None:
+    """Lo que importa no es la función suelta, sino lo que de verdad se envía."""
+    cliente = _ClienteFalso()
+
+    ProveedorOpenAI(
+        clave="sk-de-prueba", modelo="gpt-5.6-luna", esfuerzo="high", cliente=cliente
+    ).analizar("instruccion", "texto", AnalisisDelMotor)
+
+    assert cliente.recibido["reasoning"] == {"effort": "high"}
+
+
+def test_sin_esfuerzo_configurado_no_se_manda_nada() -> None:
+    """El valor por omisión lo decide el modelo, no este sistema."""
+    cliente = _ClienteFalso()
+
+    ProveedorOpenAI(
+        clave="sk-de-prueba", modelo="gpt-5.6-luna", cliente=cliente
+    ).analizar("instruccion", "texto", AnalisisDelMotor)
+
+    assert "reasoning" not in cliente.recibido
+
+
+def test_un_esfuerzo_que_no_existe_se_rechaza_al_construir() -> None:
+    """Antes de gastar una llamada, no después."""
+    with pytest.raises(ValueError, match="no es un esfuerzo"):
+        ProveedorOpenAI("sk-de-prueba", "gpt-5.6-luna", esfuerzo="altisimo")
+
+
+def test_pedir_esfuerzo_a_un_modelo_que_no_razona_se_rechaza_al_construir() -> None:
+    """gpt-4.1 responde 400 si se le manda; se avisa antes de llegar ahí."""
+    with pytest.raises(ValueError, match="no admite"):
+        ProveedorOpenAI("sk-de-prueba", "gpt-4.1", esfuerzo="high")

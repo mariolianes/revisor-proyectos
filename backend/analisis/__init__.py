@@ -16,6 +16,8 @@ def crear_proveedor(configuracion):
         from backend.analisis.openai import ProveedorOpenAI
 
         return ProveedorOpenAI(
-            configuracion.clave_openai, configuracion.modelo_analisis
+            configuracion.clave_openai,
+            configuracion.modelo_analisis,
+            esfuerzo=configuracion.esfuerzo_analisis,
         )
     return ProveedorSimulado(respuestas=[])

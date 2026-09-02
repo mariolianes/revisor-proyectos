@@ -20,6 +20,11 @@ CLAVE = "SUPABASE_SERVICE_KEY"
 VERSION = "REVISOR_VERSION_CRITERIOS"
 CLAVE_OPENAI = "OPENAI_API_KEY"
 MODELO = "REVISOR_MODELO_ANALISIS"
+# Cuánto se le pide al modelo que piense antes de contestar. Solo lo
+# admiten los modelos de razonamiento -ver `admite_esfuerzo` en
+# `backend/analisis/openai.py`-; si no se indica, cada modelo usa el
+# suyo por omisión y no se manda nada.
+ESFUERZO = "REVISOR_ESFUERZO_ANALISIS"
 # Carpeta de datos locales: hoy, solo el listado nombre-código
 # (`backend/privacidad/listado_local.py`). Misma exigencia que `CARPETA`
 # -fuera del repositorio- y por el mismo motivo: lo que vive ahí no se
@@ -60,6 +65,7 @@ class Configuracion(BaseModel):
     version_criterios: str = VERSION_CRITERIOS_POR_OMISION
     clave_openai: str | None = None
     modelo_analisis: str | None = None
+    esfuerzo_analisis: str | None = None
     datos_locales: Path | None = None
     problema_datos_locales: str | None = None
     raiz_expedientes: Path | None = None
@@ -152,6 +158,7 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
         version_criterios=valores.get(VERSION) or VERSION_CRITERIOS_POR_OMISION,
         clave_openai=valores.get(CLAVE_OPENAI) or None,
         modelo_analisis=valores.get(MODELO) or None,
+        esfuerzo_analisis=valores.get(ESFUERZO) or None,
         datos_locales=datos_locales,
         problema_datos_locales=(
             problema_datos_locales.motivo if problema_datos_locales else None
