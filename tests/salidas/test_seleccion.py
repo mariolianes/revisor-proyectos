@@ -170,7 +170,7 @@ def test_sin_el_mapa_por_semaforo_se_usa_el_maximo_absoluto(
         fichero.read_text(encoding="utf-8").replace(
             "prioridades_maximas: 4", "prioridades_maximas: 1"
         ).replace(
-            "prioridades_maximas_por_semaforo:\n    AMBAR: 3\n    ROJO: 4",
+            "prioridades_maximas_por_semaforo:\n    VERDE: 2\n    AMBAR: 3\n    ROJO: 4",
             "prioridades_maximas_por_semaforo: {}",
         ),
         encoding="utf-8",
@@ -373,3 +373,20 @@ def test_sin_agrupacion_de_causa_cada_dimension_es_su_propia_causa(
     seleccion = seleccionar_prioridades(tmp_path, "v2026-2027", _analisis(siete_p1))
 
     assert [v.dimension for v in seleccion.elegidas] == ["D01", "D02", "D03", "D04"]
+
+
+def test_un_verde_con_alerta_recibe_menos_acciones_que_un_ambar() -> None:
+    """Regresión de D-026. Al volver el P3 a VERDE, un trabajo que "cumple la
+    fase y puede avanzar" pasó a tener candidatas por primera vez. Sin una
+    entrada propia en el mapa caía en el tope absoluto de cuatro, y le habría
+    llegado MÁS trabajo al alumno que con un ámbar."""
+    from backend.salidas.seleccion import _maximo
+
+    raiz = Path(__file__).resolve().parents[2]
+
+    assert _maximo(raiz, "v2026-2027", "VERDE") == 2
+    assert (
+        _maximo(raiz, "v2026-2027", "VERDE")
+        < _maximo(raiz, "v2026-2027", "AMBAR")
+        < _maximo(raiz, "v2026-2027", "ROJO")
+    )
