@@ -22,7 +22,6 @@ from backend.servicios.importacion_alumnos import (
     COINCIDENCIA_DE_NOMBRE,
     ESTADO_DESCONOCIDO,
     FILA_DUPLICADA,
-    REPETIDOR_POSIBLE,
     SIN_CENTRO,
     SIN_CICLO,
     ColumnasNoMapeadas,
@@ -298,25 +297,72 @@ def test_reimportar_con_el_mismo_platform_id_del_mismo_curso_actualiza(
     assert alumnos[0].estado_matricula == "BAJA"
 
 
-def test_un_platform_id_de_otro_curso_no_se_reutiliza_solo(listado_local) -> None:
-    """El caso del repetidor: no se decide en automático si conserva su
-    student_id anterior o si es un alta nueva -D-025-."""
+def test_un_repetidor_entra_como_alta_nueva_sin_detener_la_importacion(
+    listado_local,
+) -> None:
+    """El docente lo cerró en `decisiones#3-repetidores` (D-027): «cada curso
+    genera una matrícula y un ID operativo nuevo», «no detener la importación
+    por encontrar a la misma persona en un curso histórico».
+
+    Antes esto se detenía y se preguntaba una por una. Con 200-250 alumnos,
+    ese era trabajo suyo que la decisión le ahorra."""
     almacen = AlmacenEnMemoria()
     _importar(
         [_fila(nombre="Nombre Uno", id_cesur="cesur-1")],
         almacen=almacen, listado_local=listado_local, curso="2025-2026",
     )
+    anterior = almacen.listar_alumnos()[0].student_id
 
     resultado = _importar(
         [_fila(nombre="Nombre Uno", id_cesur="cesur-1")],
         almacen=almacen, listado_local=listado_local, curso=CURSO,
     )
 
+    assert resultado.nuevas == 1
+    assert resultado.pendientes == []
+    alumnos = almacen.listar_alumnos()
+    assert len(alumnos) == 2
+
+    nuevo = next(a for a in alumnos if a.curso == CURSO)
+    # Identidad nueva, no la de antes: el ID lleva el curso dentro.
+    assert nuevo.student_id != anterior
+    assert nuevo.student_id.startswith("ALU-26")
+    # Y queda el rastro, que es lo único que él quiso conservar entre cursos.
+    assert nuevo.matricula_anterior == anterior
+
+
+def test_dos_filas_del_mismo_curso_con_el_mismo_id_de_cesur_si_se_detienen(
+    listado_local,
+) -> None:
+    """El límite de lo anterior: dentro del curso activo, un ID de CESUR
+    repetido sigue siendo una contradicción. Él lo dejó dicho: «solo se
+    detienen duplicidades o contradicciones dentro del mismo curso activo»."""
+    almacen = AlmacenEnMemoria()
+    _importar(
+        [_fila(nombre="Nombre Uno", id_cesur="cesur-1")],
+        almacen=almacen, listado_local=listado_local, curso=CURSO,
+    )
+
+    resultado = _importar(
+        [_fila(nombre="Nombre Dos", id_cesur="cesur-1")],
+        almacen=almacen, listado_local=listado_local, curso=CURSO,
+    )
+
+    # Se reconoce como la misma identidad del mismo curso y se actualiza; no
+    # nace una segunda identidad con el ID de CESUR de la primera.
     assert resultado.nuevas == 0
-    assert resultado.pendientes[0].motivo == REPETIDOR_POSIBLE
-    # El alta del curso anterior sigue siendo la única: no se ha creado
-    # ninguna fila nueva a partir de la fila dudosa.
     assert len(almacen.listar_alumnos()) == 1
+
+
+def test_sin_antecedente_la_matricula_anterior_queda_vacia(listado_local) -> None:
+    """Control: el rastro solo aparece cuando de verdad hay un curso previo."""
+    almacen = AlmacenEnMemoria()
+    _importar(
+        [_fila(nombre="Nombre Uno", id_cesur="cesur-1")],
+        almacen=almacen, listado_local=listado_local, curso=CURSO,
+    )
+
+    assert almacen.listar_alumnos()[0].matricula_anterior is None
 
 
 # --- cargar_centros_conocidos ----------------------------------------------

@@ -630,13 +630,21 @@ class AlmacenSupabase:
             ciclo_code=fila.get("ciclo") or "",
             estado_matricula=fila.get("estado_matricula") or ESTADO_MATRICULA_INICIAL,
             platform_id=fila.get("platform_id"),
+            matricula_anterior=fila.get("matricula_anterior"),
         )
 
     def dar_de_alta_alumno(self, alumno: AlumnoNuevo) -> AlumnoRegistrado:
         validar_alumno(alumno)
 
         if alumno.platform_id is not None:
-            chocado = self._uno("alumno", platform_id=f"eq.{alumno.platform_id}")
+            # Acotado al curso, igual que en el almacén de memoria: entre
+            # cursos, el mismo ID de CESUR es un repetidor con identidad
+            # nueva (`decisiones#3-repetidores`).
+            chocado = self._uno(
+                "alumno",
+                platform_id=f"eq.{alumno.platform_id}",
+                curso=f"eq.{alumno.curso}",
+            )
             if chocado is not None and chocado["codigo"] != alumno.student_id:
                 raise error_de_platform_id_duplicado(alumno.platform_id, chocado["codigo"])
 
@@ -658,6 +666,7 @@ class AlmacenSupabase:
             "curso": alumno.curso,
             "estado_matricula": alumno.estado_matricula,
             "platform_id": alumno.platform_id,
+            "matricula_anterior": alumno.matricula_anterior,
         }
         existente = self._uno("alumno", codigo=f"eq.{student_id}")
         if existente is not None:

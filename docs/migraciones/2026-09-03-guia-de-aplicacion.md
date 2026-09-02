@@ -186,6 +186,14 @@ drop table if exists ejecucion_motor;
 alumnos desde sus Excel. Añade a la tabla de alumnos el centro, la comunidad,
 el curso, el estado de matrícula y el identificador de CESUR.
 
+**Un detalle que cambió el 3 de septiembre.** Su decisión sobre los
+repetidores —identidad nueva cada curso, conservando el ID de CESUR— chocaba
+con este cambio tal como estaba escrito: llevaba un índice que exigía que
+cada ID de CESUR fuese único **en toda la base**, y eso habría **rechazado a
+todos los repetidores** del curso siguiente. Ya está corregido: ahora el ID
+de CESUR es único **por curso**. Si tenía descargada una versión anterior de
+este SQL, use esta.
+
 **Lo que NO añade, y conviene que lo sepa:** ninguna columna para el nombre.
 La correspondencia nombre-identificador se queda en su equipo, como usted
 pidió, y esta migración es parte de esa garantía: no existe columna donde
@@ -202,7 +210,8 @@ alter table alumno
   add column if not exists ccaa_code text,
   add column if not exists curso text,
   add column if not exists estado_matricula text not null default 'ACTIVO',
-  add column if not exists platform_id text;
+  add column if not exists platform_id text,
+  add column if not exists matricula_anterior text;
 
 alter table alumno drop constraint if exists ccaa_code_conocido;
 alter table alumno add constraint ccaa_code_conocido
@@ -212,8 +221,10 @@ alter table alumno drop constraint if exists estado_matricula_conocida;
 alter table alumno add constraint estado_matricula_conocida
   check (estado_matricula ~ '^(ACTIVO|BAJA|TRASLADADO|REPETIDOR)$');
 
-create unique index if not exists alumno_platform_id_unico
-  on alumno (platform_id) where platform_id is not null;
+drop index if exists alumno_platform_id_unico;
+
+create unique index if not exists alumno_platform_id_unico_por_curso
+  on alumno (platform_id, curso) where platform_id is not null;
 
 create index if not exists alumno_por_curso on alumno (curso);
 ```
@@ -227,24 +238,26 @@ select column_name
 from information_schema.columns
 where table_schema = 'public' and table_name = 'alumno'
   and column_name in
-    ('centro_code', 'ccaa_code', 'curso', 'estado_matricula', 'platform_id')
+    ('centro_code', 'ccaa_code', 'curso', 'estado_matricula',
+     'platform_id', 'matricula_anterior')
 order by column_name;
 ```
 
-Debe devolver **cinco filas**.
+Debe devolver **seis filas**.
 
 **Cómo deshacerlo.** Borra el centro, la comunidad, el curso y el estado de
 matrícula de todos los alumnos ya importados:
 
 ```sql
-drop index if exists alumno_platform_id_unico;
+drop index if exists alumno_platform_id_unico_por_curso;
 drop index if exists alumno_por_curso;
 alter table alumno
   drop column if exists centro_code,
   drop column if exists ccaa_code,
   drop column if exists curso,
   drop column if exists estado_matricula,
-  drop column if exists platform_id;
+  drop column if exists platform_id,
+  drop column if exists matricula_anterior;
 ```
 
 ---
@@ -329,7 +342,8 @@ select
   (select count(*) from information_schema.columns
      where table_schema = 'public' and table_name = 'alumno'
        and column_name in ('centro_code', 'ccaa_code', 'curso',
-                           'estado_matricula', 'platform_id'))
+                           'estado_matricula', 'platform_id',
+                           'matricula_anterior'))
     as columnas_de_alumno,
   (select count(*) from pg_tables
      where schemaname = 'public' and tablename = 'ejecucion_motor')
@@ -343,7 +357,7 @@ Lo correcto es:
 | Columna | Valor esperado |
 |---|---|
 | `columnas_de_correccion` | 4 |
-| `columnas_de_alumno` | 5 |
+| `columnas_de_alumno` | 6 |
 | `tabla_de_consumo` | 1 |
 | `estados_del_semaforo` | **4** |
 

@@ -151,6 +151,14 @@ class AlumnoNuevo(BaseModel):
     ciclo_code: str
     estado_matricula: str = ESTADO_MATRICULA_INICIAL
     platform_id: str | None = None
+    # El `previous_enrollment_id` de `decisiones#3-repetidores`, en
+    # castellano como el resto del sistema: el `student_id` que esta misma
+    # persona tuvo en un curso anterior, cuando se ha podido saber por el ID
+    # de CESUR. Es una anotación para poder consultar antecedentes, y nada
+    # más: no enlaza expedientes, no hereda entregas y no cambia el circuito
+    # del alumno. Él lo pidió expresamente así -«sin afectar al nuevo
+    # circuito»-.
+    matricula_anterior: str | None = None
 
     @field_validator("student_id", "ccaa_code", "centro_code", "ciclo_code", "estado_matricula")
     @classmethod
@@ -211,9 +219,16 @@ def error_de_platform_id_duplicado(platform_id: str, student_id_existente: str) 
     """El mismo texto en los dos almacenes: mismo patrón que
     `error_de_atribucion` en `backend/persistencia/modelos.py`, que existe
     exactamente por esto -que el docente no debería leer un aviso distinto
-    según haya credenciales de Supabase o no-."""
+    según haya credenciales de Supabase o no-.
+
+    Solo se levanta DENTRO de un mismo curso. Entre cursos, el mismo ID de
+    CESUR pertenece legítimamente a dos identidades distintas: es un
+    repetidor, y el docente decidió que cada curso genera matrícula e
+    identidad nuevas (`decisiones#3-repetidores`).
+    """
     return ValueError(
         f"El ID de plataforma «{platform_id}» ya está asignado a "
-        f"{student_id_existente}. Dos identidades no pueden compartir el "
-        "mismo ID de CESUR: revisa el listado antes de reimportar esta fila."
+        f"{student_id_existente} en este mismo curso. Dos identidades del "
+        "mismo curso no pueden compartir el ID de CESUR: revisa el listado "
+        "antes de reimportar esta fila."
     )

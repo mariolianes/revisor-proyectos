@@ -29,7 +29,8 @@ alter table alumno
   add column curso text,
   add column estado_matricula text not null default 'ACTIVO'
     constraint estado_matricula_conocida check (estado_matricula ~ '^(ACTIVO|BAJA|TRASLADADO|REPETIDOR)$'),
-  add column platform_id text;
+  add column platform_id text,
+  add column matricula_anterior text;
 
 comment on column alumno.codigo is
   'El student_id: ALU-AANNNN desde esta migración (AA = curso, NNNN = secuencia). Estable dentro de un curso e independiente del centro y la comunidad, por decisión del docente. Alumnos anteriores a esta tarea pueden seguir llevando el código que traía el nombre de su archivo (p.ej. AF023): las dos formas conviven en la misma columna.';
@@ -59,7 +60,15 @@ comment on column alumno.platform_id is
 -- (backend/persistencia/alumnos.py, error_de_platform_id_duplicado); este
 -- índice es la segunda línea de defensa, para cualquier escritura que no
 -- pase por esa vía.
-create unique index alumno_platform_id_unico on alumno (platform_id)
+-- Unico POR CURSO, no en absoluto. El docente decidio el 2026-09-02
+-- (decisiones#3-repetidores) que un repetidor recibe identidad nueva cada
+-- curso conservando su ID de CESUR: un indice unico sobre platform_id a
+-- secas habria rechazado a todos los repetidores del curso siguiente.
+create unique index alumno_platform_id_unico_por_curso
+  on alumno (platform_id, curso)
   where platform_id is not null;
 
 create index alumno_por_curso on alumno (curso);
+
+comment on column alumno.matricula_anterior is
+  'El student_id que esta misma persona tuvo en un curso anterior, cuando se ha podido saber por el ID de CESUR. Es el previous_enrollment_id de decisiones#3-repetidores: una anotacion para consultar antecedentes, que no enlaza expedientes ni hereda entregas.';

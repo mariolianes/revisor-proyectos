@@ -29,10 +29,13 @@ nombre, y aquí es literalmente lo único que se usa para decidir en
 automático que dos filas de dos importaciones son la misma persona: sin
 `platform_id`, una fila que coincide en nombre con un alumno ya conocido no
 se fusiona nunca sola, se manda a revisión (ver `COINCIDENCIA_DE_NOMBRE`
-más abajo). Y un `platform_id` que ya pertenecía a un `student_id` de OTRO
-curso no se reutiliza en automático tampoco -sería decidir, sin que nadie lo
-haya dicho, que es un repetidor y no un alumno nuevo-: se manda a revisión
-como `REPETIDOR_POSIBLE`. Ver D-025 en `docs/decisions.md`.
+más abajo). Un `platform_id` que ya pertenecía a un `student_id` de OTRO
+curso es un repetidor: **no detiene la importación y no se fusiona**. Recibe
+identidad nueva y se anota de dónde viene en `matricula_anterior`, porque el
+docente lo cerró así el 2026-09-02 -«cada curso genera una matrícula y un ID
+operativo nuevo», «no detener la importación por encontrar a la misma
+persona en un curso histórico»-. Ver D-025 y D-027 en `docs/decisions.md`,
+y `decisiones#3-repetidores`.
 """
 
 from __future__ import annotations
@@ -149,7 +152,6 @@ CICLO_DESCONOCIDO = "CICLO_DESCONOCIDO"
 ESTADO_DESCONOCIDO = "ESTADO_DESCONOCIDO"
 FILA_DUPLICADA = "FILA_DUPLICADA"
 COINCIDENCIA_DE_NOMBRE = "POSIBLE_COINCIDENCIA_DE_NOMBRE"
-REPETIDOR_POSIBLE = "REPETIDOR_POSIBLE"
 ERROR_AL_REGISTRAR = "ERROR_AL_REGISTRAR"
 
 
@@ -369,6 +371,7 @@ def importar(
             continue
 
         student_id: str | None = None
+        matricula_anterior: str | None = None
         if platform_id is not None:
             existentes = almacen.alumnos_por_platform_id(platform_id)
             del_mismo_curso = [a for a in existentes if a.curso == curso]
@@ -376,18 +379,20 @@ def importar(
             if del_mismo_curso:
                 student_id = del_mismo_curso[0].student_id
             elif de_otro_curso:
-                otro = de_otro_curso[0]
-                pendientes.append(FilaPendiente(
-                    fila=indice, motivo=REPETIDOR_POSIBLE,
-                    detalle=f"Fila {indice}: este ID de plataforma ya "
-                            f"existe con el student_id {otro.student_id}, "
-                            f"del curso {otro.curso}. ¿Es un repetidor? "
-                            "Decide si conserva ese student_id o si es un "
-                            "alta nueva, y reimporta esta fila con lo que "
-                            "corresponda -el sistema no lo decide solo-.",
-                ))
-                continue
-            # Si no hay ninguno, sigue en None: alta nueva.
+                # Un repetidor. NO se detiene la importación y NO se fusiona
+                # con su identidad anterior: el docente lo cerró así en
+                # `decisiones#3-repetidores` -«cada curso genera una
+                # matrícula y un ID operativo nuevo», «la coincidencia con un
+                # nombre de un curso archivado no es una incidencia», «no
+                # detener la importación por encontrar a la misma persona en
+                # un curso histórico»-. Se anota de dónde viene y sigue como
+                # alta nueva. Hasta el 2026-09-02 esto se detenía y se
+                # preguntaba, una por una: con 200-250 alumnos, eso era
+                # trabajo suyo que la decisión le ahorra.
+                matricula_anterior = max(
+                    de_otro_curso, key=lambda a: a.curso
+                ).student_id
+            # Si no hay ninguno, sigue en None: alta nueva sin antecedente.
         else:
             candidatos_locales = filas_por_nombre_local.get(clave_nombre, [])
             if candidatos_locales:
@@ -404,7 +409,7 @@ def importar(
         alumno_nuevo = AlumnoNuevo(
             student_id=student_id, curso=curso, ccaa_code=ccaa_code,
             centro_code=centro, ciclo_code=ciclo, estado_matricula=estado,
-            platform_id=platform_id,
+            platform_id=platform_id, matricula_anterior=matricula_anterior,
         )
         try:
             registrado = almacen.dar_de_alta_alumno(alumno_nuevo)

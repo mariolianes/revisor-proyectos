@@ -1372,3 +1372,39 @@ ninguno_mas`.
 `frontend/src/lib/tipos.ts`, `frontend/src/paginas/Revision.tsx`,
 `supabase/migrations/20260902190000_alertas_sobre_verde.sql` (sustituye a la
 retirada), y `docs/changes/2026-09-02-el-semaforo-vuelve-a-cuatro-estados.md`.
+
+## D-027 · Un repetidor no detiene la importación: identidad nueva cada curso, con rastro del anterior
+
+**Fecha:** 2026-09-02 · **Estado:** Firme · **Responsable:** Marcos
+
+Revoca la parte de D-025 que dejaba abierta la pregunta y detenía cada fila
+de repetidor para preguntársela. Él la contestó en `decisiones#3-repetidores`:
+«cada curso genera una matrícula y un ID operativo nuevo», «la coincidencia
+con un nombre de un curso archivado no es una incidencia», «no detener la
+importación por encontrar a la misma persona en un curso histórico».
+
+Lo que se conserva entre cursos es un rastro y nada más: `matricula_anterior`
+—su `previous_enrollment_id`, en castellano como el resto— anota el
+`student_id` del curso previo cuando el ID de CESUR permite saberlo. No
+enlaza expedientes, no hereda entregas y no cambia el circuito, porque él lo
+pidió explícitamente «sin afectar al nuevo circuito».
+
+**Lo que la decisión destapó, y es lo importante de este cambio.** El índice
+único que D-025 había creado sobre `platform_id` —sin más— **habría hecho
+imposible la regla que él acaba de fijar**: el segundo curso de cualquier
+repetidor habría chocado contra ese índice y la importación entera habría
+fallado. Pasa a ser único sobre `(platform_id, curso)`. La migración no
+estaba aplicada, así que se corrigió a tiempo; de haberse aplicado antes de
+su respuesta, el fallo habría aparecido el primer día del curso 2027-2028 y
+sin ninguna pista de por qué.
+
+El límite se mantiene donde él lo puso: **dentro** del curso activo, un ID de
+CESUR repetido sigue siendo una contradicción y se detiene.
+
+**Arrastra:** `backend/persistencia/alumnos.py` (`matricula_anterior`, y
+`error_de_platform_id_duplicado` acotado al curso),
+`backend/persistencia/memoria.py`, `backend/persistencia/supabase.py`,
+`backend/servicios/importacion_alumnos.py` (desaparece el motivo
+`REPETIDOR_POSIBLE`),
+`supabase/migrations/20260831210000_registro_maestro_de_alumnos.sql`,
+y dos tests de paridad que fijan la regla en los dos almacenes.

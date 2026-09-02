@@ -233,7 +233,12 @@ class AlmacenEnMemoria:
             chocado = next(
                 (
                     datos for sid, datos in self._alumnos.items()
-                    if sid != alumno.student_id and datos.get("platform_id") == alumno.platform_id
+                    # Acotado al curso: entre cursos, el mismo ID de CESUR es
+                    # un repetidor con identidad nueva, no un choque
+                    # (`decisiones#3-repetidores`).
+                    if sid != alumno.student_id
+                    and datos.get("platform_id") == alumno.platform_id
+                    and datos.get("curso") == alumno.curso
                 ),
                 None,
             )
@@ -261,6 +266,7 @@ class AlmacenEnMemoria:
             "ciclo_code": alumno.ciclo_code,
             "estado_matricula": alumno.estado_matricula,
             "platform_id": alumno.platform_id,
+            "matricula_anterior": alumno.matricula_anterior,
         }
         self._alumnos[student_id] = datos
         return AlumnoRegistrado(**datos)

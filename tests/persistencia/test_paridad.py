@@ -949,6 +949,57 @@ def test_alumnos_por_platform_id_encuentra_lo_mismo_en_los_dos(dos_almacenes) ->
     assert memoria[1] == []
 
 
+def test_el_mismo_id_de_cesur_en_dos_cursos_convive_igual_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """El repetidor: identidad nueva cada curso, mismo ID de CESUR
+    (`decisiones#3-repetidores`, D-027). Si un almacén lo rechazara y el otro
+    no, el docente veria comportamientos distintos según tuviera
+    credenciales de Supabase o no."""
+    def guion(almacen):
+        viejo = almacen.dar_de_alta_alumno(
+            _alumno_nuevo(curso="2025-2026", platform_id="cesur-7")
+        )
+        nuevo = almacen.dar_de_alta_alumno(
+            _alumno_nuevo(
+                curso="2026-2027", platform_id="cesur-7",
+                matricula_anterior=viejo.student_id,
+            )
+        )
+        return [viejo.student_id, nuevo.student_id, nuevo.matricula_anterior,
+                len(almacen.listar_alumnos())]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria[0] != memoria[1]
+    assert memoria[2] == memoria[0]
+    assert memoria[3] == 2
+
+
+def test_el_mismo_id_de_cesur_dos_veces_en_el_mismo_curso_falla_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """El límite: dentro del curso activo sigue siendo una contradicción, y
+    los dos almacenes tienen que decir lo mismo."""
+    def guion(almacen):
+        almacen.dar_de_alta_alumno(
+            _alumno_nuevo(student_id="ALU-260001", platform_id="cesur-7")
+        )
+        try:
+            almacen.dar_de_alta_alumno(
+                _alumno_nuevo(student_id="ALU-260002", platform_id="cesur-7")
+            )
+            return "no falló"
+        except ValueError as fallo:
+            return str(fallo)
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert "ya esta asignado" in memoria.replace("á", "a")
+
+
 def test_el_ciclo_del_registro_maestro_manda_sobre_el_que_declara_una_entrega(
     dos_almacenes,
 ) -> None:
