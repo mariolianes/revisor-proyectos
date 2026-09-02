@@ -23,8 +23,10 @@ identificar y después enmascarar.
 
 `backend/identificacion/nombres.py`,
 `backend/identificacion/determinista.py`,
-`tests/identificacion/test_determinista.py`. Ninguno toca lo ya construido:
-es una pieza nueva que todavía no está conectada al flujo de entrada.
+`backend/identificacion/portada.py`,
+`tests/identificacion/test_determinista.py` y
+`tests/identificacion/test_portada.py`. Ninguno toca lo ya construido: es una
+pieza nueva que todavía no está conectada al flujo de entrada.
 
 ## Correcciones cerradas afectadas
 

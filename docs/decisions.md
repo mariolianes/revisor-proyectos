@@ -1453,7 +1453,19 @@ con la política determinista (D-026 y `backend/expedientes/estructura.py`).
 `backend/identificacion/determinista.py` (nuevos),
 `tests/identificacion/test_determinista.py`.
 
-**Lo que todavía no hace.** Extraer el nombre de la portada de un PDF. Este
-módulo recibe los nombres ya extraídos; quién los saca y cómo es la pieza
-siguiente, y no se ha construido aquí para que la escalera de decisión pueda
-probarse entera sin depender de ningún PDF.
+**La portada, y por qué no extrae un nombre.** `backend/identificacion/
+portada.py` **no saca un nombre del documento: comprueba si alguno de los
+alumnos que ya conocemos aparece en él**. Es la diferencia entre una
+comprobación y una adivinanza. Extraer un nombre de un texto libre exige
+decidir dónde empieza y dónde acaba, y equivocarse ahí produce exactamente lo
+que él quiere evitar. Comprobar si un nombre conocido aparece no requiere
+adivinar nada y responde a la única pregunta que la portada tiene que
+responder: si confirma al candidato o lo contradice. Él la llama «evidencia
+auxiliar», y eso es lo que se ha construido.
+
+Se busca una ventana de palabras consecutivas cuyo conjunto sea exactamente
+el del nombre, así que «Ficticia Inventada, Ana» en el listado encuentra «Ana
+Ficticia Inventada» en la portada, pero las tres palabras desperdigadas por
+la página no cuentan. Se leen tres páginas y no el documento entero: buscar
+nombres por todo el trabajo es justo la costumbre que la capa de privacidad
+no quiere.
