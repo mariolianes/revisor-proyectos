@@ -1,0 +1,95 @@
+"""Comparar dos nombres de persona sin decidir por parecido.
+
+El docente descartó expresamente la coincidencia difusa
+(`decisiones#6-identificacion`): «no estableceremos un porcentaje de parecido
+para asignar automáticamente un trabajo». Aquí no hay, por tanto, ninguna
+distancia de edición ni ningún umbral. Lo único que se hace es **normalizar**
+—quitar lo que él enumera como ignorable— y después comparar por igualdad o
+por inclusión de palabras.
+
+Lo que él autoriza a ignorar, literalmente: «mayúsculas, tildes, guiones,
+comas, dobles espacios y el orden "apellidos, nombre"».
+
+Este módulo trabaja con nombres de alumnos, así que **solo se ejecuta en el
+equipo del docente**. Nada de lo que hay aquí viaja a la API ni a la base de
+datos: ver `backend/privacidad/listado_local.py`, que es donde vive la
+correspondencia, y `backend/privacidad/minimizacion.py`, que es lo que se
+aplica *después* de identificar y *antes* de cualquier llamada externa.
+"""
+
+from __future__ import annotations
+
+import unicodedata
+
+# Partículas que no distinguen a una persona de otra y que aparecen o
+# desaparecen sin criterio entre un listado y una portada. No se usan para
+# decidir una coincidencia, pero tampoco la impiden.
+PARTICULAS = frozenset({"de", "del", "la", "las", "los", "y", "i", "da", "do"})
+
+
+def normalizar(nombre: str) -> str:
+    """El nombre reducido a lo que sí distingue a una persona.
+
+    Minúsculas, sin tildes, sin guiones ni comas ni puntos, sin dobles
+    espacios. Es la misma normalización que `_normalizar_texto` en
+    `backend/servicios/importacion_alumnos.py` -no se importa de allí para
+    no atar la identificación al importador, pero si una de las dos cambia,
+    la otra tiene que cambiar igual: hay un test que lo comprueba-.
+    """
+    descompuesto = unicodedata.normalize("NFKD", nombre)
+    sin_tildes = "".join(c for c in descompuesto if not unicodedata.combining(c))
+    solo_alfanumerico = "".join(
+        c if c.isalnum() else " " for c in sin_tildes.lower()
+    )
+    return " ".join(solo_alfanumerico.split())
+
+
+def palabras(nombre: str) -> frozenset[str]:
+    """Las palabras significativas del nombre, sin partículas.
+
+    Se devuelve un conjunto y no una lista porque el orden no debe
+    importar: el docente pide expresamente ignorar el orden «apellidos,
+    nombre», y «García Pérez, Ana» y «Ana García Pérez» tienen que dar lo
+    mismo.
+    """
+    return frozenset(
+        p for p in normalizar(nombre).split() if p not in PARTICULAS
+    )
+
+
+def es_el_mismo_nombre(uno: str, otro: str) -> bool:
+    """Si son el mismo nombre completo, en cualquier orden.
+
+    Exige que coincidan **todas** las palabras significativas. No es una
+    medida de parecido: o son las mismas palabras o no lo son.
+    """
+    del_uno, del_otro = palabras(uno), palabras(otro)
+    return bool(del_uno) and del_uno == del_otro
+
+
+def es_nombre_parcial_de(parcial: str, completo: str) -> bool:
+    """Si `parcial` es un subconjunto propio del nombre completo.
+
+    El caso típico: la portada dice «Ana García» y el listado «Ana García
+    Pérez». Sirve para la prioridad 3 del docente -nombre más al menos un
+    apellido-, nunca para asignar por su cuenta: la prioridad 3 exige,
+    además, candidato único.
+
+    Devuelve `False` cuando son idénticos: eso ya lo cubre
+    `es_el_mismo_nombre`, y confundirlos haría que un nombre completo
+    entrara por la puerta de la coincidencia parcial.
+    """
+    del_parcial, del_completo = palabras(parcial), palabras(completo)
+    if not del_parcial or del_parcial == del_completo:
+        return False
+    return del_parcial < del_completo
+
+
+def tiene_nombre_y_apellido(nombre: str) -> bool:
+    """Al menos dos palabras significativas.
+
+    La prioridad 3 del docente pide «nombre más al menos un apellido». Una
+    sola palabra no identifica a nadie en un grupo de 200-250 alumnos, y
+    tratarla como si lo hiciera es justo el error que él quiere evitar.
+    """
+    return len(palabras(nombre)) >= 2

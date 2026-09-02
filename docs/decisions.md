@@ -1408,3 +1408,52 @@ CESUR repetido sigue siendo una contradicción y se detiene.
 `REPETIDOR_POSIBLE`),
 `supabase/migrations/20260831210000_registro_maestro_de_alumnos.sql`,
 y dos tests de paridad que fijan la regla en los dos almacenes.
+
+## D-028 · La comprobación del nombre en portada sí se construye, en local y antes de minimizar
+
+**Fecha:** 2026-09-02 · **Estado:** Firme · **Responsable:** Marcos
+
+Revoca la decisión que habíamos tomado el 31 de agosto de **no** construir el
+tercer criterio de identificación. Lo habíamos dejado fuera por entender que
+leer el nombre del alumno del documento contradecía la capa de minimización
+que él acababa de aprobar. Él lo corrigió, y su razonamiento es mejor que el
+nuestro:
+
+> «Leer el nombre dentro del equipo no contradice la capa de privacidad: lo
+> que debe evitarse es enviar el nombre al servidor o incluirlo en el texto
+> remitido al modelo.»
+
+La distinción que nos faltaba: la minimización no protege contra *leer*, sino
+contra *enviar*. El orden que él fija es leer, identificar y **después**
+enmascarar, y tiene que ser ese: sobre un texto ya minimizado no quedaría
+nombre que reconocer.
+
+**Cómo se construye, y por qué así.** `backend/identificacion/determinista.py`
+implementa su escalera de cinco prioridades con dos garantías estructurales:
+
+1. **La contradicción se comprueba antes que nada.** Su prioridad 5 dice
+   «Incidencias siempre», y «siempre» tenía que ganar a las tres asignaciones
+   automáticas, no ordenarse detrás de ellas. Un trabajo cuyo identificador
+   de plataforma apunta a un alumno y cuya portada nombra a otro **no** se
+   asigna al primero por tener más prioridad: se detiene.
+2. **`Identificacion` no lleva ningún nombre.** Ni el del alumno, ni el
+   leído de la portada, ni siquiera dentro del motivo de una incidencia
+   -que es justo donde resultaría natural escribirlo-. Es el objeto que
+   cruza la frontera hacia el resto del sistema: si no lleva nombre, no
+   puede filtrarlo. Hay un test que lo comprueba sobre los tres desenlaces.
+
+**Y no hay ningún umbral de parecido**, porque él lo descartó: «no
+estableceremos un porcentaje de parecido». O las palabras del nombre
+coinciden -ignorando mayúsculas, tildes, guiones, comas, dobles espacios y el
+orden «apellidos, nombre», que es lo que él autoriza a ignorar- o no
+coinciden. La configuración se niega a cargar si alguien escribe un umbral
+con la política determinista (D-026 y `backend/expedientes/estructura.py`).
+
+**Arrastra:** `backend/identificacion/nombres.py` y
+`backend/identificacion/determinista.py` (nuevos),
+`tests/identificacion/test_determinista.py`.
+
+**Lo que todavía no hace.** Extraer el nombre de la portada de un PDF. Este
+módulo recibe los nombres ya extraídos; quién los saca y cómo es la pieza
+siguiente, y no se ha construido aquí para que la escalera de decisión pueda
+probarse entera sin depender de ningún PDF.
