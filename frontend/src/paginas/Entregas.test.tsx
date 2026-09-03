@@ -35,7 +35,7 @@ const REGISTRADA = {
 
 const ENTORNO = {
   hay_carpeta: true, carpeta: "C:/01_ALUMNOS", persistencia_duradera: true,
-  version_criterios: "v2026-2027", avisos: [],
+  version_criterios: "v2026-2027", motor: "simulado", avisos: [],
 }
 
 describe("Entregas", () => {
@@ -115,5 +115,69 @@ describe("Entregas", () => {
     render(<Entregas alAbrirFicha={vi.fn()} />)
 
     expect(await screen.findByText(/nada nuevo/i)).toBeInTheDocument()
+  })
+})
+
+describe("la bandeja agrupada por lo que espera del docente", () => {
+  function entrega(id: string, estado: string) {
+    return { ...REGISTRADA, id, estado }
+  }
+
+  it("agrupa por lo que le toca a él, no por si está registrada", async () => {
+    vi.mocked(api.entorno).mockResolvedValue(ENTORNO)
+    vi.mocked(api.archivosPendientes).mockResolvedValue([])
+    vi.mocked(api.entregas).mockResolvedValue([
+      entrega("a", "RECIBIDO"),
+      entrega("b", "ANALIZADO"),
+      entrega("c", "APROBADO"),
+    ])
+
+    render(<Entregas alAbrirFicha={vi.fn()} />)
+
+    expect(await screen.findByText("Listas para analizar")).toBeInTheDocument()
+    expect(screen.getByText("Esperan tu revisión")).toBeInTheDocument()
+    expect(screen.getByText("Cerradas")).toBeInTheDocument()
+  })
+
+  it("no pinta un grupo vacío, salvo el de cerradas", async () => {
+    // Cinco encabezados con nada debajo son justo el ruido que esta
+    // agrupación quiere quitar. El de cerradas se queda porque su recuento
+    // a cero sí dice algo: todavía no has cerrado ninguna.
+    vi.mocked(api.entorno).mockResolvedValue(ENTORNO)
+    vi.mocked(api.archivosPendientes).mockResolvedValue([])
+    vi.mocked(api.entregas).mockResolvedValue([entrega("a", "RECIBIDO")])
+
+    render(<Entregas alAbrirFicha={vi.fn()} />)
+
+    expect(await screen.findByText("Listas para analizar")).toBeInTheDocument()
+    expect(screen.queryByText("Esperan tu revisión")).not.toBeInTheDocument()
+    expect(screen.queryByText("Bloqueadas")).not.toBeInTheDocument()
+    expect(screen.getByText("Cerradas")).toBeInTheDocument()
+  })
+
+  it("una entrega bloqueada aparece en su propio grupo", async () => {
+    vi.mocked(api.entorno).mockResolvedValue(ENTORNO)
+    vi.mocked(api.archivosPendientes).mockResolvedValue([])
+    vi.mocked(api.entregas).mockResolvedValue([entrega("a", "BLOQUEADO")])
+
+    render(<Entregas alAbrirFicha={vi.fn()} />)
+
+    expect(await screen.findByText("Bloqueadas")).toBeInTheDocument()
+    expect(screen.getByText("bloqueada")).toBeInTheDocument()
+  })
+
+  it("cada grupo dice cuántas hay", async () => {
+    vi.mocked(api.entorno).mockResolvedValue(ENTORNO)
+    vi.mocked(api.archivosPendientes).mockResolvedValue([])
+    vi.mocked(api.entregas).mockResolvedValue([
+      entrega("a", "ANALIZADO"),
+      entrega("b", "EN_REVISION_DOCENTE"),
+      entrega("c", "BORRADORES_GENERADOS"),
+    ])
+
+    render(<Entregas alAbrirFicha={vi.fn()} />)
+
+    const titulo = await screen.findByText("Esperan tu revisión")
+    expect(titulo.parentElement?.textContent).toContain("3")
   })
 })

@@ -780,3 +780,12 @@ def test_confirmar_con_otro_alumno_da_400_y_nombra_la_ficha_que_choca(cliente) -
     assert primera["entrega"]["id"] in detalle
     assert "AF023" in detalle
     assert "BX999" in detalle
+
+
+def test_el_entorno_dice_con_que_motor_se_va_a_analizar(cliente) -> None:
+    """Antes, el nombre del motor solo aparecía cuando el análisis ya estaba
+    hecho y ya se había pagado. El docente debería poder ver con qué va a
+    gastar antes de pulsar, y la pantalla lo enseña mientras analiza."""
+    entorno = cliente.get("/api/entorno").json()
+
+    assert entorno["motor"] == "simulado"

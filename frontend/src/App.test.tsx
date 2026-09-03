@@ -34,7 +34,7 @@ const PENDIENTE = {
 
 const ENTORNO = {
   hay_carpeta: true, carpeta: "C:/01_ALUMNOS", persistencia_duradera: true,
-  version_criterios: "v2026-2027", avisos: [],
+  version_criterios: "v2026-2027", motor: "simulado", avisos: [],
 }
 
 const REGISTRADA = {

@@ -64,6 +64,12 @@ class Entorno(BaseModel):
     carpeta: str | None
     persistencia_duradera: bool
     version_criterios: str
+    # Qué motor va a analizar, tal como lo nombra el propio proveedor
+    # («openai:gpt-5.6-luna», o «simulado»). Se expone antes de analizar y no
+    # solo después, para que el docente sepa con qué va a gastar antes de
+    # pulsar: hasta ahora el nombre del motor solo aparecía cuando el
+    # análisis ya se había hecho y ya se había pagado.
+    motor: str
     avisos: list[str]
 
 
@@ -108,6 +114,7 @@ def obtener_entorno(peticion: Request) -> Entorno:
                 if configuracion.carpeta_entregas else None,
         persistencia_duradera=almacen.es_duradero,
         version_criterios=configuracion.version_criterios,
+        motor=peticion.app.state.proveedor.nombre,
         avisos=avisos,
     )
 

@@ -230,6 +230,12 @@ export interface Entorno {
   carpeta: string | null
   persistencia_duradera: boolean
   version_criterios: string
+  /**
+   * Qué motor va a analizar, antes de analizar («openai:gpt-5.6-luna», o
+   * «simulado»). Hasta ahora el nombre del motor solo se veía cuando el
+   * análisis ya estaba hecho y ya se había pagado.
+   */
+  motor: string
   avisos: string[]
 }
 

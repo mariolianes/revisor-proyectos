@@ -1,5 +1,7 @@
 import { useState } from "react"
 
+import { Migas } from "./componentes/Migas"
+import type { Miga } from "./componentes/Migas"
 import { Documentos } from "./paginas/Documentos"
 import { Editor } from "./paginas/Editor"
 import { Entregas } from "./paginas/Entregas"
@@ -35,6 +37,39 @@ export default function App() {
     { id: string; resultado: ResultadoAnalisis } | null
   >(null)
 
+  const nombreDeVista: Record<Vista, string> = {
+    entregas: "Entregas",
+    documentos: "Documentos",
+    estado: "Estado",
+    pendientes: "Pendientes",
+  }
+
+  // Se componen del estado que ya existe -qué pestaña, qué ficha, qué
+  // revisión-, no de una fuente nueva: así no puede haber una miga que diga
+  // una cosa y una pantalla que enseñe otra.
+  const migas: Miga[] = [
+    {
+      texto: nombreDeVista[vista],
+      alPulsar: () => {
+        setAnclaEditando(null)
+        setFichaAbierta(null)
+        setRevisionAbierta(null)
+      },
+    },
+  ]
+  if (fichaAbierta || revisionAbierta) {
+    migas.push({
+      texto: "Entrega",
+      alPulsar: revisionAbierta ? () => setRevisionAbierta(null) : undefined,
+    })
+  }
+  if (revisionAbierta) {
+    migas.push({ texto: "Revisión" })
+  }
+  if (anclaEditando) {
+    migas.push({ texto: "Editor" })
+  }
+
   const pestanas: { clave: Vista; texto: string }[] = [
     { clave: "entregas", texto: "Entregas" },
     { clave: "documentos", texto: "Documentos" },
@@ -59,7 +94,7 @@ export default function App() {
                 setRevisionAbierta(null)
               }}
               className={
-                vista === pestana.clave && !anclaEditando && !fichaAbierta && !revisionAbierta
+                vista === pestana.clave
                   ? "text-[13px] border-b-2 border-tinta pb-1"
                   : "text-[13px] text-gris pb-1"
               }
@@ -69,6 +104,8 @@ export default function App() {
           ))}
         </nav>
       </header>
+
+      {migas.length > 1 && <Migas migas={migas} />}
 
       <main>
         {revisionAbierta ? (
