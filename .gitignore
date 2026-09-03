@@ -15,3 +15,7 @@ dist/
 # Trabajo de herramientas, fuera del proyecto
 .superpowers/
 .claude/
+
+# Configuracion temporal de vite, para levantar el front en otro puerto
+# cuando el 8000 lo ocupa otro proyecto. Vive en el equipo, no en el repo.
+frontend/vite.config.temporal.ts
