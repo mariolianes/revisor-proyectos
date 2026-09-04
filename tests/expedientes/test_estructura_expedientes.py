@@ -61,7 +61,11 @@ def test_las_comunidades_del_curso(cfg: ConfiguracionExpedientes) -> None:
 
 
 def test_las_fases_de_la_bandeja_de_entrada(cfg: ConfiguracionExpedientes) -> None:
-    assert [f.codigo for f in cfg.fases] == ["E01", "E02", "E03", "FINAL"]
+    """El código es el del §16.1 -el que lleva la columna `fase` de la base
+    de datos-; la carpeta es como el docente dibujó la bandeja. No son lo
+    mismo, y confundirlos hacía que la admisión buscara «E2» en disco cuando
+    la carpeta se llama «E02»."""
+    assert [f.codigo for f in cfg.fases] == ["E1", "E2", "E3", "FINAL"]
     assert [f.carpeta for f in cfg.fases] == ["E01", "E02", "E03", "FINAL"]
 
 
@@ -205,8 +209,9 @@ def test_un_codigo_de_centro_mal_formado(
 
 
 def test_ruta_de_entrada_pendientes(cfg: ConfiguracionExpedientes) -> None:
-    ruta = ruta_entrada_pendientes(cfg, "AND", "E01")
-    assert ruta == Path("01_ENTRADA_TRABAJOS", "AND_ANDALUCIA", "E01", "PENDIENTES")
+    # Se pide por código de fase y se resuelve al nombre de la carpeta.
+    ruta = ruta_entrada_pendientes(cfg, "AND", "E2")
+    assert ruta == Path("01_ENTRADA_TRABAJOS", "AND_ANDALUCIA", "E02", "PENDIENTES")
 
 
 def test_ruta_de_entrada_incidencias(cfg: ConfiguracionExpedientes) -> None:

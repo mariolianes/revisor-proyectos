@@ -111,6 +111,10 @@ class CarpetaDeExpediente(BaseModel):
 
     carpeta: NombreDeCarpeta
     tiene_entregas: bool
+    # Qué fase aterriza aquí, o `None` si la carpeta no recibe nada del
+    # alumno (FICHA, HISTORICO). Es lo que permite que la admisión sepa
+    # dónde dejar un archivo sin que ninguna ruta se escriba en Python.
+    fase: str | None = None
 
 
 class ExpedienteAlumno(BaseModel):

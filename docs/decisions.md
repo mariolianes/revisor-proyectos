@@ -1469,3 +1469,54 @@ Ficticia Inventada» en la portada, pero las tres palabras desperdigadas por
 la página no cuentan. Se leen tres páginas y no el documento entero: buscar
 nombres por todo el trabajo es justo la costumbre que la capa de privacidad
 no quiere.
+
+## D-029 · La admisión: un solo servicio que va de la bandeja al expediente
+
+**Fecha:** 2026-09-04 · **Estado:** Firme · **Responsable:** Colaborador técnico
+
+Hasta hoy había piezas sueltas —la estructura de carpetas, el registro de
+alumnos, la identificación determinista, la lectura de la portada— y ninguna
+se llamaba entre sí. `backend/servicios/admision.py` es la costura, en el
+orden exacto que fija `decisiones#4-portada`: leer el nombre del archivo,
+consultar la correspondencia en local, leer la portada si hace falta,
+confirmar el identificador o mandar el caso a Incidencias.
+
+**El enmascarado no está aquí, a propósito.** Es el quinto paso de su
+secuencia y ocurre después, al analizar. Este módulo no llama a ningún
+proveedor externo: nada sale del equipo.
+
+**Nada se mueve y nada se borra.** El archivo se copia al expediente con su
+nombre normalizado y el original se queda donde estaba. Él no ha dicho qué
+hacer con el original una vez copiado, y adivinarlo puede costarle el trabajo
+de un alumno. Que la bandeja no se vacíe sola no reprocesa nada: la huella
+reconoce el archivo y sale como `DUPLICATE_EXACT`, que es justo lo que él
+pide para ese caso.
+
+**Tres costuras que solo aparecieron al unir las piezas**, y las tres eran
+fallos reales que ninguna prueba de unidad podía ver:
+
+1. **Los nombres de archivo traen palabras de más.** La identificación
+   comparaba nombres por igualdad de palabras, y
+   `Ana_Ficticia_Inventada_Entrega_2.pdf` no es igual a `Ana Ficticia
+   Inventada`: es ese nombre con dos palabras pegadas. Con la comparación
+   anterior, **ningún archivo real se habría identificado nunca**. Nacen
+   `nombra_a` y `nombra_parcialmente_a` en
+   `backend/identificacion/nombres.py`, que comparan un nombre contra un
+   texto que lo contiene y siguen sin usar ningún parecido difuso.
+2. **La bandeja usa `E01` y el sistema usa `E1`.** Son dos cosas distintas
+   —el nombre de una carpeta y el código de una fase— y la configuración las
+   tenía confundidas en un solo valor. Se separan con el mismo patrón que ya
+   usaban las comunidades (`codigo: AND`, `carpeta: AND_ANDALUCIA`).
+3. **Las carpetas del expediente no decían qué fase reciben.** Sin ese dato
+   no había forma de saber dónde dejar un archivo. Ahora lo declaran, con la
+   correspondencia que él confirmó en `decisiones#9-carpetas`.
+
+**Arrastra:** `backend/servicios/admision.py` (nuevo),
+`backend/identificacion/nombres.py`, `backend/identificacion/determinista.py`,
+`backend/expedientes/estructura.py`, `config/estructura_expedientes.yaml`,
+`tests/servicios/test_admision.py` (nuevo) y
+`tests/expedientes/test_estructura_expedientes.py`.
+
+**Lo que todavía no hace.** Nadie lo llama: la vigilancia de la carpeta sigue
+siendo la de la Parte A, sobre una carpeta única. Enchufar la admisión a las
+bandejas por comunidad y fase es el punto 5 del orden de implantación.

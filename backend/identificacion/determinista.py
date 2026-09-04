@@ -37,7 +37,8 @@ from pydantic import BaseModel, ConfigDict
 from backend.identificacion.nombres import (
     es_el_mismo_nombre,
     es_nombre_parcial_de,
-    tiene_nombre_y_apellido,
+    nombra_a,
+    nombra_parcialmente_a,
 )
 
 # Los cinco peldaños, con el número que les da el docente en su tabla.
@@ -154,9 +155,13 @@ def identificar(
                 ),
             )
 
+    # `nombra_a` y no `es_el_mismo_nombre`: lo que llega en
+    # `nombre_del_archivo` es el nombre de un fichero, que trae el del alumno
+    # con palabras de más -la fase, la fecha, «TFG»-. Ver el comentario de
+    # `backend/identificacion/nombres.py`.
     por_nombre = [
         c for c in candidatos
-        if nombre_del_archivo and es_el_mismo_nombre(nombre_del_archivo, c.nombre)
+        if nombre_del_archivo and nombra_a(nombre_del_archivo, c.nombre)
     ]
 
     # Prioridad 5, la primera que se mira: «Incidencias siempre».
@@ -194,10 +199,10 @@ def identificar(
 
     # Prioridad 3: nombre parcial más al menos un apellido, candidato único
     # y portada compatible. Las tres condiciones, no dos.
-    if nombre_del_archivo and tiene_nombre_y_apellido(nombre_del_archivo):
+    if nombre_del_archivo:
         parciales = [
             c for c in candidatos
-            if es_nombre_parcial_de(nombre_del_archivo, c.nombre)
+            if nombra_parcialmente_a(nombre_del_archivo, c.nombre)
         ]
         if len(parciales) == 1:
             unico = parciales[0]

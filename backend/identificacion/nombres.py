@@ -93,3 +93,47 @@ def tiene_nombre_y_apellido(nombre: str) -> bool:
     tratarla como si lo hiciera es justo el error que él quiere evitar.
     """
     return len(palabras(nombre)) >= 2
+
+
+# Lo que sigue compara un NOMBRE contra un TEXTO que lo contiene -el nombre
+# de un archivo, típicamente-, no dos nombres entre sí. Es un caso distinto y
+# hace falta separarlo: un archivo se llama «Ana_Ficticia_Inventada_Entrega_2»
+# y eso no es un nombre de persona, es un nombre de persona con dos palabras
+# más pegadas. Comparar por igualdad ahí no encuentra a nadie -se descubrió
+# escribiendo la primera prueba de integración de la admisión, con un nombre
+# de archivo tal como lo devuelve la plataforma-.
+#
+# Sigue sin haber ningún parecido difuso: se cuenta cuántas palabras del
+# nombre están en el texto, y nada más.
+
+# Cuántas palabras del nombre tienen que aparecer para considerar que el
+# texto lo nombra a medias. Dos, porque el docente pide «nombre más al menos
+# un apellido» para su prioridad 3: una sola palabra no distingue a nadie en
+# un grupo de 200-250 alumnos.
+PALABRAS_MINIMAS = 2
+
+
+def nombra_a(texto: str, nombre: str) -> bool:
+    """Si el texto contiene todas las palabras significativas del nombre.
+
+    Sirve para la prioridad 2 del docente -«nombre completo normalizado y
+    único»-: que el archivo traiga además la fase o la fecha no lo hace menos
+    completo.
+    """
+    del_nombre = palabras(nombre)
+    return bool(del_nombre) and del_nombre <= palabras(texto)
+
+
+def nombra_parcialmente_a(texto: str, nombre: str) -> bool:
+    """Si el texto contiene parte del nombre, pero no todo.
+
+    Es la prioridad 3 -nombre más al menos un apellido-, y por eso exige
+    `PALABRAS_MINIMAS` y no una. Devuelve `False` cuando están todas: ese
+    caso ya lo cubre `nombra_a`, y confundirlos haría que un nombre completo
+    entrara por la puerta de la coincidencia parcial, que es más débil.
+    """
+    del_nombre = palabras(nombre)
+    if not del_nombre:
+        return False
+    comunes = del_nombre & palabras(texto)
+    return len(comunes) >= PALABRAS_MINIMAS and comunes != del_nombre

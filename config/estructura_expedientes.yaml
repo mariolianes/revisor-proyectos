@@ -115,14 +115,21 @@ comunidades:
     nombre: Extremadura
 
 # Fases de la bandeja de entrada, en su orden real dentro del curso.
+# `codigo` es la fase tal como la nombra el 16.1 del Documento Maestro y la
+# columna `fase` de la base de datos (E1, E2, E3, FINAL). `carpeta` es como
+# el docente dibujó la bandeja en su documento de arquitectura (E01, E02,
+# E03, FINAL). No son lo mismo y hasta el 2026-09-04 estaban confundidos en
+# un solo valor: la admisión buscaba la carpeta «E2» y no existía, porque en
+# disco se llama «E02». Mismo patrón que ya usan las comunidades, donde el
+# `codigo` es AND y la `carpeta` AND_ANDALUCIA.
 fases:
-  - codigo: E01
+  - codigo: E1
     carpeta: E01
     orden: 1
-  - codigo: E02
+  - codigo: E2
     carpeta: E02
     orden: 2
-  - codigo: E03
+  - codigo: E3
     carpeta: E03
     orden: 3
   - codigo: FINAL
@@ -175,23 +182,37 @@ expediente_alumno:
   # hasta que el docente diga lo contrario -en particular 01_TEMA y
   # 06_DEFENSA, que también reciben un documento del alumno y podrían
   # merecer la misma subestructura-.
+  #
+  # `fase` dice qué llega a cada carpeta. El docente lo confirmó en
+  # decisiones#9-carpetas: TEMA y DEFENSA son bloques propios y las cuatro
+  # entregas evaluables son E1, E2, E3 y FINAL. FICHA e HISTORICO no reciben
+  # nada del alumno -son administración interna- y por eso su fase es nula.
+  # Sin este dato, la admisión no sabría dónde dejar un archivo.
   carpetas:
     - carpeta: 00_FICHA
       tiene_entregas: false
+      fase: null
     - carpeta: 01_TEMA
       tiene_entregas: false
+      fase: TEMA
     - carpeta: 02_ENTREGA_1
       tiene_entregas: true
+      fase: E1
     - carpeta: 03_ENTREGA_2
       tiene_entregas: true
+      fase: E2
     - carpeta: 04_ENTREGA_3
       tiene_entregas: true
+      fase: E3
     - carpeta: 05_ENTREGA_FINAL
       tiene_entregas: true
+      fase: FINAL
     - carpeta: 06_DEFENSA
       tiene_entregas: false
+      fase: DEFENSA
     - carpeta: 07_HISTORICO
       tiene_entregas: false
+      fase: null
 
   subcarpetas_de_entrega:
     - 00_ORIGINAL
