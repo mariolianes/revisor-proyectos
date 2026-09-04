@@ -425,10 +425,27 @@ def _mensaje_nota_no_disponible(estado: str) -> str:
     )
 
 
+def _aviso_de_borrador_demasiado_largo(fallo: TextoFueraDeLimite) -> str:
+    """Por qué no hay borrador, dicho para el docente.
+
+    Mismo papel que `_aviso_de_borrador_incompleto`: el informe es válido y
+    está guardado; lo que falta es el texto que le llegaría al alumno, y él
+    decide si pide la redacción otra vez o la escribe a mano.
+    """
+    return (
+        f"El informe está completo y guardado. No hay borrador de devolución "
+        f"porque el motor lo redactó demasiado largo: {fallo.etiqueta.lower()} "
+        f"tiene {fallo.longitud} caracteres y el límite es {fallo.limite}. "
+        "No es un fallo tuyo ni del trabajo del alumno. Puedes escribir la "
+        "devolución a mano sobre las observaciones del informe, o volver a "
+        "pedir el análisis -la redacción puede salir distinta-."
+    )
+
+
 def _guardar_o_fallar(
     almacen, identificador: str, informe: Informe, devolucion: Devolucion | None,
     motor: str, aviso: str | None = None,
-) -> None:
+) -> tuple[Devolucion | None, str | None]:
     """Guarda la corrección; si `guardar_correccion` no llega a escribirla,
     deja la entrega tal como estaba antes de este intento.
 
@@ -466,7 +483,24 @@ def _guardar_o_fallar(
     """
     try:
         almacen.guardar_correccion(identificador, informe, devolucion, motor, aviso)
+        return devolucion, aviso
     except TextoFueraDeLimite as fallo:
+        if fallo.de_la_devolucion and devolucion is not None:
+            # El texto largo es del borrador, no del informe. Tirar también
+            # el informe rompería el invariante que declara
+            # `backend/servicios/analisis_de_entrega.py` -«no hay forma de
+            # que la redacción del borrador invalide un informe que ya es
+            # correcto»-: ese invariante estaba escrito y lo cumplía la
+            # redacción, pero no la escritura, y aquí se caía. Se guarda el
+            # informe sin borrador, que es exactamente la forma que ya tiene
+            # `InformeSinBorrador`, y el docente se lleva lo que sí sirve.
+            # Se encontró recorriendo el circuito entero con el motor real:
+            # una acción de 423 caracteres contra un límite de 400 tiraba un
+            # análisis ya pagado y completo.
+            return _guardar_o_fallar(
+                almacen, identificador, informe, None, motor,
+                _aviso_de_borrador_demasiado_largo(fallo),
+            )
         almacen.cambiar_estado(identificador, "RECIBIDO", None)
         raise HTTPException(
             status_code=503,
@@ -606,14 +640,19 @@ def analizar(
         with candado:
             en_curso.discard(identificador)
 
+    # La respuesta se compone con lo que de verdad se ha guardado, no con lo
+    # que se intentó guardar. Si el borrador se cayó por pasarse de largo, el
+    # informe sí queda y el borrador no: anunciar aquí un borrador que el
+    # almacén no tiene haría que la pantalla dijera una cosa y una recarga
+    # dijera otra, que es peor que el fallo original.
+    guardada, aviso_al_guardar = _guardar_o_fallar(
+        almacen, identificador, correccion.informe, correccion.devolucion,
+        correccion.motor, correccion.aviso_privacidad or None,
+    )
     resultado = ResultadoAnalisis(
         entrega=correccion.entrega, informe=correccion.informe,
-        devolucion=correccion.devolucion, motor=correccion.motor,
-        aviso=correccion.aviso_privacidad or None,
-    )
-    _guardar_o_fallar(
-        almacen, identificador, resultado.informe, resultado.devolucion,
-        resultado.motor,
+        devolucion=guardada, motor=correccion.motor,
+        aviso=aviso_al_guardar,
     )
     return resultado
 

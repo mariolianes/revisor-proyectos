@@ -84,10 +84,21 @@ class TextoFueraDeLimite(ValueError):
     partir de `etiqueta`, `longitud` y `limite`.
     """
 
-    def __init__(self, etiqueta: str, longitud: int, limite: int) -> None:
+    def __init__(
+        self, etiqueta: str, longitud: int, limite: int,
+        de_la_devolucion: bool = False,
+    ) -> None:
         self.etiqueta = etiqueta
         self.longitud = longitud
         self.limite = limite
+        # De qué mitad viene el texto largo, y no es un detalle: si viene del
+        # borrador, el informe sigue siendo válido y no hay ningún motivo
+        # para tirarlo -es el invariante que declara
+        # `backend/servicios/analisis_de_entrega.py`: «no hay forma de que la
+        # redacción del borrador invalide un informe que ya es correcto»-. Si
+        # viene del informe, no hay nada que salvar. Quien captura necesita
+        # poder distinguirlo sin leer la etiqueta a mano.
+        self.de_la_devolucion = de_la_devolucion
         super().__init__(
             f"{etiqueta} tiene {longitud} caracteres; el límite para "
             f"guardarlo es {limite}. Esto indica un fallo del motor, no un "
@@ -96,9 +107,11 @@ class TextoFueraDeLimite(ValueError):
         )
 
 
-def _validar_longitud(texto: str, limite: int, etiqueta: str) -> None:
+def _validar_longitud(
+    texto: str, limite: int, etiqueta: str, de_la_devolucion: bool = False
+) -> None:
     if len(texto) > limite:
-        raise TextoFueraDeLimite(etiqueta, len(texto), limite)
+        raise TextoFueraDeLimite(etiqueta, len(texto), limite, de_la_devolucion)
 
 
 def validar_textos_acotados(
@@ -191,21 +204,21 @@ def validar_textos_acotados(
     if devolucion is not None:
         _validar_longitud(
             devolucion.apertura, LIMITE_DE_APERTURA_O_CIERRE,
-            "La apertura de la devolución",
+            "La apertura de la devolución", de_la_devolucion=True,
         )
         _validar_longitud(
             devolucion.cierre, LIMITE_DE_APERTURA_O_CIERRE,
-            "El cierre de la devolución",
+            "El cierre de la devolución", de_la_devolucion=True,
         )
         for linea in devolucion.fortalezas:
             _validar_longitud(
                 linea, LIMITE_DE_LINEA_DE_DEVOLUCION,
-                "Una fortaleza de la devolución",
+                "Una fortaleza de la devolución", de_la_devolucion=True,
             )
         for linea in devolucion.acciones:
             _validar_longitud(
                 linea, LIMITE_DE_LINEA_DE_DEVOLUCION,
-                "Una acción de la devolución",
+                "Una acción de la devolución", de_la_devolucion=True,
             )
 
 
