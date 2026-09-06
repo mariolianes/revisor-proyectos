@@ -38,6 +38,7 @@ from backend.persistencia.correccion import (
     validar_textos_acotados,
 )
 from backend.persistencia.modelos import (
+    ESTADO_DE_VERSION_INICIAL,
     EntregaNueva,
     EntregaRegistrada,
     choca_con_lo_declarado,
@@ -311,6 +312,13 @@ class AlmacenSupabase:
             motivo_bloqueo=fila.get("motivo_bloqueo"),
             version_criterios=fila["version_criterios"],
             modalidad=fila.get("modalidad"),
+            # `SELECCION` pide `*`, así que estas tres llegan solas en cuanto
+            # la migración de 2026-09-04 está aplicada. Con `.get` y no
+            # indexado: una base sin esa migración devuelve la entrega
+            # entera igualmente, sin las marcas, en vez de reventar.
+            marca_admision=fila.get("marca_admision"),
+            estado_version=fila.get("estado_version") or ESTADO_DE_VERSION_INICIAL,
+            ruta_expediente=fila.get("ruta_expediente"),
         )
 
     # PostgREST devuelve el alumno anidado atravesando las dos claves ajenas:
@@ -366,6 +374,9 @@ class AlmacenSupabase:
             "nombre_archivo": entrega.nombre_archivo,
             "huella_archivo": entrega.huella,
             "version_criterios": entrega.version_criterios,
+            "marca_admision": entrega.marca_admision,
+            "estado_version": entrega.estado_version,
+            "ruta_expediente": entrega.ruta_expediente,
         })
         fila = filas[0]
         # El ciclo del alumno guardado y la modalidad del proyecto guardada,

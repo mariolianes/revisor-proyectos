@@ -44,6 +44,7 @@ from backend.identificacion.determinista import (
     Identificacion,
     identificar,
 )
+from backend.persistencia.modelos import EntregaNueva
 from backend.identificacion.portada import (
     nombre_confirmado_por_la_portada,
     texto_de_la_portada,
@@ -286,7 +287,11 @@ def admitir(
     completa = raiz_expedientes / destino
     completa.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(archivo, completa)
-    resultado.destino = str(destino)
+    # `as_posix` y no `str`: una ruta guardada con las barras invertidas de
+    # Windows es ilegible desde cualquier otro sitio y se rompe al partirla
+    # por el separador. Lo que va a la base es una ruta de texto, no una ruta
+    # de este sistema operativo. Se vio guardando la primera de verdad.
+    resultado.destino = destino.as_posix()
     if not resultado.motivo:
         resultado.motivo = "Admitida."
     return resultado
@@ -309,4 +314,47 @@ def _a_incidencias(
     destino = raiz_expedientes / relativa / archivo.name
     destino.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(archivo, destino)
-    return str(relativa / archivo.name)
+    return (relativa / archivo.name).as_posix()
+
+
+def entrega_desde(
+    admision: Admision, *, ciclo: str, version_criterios: str,
+    modalidad: str | None = None,
+) -> EntregaNueva:
+    """La entrega que corresponde a una admisión, lista para registrarse.
+
+    Es el puente entre lo que la admisión decide y lo que la base guarda:
+    hasta que existió, `marca_admision`, `estado_version` y `ruta_expediente`
+    se calculaban y se perdían.
+
+    `ciclo` y `version_criterios` no salen de aquí porque la admisión no los
+    conoce: el ciclo es del alumno -lo tiene el registro maestro- y la
+    versión de criterios es del curso. Pedirlos explícitamente evita que este
+    módulo se invente ninguno de los dos.
+
+    Levanta `ValueError` si la admisión no llegó a admitir nada: un duplicado
+    exacto o un caso mandado a Incidencias no produce una entrega nueva, y
+    construir una a partir de ellos sería registrar dos veces el mismo
+    trabajo o dar por bueno uno que no se pudo asignar.
+    """
+    if not admision.admitido:
+        raise ValueError(
+            f"«{admision.archivo}» no se admitió, así que no hay entrega que "
+            f"registrar: {admision.motivo}"
+        )
+    return EntregaNueva(
+        codigo_alumno=admision.student_id or "",
+        ciclo=ciclo,
+        fase=admision.fase or "",
+        version=admision.version or 1,
+        nombre_archivo=admision.archivo,
+        huella=admision.huella or "",
+        version_criterios=version_criterios,
+        modalidad=modalidad,
+        marca_admision=admision.marca,
+        # Un conflicto de versión entra igual como vigente: el docente
+        # todavía no ha elegido cuál vale, y marcarla ya como sustituida
+        # sería decidir por él. Lo que hace el conflicto es detener el
+        # análisis, no degradar la entrega.
+        ruta_expediente=admision.destino,
+    )

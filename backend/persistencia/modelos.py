@@ -42,6 +42,14 @@ ESTADOS: tuple[str, ...] = (
 )
 
 ESTADO_INICIAL = "RECIBIDO"
+
+# El vocabulario de `decisiones#7-versiones`, tal como lo escribe el docente.
+# Se enumera aquí y no en cada consumidor para que una marca inventada no
+# parta el histórico en dos vocabularios, igual que con las acciones del
+# registro de auditoría.
+MARCAS_DE_ADMISION: tuple[str, ...] = ("DUPLICATE_EXACT", "VERSION_CONFLICT")
+ESTADOS_DE_VERSION: tuple[str, ...] = ("VIGENTE", "SUSTITUIDA", "HISTORICA")
+ESTADO_DE_VERSION_INICIAL = "VIGENTE"
 BLOQUEADO = "BLOQUEADO"
 
 
@@ -112,6 +120,21 @@ class EntregaNueva(BaseModel):
     # Puede faltar: nadie debería quedar bloqueado por un dato que el
     # Documento Maestro no exige antes de la validación del tema.
     modalidad: str | None = None
+    # Lo que la admisión decide sobre esta entrega
+    # (`backend/servicios/admision.py`). Los tres son opcionales porque una
+    # entrega puede confirmarse a mano, sin haber pasado por la bandeja: un
+    # `None` aquí significa «no vino por ahí», no «se perdió el dato».
+    #
+    # `marca_admision`: DUPLICATE_EXACT o VERSION_CONFLICT, el vocabulario
+    # que fija el docente en `decisiones#7-versiones`.
+    marca_admision: str | None = None
+    # VIGENTE, SUSTITUIDA o HISTORICA. Por omisión vigente: una entrega
+    # recién confirmada es la buena mientras nadie diga lo contrario, y
+    # ninguna se elimina jamás -«nunca se eliminan», dice él-.
+    estado_version: str = ESTADO_DE_VERSION_INICIAL
+    # Dónde quedó la copia normalizada, relativa a la raíz de expedientes.
+    # Nunca absoluta: esa lleva el nombre de usuario del equipo del docente.
+    ruta_expediente: str | None = None
 
     @field_validator("codigo_alumno", "ciclo", "fase")
     @classmethod
@@ -122,6 +145,44 @@ class EntregaNueva(BaseModel):
     @classmethod
     def _validar_modalidad(cls, valor: str | None) -> str | None:
         return _normalizar_modalidad(valor)
+
+    @field_validator("marca_admision")
+    @classmethod
+    def _validar_marca(cls, valor: str | None) -> str | None:
+        if valor is not None and valor not in MARCAS_DE_ADMISION:
+            raise ValueError(
+                f"«{valor}» no es una marca de admisión conocida. Las que "
+                "hay son: " + ", ".join(MARCAS_DE_ADMISION) + "."
+            )
+        return valor
+
+    @field_validator("estado_version")
+    @classmethod
+    def _validar_estado_de_version(cls, valor: str) -> str:
+        if valor not in ESTADOS_DE_VERSION:
+            raise ValueError(
+                f"«{valor}» no es un estado de versión conocido. Los que hay "
+                "son: " + ", ".join(ESTADOS_DE_VERSION) + "."
+            )
+        return valor
+
+    @field_validator("ruta_expediente")
+    @classmethod
+    def _sin_ruta_absoluta(cls, valor: str | None) -> str | None:
+        """Una ruta absoluta lleva el nombre de usuario del equipo del
+        docente, y eso es un dato personal en una columna que no debe
+        llevarlos. Se rechaza al construir, no al guardar: así no depende de
+        qué almacén haya detrás."""
+        if valor is None:
+            return valor
+        if valor.startswith(("/", "\\")) or (len(valor) > 1 and valor[1] == ":"):
+            raise ValueError(
+                f"«{valor}» es una ruta absoluta. La ruta del expediente se "
+                "guarda relativa a la raíz de expedientes: una absoluta lleva "
+                "el nombre de usuario del equipo."
+            )
+        return valor
+
 
 
 class EntregaRegistrada(BaseModel):
@@ -145,10 +206,41 @@ class EntregaRegistrada(BaseModel):
     recibida_en: datetime
     estado: str
     motivo_bloqueo: str | None
+    # Lo que la admisión decide sobre esta entrega
+    # (`backend/servicios/admision.py`). Los tres son opcionales porque una
+    # entrega puede confirmarse a mano, sin haber pasado por la bandeja: un
+    # `None` aquí significa «no vino por ahí», no «se perdió el dato».
+    #
+    # `marca_admision`: DUPLICATE_EXACT o VERSION_CONFLICT, el vocabulario
+    # que fija el docente en `decisiones#7-versiones`.
+    marca_admision: str | None = None
+    # VIGENTE, SUSTITUIDA o HISTORICA. Por omisión vigente: una entrega
+    # recién confirmada es la buena mientras nadie diga lo contrario, y
+    # ninguna se elimina jamás -«nunca se eliminan», dice él-.
+    estado_version: str = ESTADO_DE_VERSION_INICIAL
+    # Dónde quedó la copia normalizada, relativa a la raíz de expedientes.
+    # Nunca absoluta: esa lleva el nombre de usuario del equipo del docente.
+    ruta_expediente: str | None = None
+
     version_criterios: str
     # Del proyecto, igual que `ciclo` es del alumno. Ver el comentario de
     # `EntregaNueva.modalidad`.
     modalidad: str | None = None
+    # Lo que la admisión decide sobre esta entrega
+    # (`backend/servicios/admision.py`). Los tres son opcionales porque una
+    # entrega puede confirmarse a mano, sin haber pasado por la bandeja: un
+    # `None` aquí significa «no vino por ahí», no «se perdió el dato».
+    #
+    # `marca_admision`: DUPLICATE_EXACT o VERSION_CONFLICT, el vocabulario
+    # que fija el docente en `decisiones#7-versiones`.
+    marca_admision: str | None = None
+    # VIGENTE, SUSTITUIDA o HISTORICA. Por omisión vigente: una entrega
+    # recién confirmada es la buena mientras nadie diga lo contrario, y
+    # ninguna se elimina jamás -«nunca se eliminan», dice él-.
+    estado_version: str = ESTADO_DE_VERSION_INICIAL
+    # Dónde quedó la copia normalizada, relativa a la raíz de expedientes.
+    # Nunca absoluta: esa lleva el nombre de usuario del equipo del docente.
+    ruta_expediente: str | None = None
 
     @field_validator("codigo_alumno", "ciclo", "fase")
     @classmethod
@@ -159,6 +251,44 @@ class EntregaRegistrada(BaseModel):
     @classmethod
     def _validar_modalidad(cls, valor: str | None) -> str | None:
         return _normalizar_modalidad(valor)
+
+    @field_validator("marca_admision")
+    @classmethod
+    def _validar_marca(cls, valor: str | None) -> str | None:
+        if valor is not None and valor not in MARCAS_DE_ADMISION:
+            raise ValueError(
+                f"«{valor}» no es una marca de admisión conocida. Las que "
+                "hay son: " + ", ".join(MARCAS_DE_ADMISION) + "."
+            )
+        return valor
+
+    @field_validator("estado_version")
+    @classmethod
+    def _validar_estado_de_version(cls, valor: str) -> str:
+        if valor not in ESTADOS_DE_VERSION:
+            raise ValueError(
+                f"«{valor}» no es un estado de versión conocido. Los que hay "
+                "son: " + ", ".join(ESTADOS_DE_VERSION) + "."
+            )
+        return valor
+
+    @field_validator("ruta_expediente")
+    @classmethod
+    def _sin_ruta_absoluta(cls, valor: str | None) -> str | None:
+        """Una ruta absoluta lleva el nombre de usuario del equipo del
+        docente, y eso es un dato personal en una columna que no debe
+        llevarlos. Se rechaza al construir, no al guardar: así no depende de
+        qué almacén haya detrás."""
+        if valor is None:
+            return valor
+        if valor.startswith(("/", "\\")) or (len(valor) > 1 and valor[1] == ":"):
+            raise ValueError(
+                f"«{valor}» es una ruta absoluta. La ruta del expediente se "
+                "guarda relativa a la raíz de expedientes: una absoluta lleva "
+                "el nombre de usuario del equipo."
+            )
+        return valor
+
 
 
 class Almacen(Protocol):

@@ -77,9 +77,11 @@ def test_un_archivo_identificable_acaba_en_el_expediente(
     assert resultado.admitido
     assert resultado.student_id == "ALU-260001"
     assert resultado.version == 1
-    assert resultado.destino == str(
-        Path("02_EXPEDIENTES_ALUMNOS/ALU-260001/03_ENTREGA_2/00_ORIGINAL/"
-             "ALU-260001_E2_v01.pdf")
+    # Con barras normales, no las de Windows: lo que va a la base es una
+    # ruta de texto, no una ruta de este sistema operativo.
+    assert resultado.destino == (
+        "02_EXPEDIENTES_ALUMNOS/ALU-260001/03_ENTREGA_2/00_ORIGINAL/"
+        "ALU-260001_E2_v01.pdf"
     )
     assert (expedientes / resultado.destino).is_file()
 
@@ -132,9 +134,7 @@ def test_la_presentacion_de_defensa_no_va_a_una_subcarpeta_de_entrega(
 
     resultado = _admitir(archivo, cfg, expedientes, codigo_fase="DEFENSA")
 
-    assert resultado.destino.endswith("06_DEFENSA/ALU-260001_DEFENSA_v01.pdf".replace(
-        "/", str(Path("a/b"))[1]
-    ))
+    assert resultado.destino.endswith("06_DEFENSA/ALU-260001_DEFENSA_v01.pdf")
 
 
 # --- Lo que no entra --------------------------------------------------------
@@ -336,3 +336,119 @@ def test_el_nombre_normalizado_solo_lleva_el_identificador() -> None:
     assert nombre_normalizado("ALU-260001", "FINAL", 12, ".docx") == (
         "ALU-260001_FINAL_v12.docx"
     )
+
+
+# --- El puente hacia la entrega que se registra -----------------------------
+
+
+def test_una_admision_se_convierte_en_la_entrega_que_se_registra(
+    tmp_path: Path, cfg, expedientes: Path
+) -> None:
+    """Hasta que existió este puente, la marca, el estado de versión y la
+    ruta se calculaban y se perdían."""
+    from backend.servicios.admision import entrega_desde
+
+    archivo = _pdf(tmp_path / "Ana_Ficticia_Inventada.pdf")
+    admision = _admitir(archivo, cfg, expedientes)
+
+    entrega = entrega_desde(admision, ciclo="MYP", version_criterios="v2026-2027")
+
+    assert entrega.codigo_alumno == "ALU-260001"
+    assert entrega.fase == "E2"
+    assert entrega.version == 1
+    assert entrega.huella == admision.huella
+    assert entrega.ruta_expediente == admision.destino
+    assert entrega.estado_version == "VIGENTE"
+    assert entrega.marca_admision is None
+
+
+def test_un_conflicto_de_version_entra_como_vigente_igualmente(
+    tmp_path: Path, cfg, expedientes: Path
+) -> None:
+    """El docente todavía no ha elegido cuál vale, y marcarla ya como
+    sustituida sería decidir por él. Lo que hace el conflicto es detener el
+    análisis, no degradar la entrega."""
+    from backend.servicios.admision import entrega_desde
+
+    primero = _pdf(tmp_path / "Ana_Ficticia_Inventada.pdf", "Primera")
+    inicial = _admitir(primero, cfg, expedientes)
+    segundo = _pdf(tmp_path / "otra" / "Ana_Ficticia_Inventada.pdf", "Segunda")
+    admision = _admitir(
+        segundo, cfg, expedientes,
+        ya_admitidas=[EntregaAdmitida(
+            student_id="ALU-260001", fase="E2", version=1, huella=inicial.huella,
+        )],
+    )
+
+    entrega = entrega_desde(admision, ciclo="MYP", version_criterios="v2026-2027")
+
+    assert entrega.marca_admision == CONFLICTO_DE_VERSION
+    assert entrega.estado_version == "VIGENTE"
+    assert entrega.version == 2
+
+
+def test_un_duplicado_exacto_no_produce_ninguna_entrega(
+    tmp_path: Path, cfg, expedientes: Path
+) -> None:
+    """Construir una entrega a partir de un duplicado sería registrar dos
+    veces el mismo trabajo."""
+    from backend.servicios.admision import entrega_desde
+
+    archivo = _pdf(tmp_path / "Ana_Ficticia_Inventada.pdf")
+    primera = _admitir(archivo, cfg, expedientes)
+    duplicado = _admitir(
+        archivo, cfg, expedientes,
+        ya_admitidas=[EntregaAdmitida(
+            student_id="ALU-260001", fase="E2", version=1, huella=primera.huella,
+        )],
+    )
+
+    with pytest.raises(ValueError, match="no se admitió"):
+        entrega_desde(duplicado, ciclo="MYP", version_criterios="v2026-2027")
+
+
+def test_una_incidencia_tampoco_produce_una_entrega(
+    tmp_path: Path, cfg, expedientes: Path
+) -> None:
+    """Dar por bueno un trabajo que no se pudo asignar es exactamente lo que
+    todo este circuito existe para evitar."""
+    from backend.servicios.admision import entrega_desde
+
+    admision = _admitir(_pdf(tmp_path / "sin_dueno.pdf"), cfg, expedientes)
+
+    with pytest.raises(ValueError, match="no se admitió"):
+        entrega_desde(admision, ciclo="MYP", version_criterios="v2026-2027")
+
+
+def test_la_ruta_que_viaja_a_la_base_es_relativa(
+    tmp_path: Path, cfg, expedientes: Path
+) -> None:
+    """Una absoluta llevaría el nombre de usuario del equipo del docente, y
+    el modelo la rechaza. Aquí se comprueba que la admisión nunca produce
+    una."""
+    from backend.servicios.admision import entrega_desde
+
+    admision = _admitir(
+        _pdf(tmp_path / "Ana_Ficticia_Inventada.pdf"), cfg, expedientes
+    )
+
+    entrega = entrega_desde(admision, ciclo="MYP", version_criterios="v2026-2027")
+
+    assert not entrega.ruta_expediente.startswith(("/", "\\"))
+    assert ":" not in entrega.ruta_expediente[:3]
+    assert str(expedientes) not in entrega.ruta_expediente
+
+
+def test_ninguna_ruta_lleva_barras_de_windows(
+    tmp_path: Path, cfg, expedientes: Path
+) -> None:
+    """Una ruta guardada con las barras invertidas de Windows es ilegible
+    desde cualquier otro sitio y se rompe al partirla por el separador. Se vio
+    al guardar la primera de verdad en la base."""
+    admitida = _admitir(
+        _pdf(tmp_path / "Ana_Ficticia_Inventada.pdf"), cfg, expedientes
+    )
+    a_incidencias = _admitir(_pdf(tmp_path / "sin_dueno.pdf"), cfg, expedientes)
+
+    assert "\\" not in admitida.destino
+    assert "\\" not in a_incidencias.destino
