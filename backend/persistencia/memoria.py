@@ -9,6 +9,12 @@ aparenta guardar y no guarda es peor que uno que no guarda.
 import uuid
 from datetime import datetime
 
+from backend.persistencia.auditoria import (
+    Anotacion,
+    de_cambio_de_estado,
+    de_correccion,
+    de_entrega,
+)
 from backend.persistencia.alumnos import (
     ESTADO_MATRICULA_INICIAL,
     AlumnoNuevo,
@@ -42,6 +48,10 @@ class AlmacenEnMemoria:
 
     def __init__(self) -> None:
         self._entregas: dict[str, EntregaRegistrada] = {}
+        # El registro de auditoría del §19.1. Se escribe desde los propios
+        # métodos que guardan, no desde quien los llama: ver el docstring de
+        # `backend/persistencia/auditoria.py`.
+        self._registro: list[Anotacion] = []
         # El registro maestro de alumnos (Task del importador de listados):
         # student_id -> sus datos, sin nombre. Es también de aquí de donde
         # sale el ciclo de un alumno para una entrega -antes vivía en un
@@ -128,6 +138,7 @@ class AlmacenEnMemoria:
             **datos,
         )
         self._entregas[registrada.id] = registrada
+        self.anotar(de_entrega(registrada))
         return registrada
 
     def listar(self) -> list[EntregaRegistrada]:
@@ -188,6 +199,7 @@ class AlmacenEnMemoria:
             update={"estado": estado, "motivo_bloqueo": motivo}
         )
         self._entregas[identificador] = cambiada
+        self.anotar(de_cambio_de_estado(cambiada, motivo))
         return cambiada
 
     def guardar_correccion(
@@ -207,10 +219,17 @@ class AlmacenEnMemoria:
             id=identificador, informe=informe, devolucion=devolucion,
             motor=motor, aviso=aviso,
         )
+        self.anotar(de_correccion(entrega_id, informe, motor))
         return identificador
 
     def correccion_de(self, entrega_id: str) -> Correccion | None:
         return self._correcciones.get(entrega_id)
+
+    def anotar(self, anotacion: Anotacion) -> None:
+        self._registro.append(anotacion)
+
+    def listar_registro(self) -> list[Anotacion]:
+        return list(self._registro)
 
     def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
         """Añade el registro a la lista de esta sesión. No es duradero -se

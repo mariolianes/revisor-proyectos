@@ -24,6 +24,7 @@ parte de la respuesta: el profesor no debería leer un texto distinto según
 haya credenciales.
 """
 
+import json
 import re
 
 import pytest
@@ -1022,3 +1023,101 @@ def test_el_ciclo_del_registro_maestro_manda_sobre_el_que_declara_una_entrega(
     memoria, supabase = _los_dos(dos_almacenes, guion)
 
     assert memoria == supabase == "CIN"
+
+
+# --- El registro de auditoría del §19.1 -------------------------------------
+
+
+def test_registrar_una_entrega_deja_su_linea_de_auditoria(dos_almacenes) -> None:
+    """La tabla `registro` existía desde el esquema inicial y no la escribía
+    nadie. Se descubrió mirando la base después del primer recorrido completo
+    del circuito: entrega, análisis, corrección y revisión, y cero filas."""
+    from backend.persistencia.auditoria import ENTREGA_REGISTRADA
+
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        anotaciones = almacen.listar_registro()
+        return [
+            [a.accion for a in anotaciones],
+            [a.detalle.get("codigo_alumno") for a in anotaciones],
+            [a.detalle.get("huella") == entrega.huella for a in anotaciones],
+        ]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria[0] == [ENTREGA_REGISTRADA]
+    assert memoria[2] == [True]
+
+
+def test_el_recorrido_entero_deja_su_rastro_en_los_dos(dos_almacenes) -> None:
+    """Lo que el §19.1 llama «reconstruir qué ocurrió»: de la entrega al
+    cambio de estado y a la corrección, en orden y en los dos almacenes."""
+    from backend.persistencia.auditoria import (
+        CORRECCION_GUARDADA,
+        ENTREGA_REGISTRADA,
+        ESTADO_CAMBIADO,
+    )
+
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.cambiar_estado(entrega.id, "ANALIZADO", None)
+        almacen.guardar_correccion(
+            entrega.id, _informe(valoraciones=[_valoracion()]), None, "simulado"
+        )
+        return [a.accion for a in almacen.listar_registro()]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria == [ENTREGA_REGISTRADA, ESTADO_CAMBIADO, CORRECCION_GUARDADA]
+
+
+def test_la_auditoria_no_guarda_ni_una_cita_ni_una_observacion(
+    dos_almacenes,
+) -> None:
+    """La frontera que no se puede cruzar. El §19 dice que el texto del
+    trabajo no se almacena, y la tabla de auditoría es el sitio donde más
+    fácil sería colarlo sin darse cuenta: parece metadato."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(
+            entrega.id, _informe(valoraciones=[_valoracion()]), None, "simulado"
+        )
+        # Sin el identificador ni la marca de tiempo, que son distintos por
+        # construcción en cada almacén y no dicen nada de lo que aquí se
+        # comprueba.
+        return json.dumps(
+            [
+                {"accion": a.accion, "entidad": a.entidad, "detalle": a.detalle}
+                for a in almacen.listar_registro()
+            ],
+            ensure_ascii=False, sort_keys=True,
+        )
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    entero = memoria.lower()
+    assert "cita" not in entero
+    assert "observaci" not in entero
+    assert "el presupuesto asciende" not in entero
+
+
+def test_una_accion_inventada_no_entra_en_el_registro() -> None:
+    """Para que el histórico no acabe partido en dos vocabularios."""
+    from backend.persistencia.auditoria import Anotacion
+
+    with pytest.raises(ValueError, match="no es una acción conocida"):
+        Anotacion(accion="ALGO_QUE_ME_INVENTO")
+
+
+def test_un_detalle_con_prosa_larga_se_rechaza() -> None:
+    """La guarda que impide que alguien meta un trozo del trabajo del alumno
+    donde solo van códigos y cifras."""
+    from pydantic import ValidationError
+
+    from backend.persistencia.auditoria import ENTREGA_REGISTRADA, Anotacion
+
+    with pytest.raises(ValidationError, match="nunca texto del trabajo"):
+        Anotacion(accion=ENTREGA_REGISTRADA, detalle={"texto": "x" * 1200})

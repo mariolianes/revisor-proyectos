@@ -176,6 +176,21 @@ class Almacen(Protocol):
 
     def listar(self) -> list[EntregaRegistrada]: ...
 
+    def anotar(self, anotacion) -> None:
+        """Escribe una línea en el registro de auditoría del §19.1.
+
+        Lo llaman los propios métodos que guardan, no quien los usa: un
+        registro que depende de que alguien se acuerde de invocarlo acaba con
+        huecos justo en los caminos menos transitados. Ver
+        `backend/persistencia/auditoria.py`.
+        """
+        ...
+
+    def listar_registro(self) -> list:
+        """El histórico completo, en orden. Para que el docente pueda
+        reconstruir qué se hizo y con qué criterios."""
+        ...
+
     def por_id(self, identificador: str) -> EntregaRegistrada | None: ...
 
     def por_huella(self, huella: str) -> EntregaRegistrada | None: ...

@@ -17,6 +17,12 @@ from pathlib import Path
 import httpx
 import yaml
 
+from backend.persistencia.auditoria import (
+    Anotacion,
+    de_cambio_de_estado,
+    de_correccion,
+    de_entrega,
+)
 from backend.persistencia.alumnos import (
     ESTADO_MATRICULA_INICIAL,
     AlumnoNuevo,
@@ -368,7 +374,9 @@ class AlmacenSupabase:
         # recién confirmada tiene que decir lo mismo.
         fila["alumno"] = {"codigo": entrega.codigo_alumno, "ciclo": ciclo}
         fila["modalidad"] = modalidad
-        return self._componer(fila)
+        registrada = self._componer(fila)
+        self.anotar(de_entrega(registrada))
+        return registrada
 
     def listar(self) -> list[EntregaRegistrada]:
         filas = self._pedir("GET", "entrega", parametros={
@@ -450,7 +458,10 @@ class AlmacenSupabase:
             },
             json={"estado": estado, "motivo_bloqueo": motivo},
         )
-        return self._componer(self._aplanar(filas[0])) if filas else None
+        cambiada = self._componer(self._aplanar(filas[0])) if filas else None
+        if cambiada is not None:
+            self.anotar(de_cambio_de_estado(cambiada, motivo))
+        return cambiada
 
     def guardar_correccion(
         self,
@@ -534,6 +545,7 @@ class AlmacenSupabase:
             "aviso": aviso,
         })
         correccion_id = filas[0]["id"]
+        self.anotar(de_correccion(entrega_id, informe, motor))
 
         try:
             if informe.valoraciones:
@@ -596,6 +608,42 @@ class AlmacenSupabase:
             motor=informe.motor,
             aviso=fila.get("aviso"),
         )
+
+    def anotar(self, anotacion: Anotacion) -> None:
+        """Escribe una línea en el registro de auditoría del §19.1.
+
+        No propaga un fallo suyo: una anotación que no se puede escribir no
+        debe tirar la operación que la produjo. Perder una línea de histórico
+        es malo; perder la entrega que el docente acaba de confirmar, por no
+        haber podido anotar que la confirmó, es peor.
+        """
+        try:
+            self._pedir("POST", "registro", json={
+                "ocurrido_en": anotacion.ocurrido_en.isoformat(),
+                "usuario": anotacion.usuario,
+                "accion": anotacion.accion,
+                "entidad": anotacion.entidad,
+                "entidad_id": anotacion.entidad_id,
+                "version_criterios": anotacion.version_criterios,
+                "detalle": anotacion.detalle,
+            })
+        except Exception:
+            pass
+
+    def listar_registro(self) -> list[Anotacion]:
+        filas = self._pedir("GET", "registro", parametros={
+            "select": "*", "order": "ocurrido_en.asc",
+        })
+        return [
+            Anotacion(
+                accion=f["accion"], entidad=f.get("entidad"),
+                entidad_id=f.get("entidad_id"),
+                version_criterios=f.get("version_criterios"),
+                detalle=f.get("detalle") or {}, usuario=f["usuario"],
+                ocurrido_en=f["ocurrido_en"],
+            )
+            for f in filas
+        ]
 
     def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
         """Escribe una fila en `ejecucion_motor`

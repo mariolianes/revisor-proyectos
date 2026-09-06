@@ -279,7 +279,11 @@ def test_cambiar_estado_manda_un_patch() -> None:
         "11111111-1111-1111-1111-111111111111", "ANALIZADO", None
     )
 
-    assert vistos == ["PATCH"]
+    # Un PATCH para cambiar el estado y un POST para anotarlo en el registro
+    # del §19.1. Lo que este test protege es que no haya una LECTURA extra:
+    # saber el estado del que se venía costaría un GET en cada cambio, y ese
+    # dato ya está en la línea anterior del propio registro.
+    assert vistos == ["PATCH", "POST"]
     assert cambiada is not None
     assert cambiada.estado == "ANALIZADO"
 
@@ -703,6 +707,11 @@ def test_guardar_correccion_son_tres_peticiones_como_maximo(postgrest) -> None:
     """El brief pide «tres escrituras encadenadas»: un `POST` a
     `correccion`, uno a `valoracion_dimension` -con todas las dimensiones en
     un solo cuerpo, no una petición por dimensión- y uno a `evidencia`, igual.
+
+    La cuarta es la línea del registro de auditoría del §19.1. Lo que este
+    test protege no es el número tres, sino que las escrituras **no crezcan
+    con el número de dimensiones**: la de auditoría es una, siempre, haya dos
+    valoraciones o doce. Ver `test_la_auditoria_no_crece_con_las_dimensiones`.
     """
     almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())
     entrega = almacen.registrar(_entrega())
@@ -713,10 +722,27 @@ def test_guardar_correccion_son_tres_peticiones_como_maximo(postgrest) -> None:
 
     escrituras = [p for p in postgrest.peticiones if p.startswith("POST")]
     assert escrituras == [
-        "POST correccion", "POST valoracion_dimension", "POST evidencia",
+        "POST correccion", "POST registro",
+        "POST valoracion_dimension", "POST evidencia",
     ]
     assert len(postgrest.tablas["valoracion_dimension"]) == 2
     assert len(postgrest.tablas["evidencia"]) == 2
+
+
+def test_la_auditoria_no_crece_con_las_dimensiones(postgrest) -> None:
+    """Una anotación por corrección, no una por observación. Es la diferencia
+    entre un coste constante y uno que se dispara con el trabajo más largo."""
+    almacen = AlmacenSupabase(URL, CLAVE, cliente=postgrest.cliente())
+    entrega = almacen.registrar(_entrega())
+    informe = _informe_de_prueba(
+        [_valoracion(f"D{n:02d}") for n in range(1, 11)]
+    )
+
+    postgrest.peticiones.clear()
+    almacen.guardar_correccion(entrega.id, informe, None, "simulado")
+
+    anotaciones = [p for p in postgrest.peticiones if p == "POST registro"]
+    assert len(anotaciones) == 1
 
 
 def test_la_prioridad_guardada_es_un_valor_que_la_columna_enumerada_admite(

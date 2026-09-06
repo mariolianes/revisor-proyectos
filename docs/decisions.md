@@ -1520,3 +1520,52 @@ fallos reales que ninguna prueba de unidad podía ver:
 **Lo que todavía no hace.** Nadie lo llama: la vigilancia de la carpeta sigue
 siendo la de la Parte A, sobre una carpeta única. Enchufar la admisión a las
 bandejas por comunidad y fase es el punto 5 del orden de implantación.
+
+## D-030 · El registro de auditoría del §19.1 se escribe desde el almacén, no desde quien lo llama
+
+**Fecha:** 2026-09-06 · **Estado:** Firme · **Responsable:** Colaborador técnico
+
+La tabla `registro` existe desde el esquema inicial, con un comentario que
+cita el §19.1 —«permite reconstruir qué se hizo y con qué criterios»— y
+**hasta hoy no la escribía nadie**. No fallaba nada: simplemente no había
+histórico.
+
+**Cómo se encontró.** Mirando la base después del primer recorrido completo
+del circuito contra infraestructura real: entrega registrada, análisis hecho,
+corrección guardada, revisión cerrada, y cero filas de auditoría. Ninguna de
+las 1.293 pruebas podía verlo, porque el simulador de PostgREST tampoco
+conocía la tabla: no existía en su lista, así que un intento de escribir en
+ella habría dado 404 y nadie lo intentaba.
+
+**Dónde se anota, y por qué ahí.** Dentro de los métodos del almacén que
+escriben, no en quien los llama. Un registro que depende de que alguien se
+acuerde de invocarlo acaba con huecos justo en los caminos menos transitados,
+que son los que más falta hace poder reconstruir. Anotando en el punto de
+escritura, una vía nueva hacia la base queda auditada por construcción o no
+llega a existir.
+
+**Dos decisiones sobre qué no se hace:**
+
+- **No se anota el estado del que se venía.** Averiguarlo exigía una lectura
+  más contra la base en cada cambio, y el histórico ya lo dice: el estado
+  anterior es el de la línea anterior de esa misma entrega. Pagar una
+  petición por un dato que ya está en la secuencia no compensa.
+- **En Supabase, un fallo al anotar no propaga.** Perder una línea de
+  histórico es malo; perder la entrega que el docente acaba de confirmar por
+  no haber podido anotar que la confirmó, es peor.
+
+**La frontera.** `detalle` lleva códigos, cifras y estados, nunca texto del
+trabajo ni citas: la tabla de auditoría es donde más fácil sería colarlo sin
+darse cuenta, porque parece metadato. Hay un límite de longitud que lo
+rechaza y un test de paridad que lo comprueba sobre lo que el sistema sabe
+producir.
+
+**Verificado contra la base real**, no solo en pruebas: registrar una entrega
+y bloquearla dejó las dos líneas esperadas, con su código de alumno, su fase,
+su huella y su motivo. Las filas de esa sonda se retiraron después.
+
+**Arrastra:** `backend/persistencia/auditoria.py` (nuevo),
+`backend/persistencia/memoria.py`, `backend/persistencia/supabase.py`,
+`backend/persistencia/modelos.py` (el `Protocol` gana `anotar` y
+`listar_registro`), `tests/conftest.py` (el simulador conoce la tabla) y
+`tests/persistencia/test_paridad.py`.

@@ -735,6 +735,10 @@ class PostgrestSimulado:
         self.tablas: dict[str, list[dict]] = {
             "alumno": [], "proyecto": [], "entrega": [],
             "correccion": [], "valoracion_dimension": [], "evidencia": [],
+            # El registro de auditoría del §19.1. Existía en el esquema
+            # inicial desde el primer día y aquí faltaba, así que ninguna
+            # prueba podía ver que nadie lo escribía.
+            "registro": [],
         }
         self.peticiones: list[str] = []
 
