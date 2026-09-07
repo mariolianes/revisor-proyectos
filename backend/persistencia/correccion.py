@@ -246,3 +246,24 @@ class Correccion(BaseModel):
     devolucion: Devolucion | None
     motor: str
     aviso: str | None = None
+
+
+class SemaforoDeEntrega(BaseModel):
+    """La fila «lean» de `correccion` que necesita un informe agregado por
+    centro (punto 7 del orden de implantación): sin `informe`, sin
+    `devolucion`, sin ninguna cita ni ninguna prosa. Solo los dos colores.
+
+    `semaforo_propuesto` es el que calculó el motor y no cambia después
+    (D-016): siempre está, porque `Informe.semaforo_propuesto` es un campo
+    obligatorio y nunca se guarda una corrección sin él.
+    `semaforo_aprobado` es `None` hasta que el docente confirma la entrega
+    -es `Informe.semaforo_final_docente`, que empieza en `None` y solo él
+    puede escribir (§13)-, y un informe agregado necesita distinguir «no
+    revisada todavía» de un color concreto, no confundir los dos.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    entrega_id: str
+    semaforo_propuesto: str
+    semaforo_aprobado: str | None = None
