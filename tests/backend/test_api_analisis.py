@@ -1580,3 +1580,145 @@ def test_la_devolucion_nunca_lleva_nota_ni_sintesis_ni_estado_de_nota(
         "sintesis_provisional", "semaforo_final_docente", "semaforo_propuesto",
     ):
         assert prohibida not in claves
+
+
+def test_una_accion_del_borrador_demasiado_larga_no_tira_el_informe(
+    criterios_de_analisis: Path, entregas: Path, escribir_pdf
+) -> None:
+    """Encontrado recorriendo el circuito entero con el motor real: una
+    acción de 423 caracteres contra un límite de 400 tiraba un análisis ya
+    pagado y completo.
+
+    `backend/servicios/analisis_de_entrega.py` declara el invariante: «no hay
+    forma de que la redacción del borrador invalide un informe que ya es
+    correcto». Lo cumplía la redacción, pero no la escritura: la validación
+    de longitudes de `guardar_correccion` no distinguía de qué mitad venía el
+    texto largo y revertía la entrega entera a RECIBIDO.
+    """
+    from backend.persistencia.correccion import LIMITE_DE_LINEA_DE_DEVOLUCION
+
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+
+    devolucion_larga = Devolucion(
+        apertura="Has avanzado.",
+        fortalezas=["La estructura es clara."],
+        acciones=["x" * (LIMITE_DE_LINEA_DE_DEVOLUCION + 1)],
+        cierre="Sigue con ello.",
+    )
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), devolucion_larga])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
+
+    # El informe se guarda; lo que falta es el borrador.
+    assert r.status_code == 200
+    cuerpo = r.json()
+    assert cuerpo["devolucion"] is None
+    assert cuerpo["informe"]["valoraciones"]
+    assert cuerpo["entrega"]["estado"] == "ANALIZADO"
+
+    aviso = cuerpo["aviso"] or ""
+    assert "no hay borrador" in aviso.lower()
+    assert "demasiado largo" in aviso.lower()
+    assert "no es un fallo tuyo" in aviso.lower()
+    assert _sin_jerga(aviso)
+
+    # Y sigue ahí al releerlo: no es solo lo que devolvió esta llamada.
+    guardado = c.get(f"/api/entregas/{ident}/analisis").json()
+    assert guardado["devolucion"] is None
+    assert guardado["informe"]["valoraciones"]
+
+
+def test_una_observacion_del_informe_demasiado_larga_si_tira_todo(
+    criterios_de_analisis: Path, entregas: Path, escribir_pdf
+) -> None:
+    """El límite del arreglo anterior. Si lo que se pasa de largo es del
+    informe, no hay nada que salvar: ahí sí se revierte entero."""
+    from backend.persistencia.correccion import LIMITE_DE_OBSERVACION
+
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+
+    analisis_largo = AnalisisDelMotor(
+        valoraciones=[Valoracion(
+            dimension="D05", nivel="EN_DESARROLLO", prioridad="P2",
+            evidencia=Evidencia(cita=CITA, apartado="5"),
+            observacion="x" * (LIMITE_DE_OBSERVACION + 1),
+        )],
+        fortalezas=[], patrones=[], dudas_para_el_docente=[],
+        indicios_de_autoria=[],
+    )
+    proveedor = ProveedorSimulado(respuestas=[analisis_largo, _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+
+    r = c.post(f"/api/entregas/{ident}/analisis",
+               json={"confirmo_datos_reales": True})
+
+    assert r.status_code == 503
+    assert c.get(f"/api/entregas/{ident}").json()["entrega"]["estado"] == "RECIBIDO"
+
+
+def test_un_conflicto_de_version_detiene_el_analisis(
+    criterios_de_analisis: Path, entregas: Path, escribir_pdf
+) -> None:
+    """El §7 del docente, literal: «marcar VERSION_CONFLICT y detener el
+    análisis nuevo hasta que Marcos elija la versión válida».
+
+    Importa que la guarda esté ANTES de llamar al motor: analizar la versión
+    que luego se descarta cuesta dinero y produce un informe que hay que
+    tirar."""
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+    c.app.state.almacen.cambiar_estado(ident, "RECIBIDO", None)
+    entrega = c.app.state.almacen.por_id(ident)
+    c.app.state.almacen._entregas[ident] = entrega.model_copy(
+        update={"marca_admision": "VERSION_CONFLICT"}
+    )
+
+    r = c.post(f"/api/entregas/{ident}/analisis", json={"confirmo_datos_reales": True})
+
+    assert r.status_code == 409
+    detalle = r.json()["detail"]
+    assert "elegir" in detalle.lower() or "elígela" in detalle.lower()
+    assert "cuesta dinero" in detalle.lower()
+    assert _sin_jerga(detalle)
+    # Y lo que de verdad importa: no se ha llamado al motor.
+    assert proveedor.llamadas == []
+
+
+def test_elegida_la_version_el_analisis_vuelve_a_estar_disponible(
+    criterios_de_analisis: Path, entregas: Path, escribir_pdf
+) -> None:
+    """La marca es la decisión pendiente: al resolverla, se borra."""
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+    entrega = c.app.state.almacen.por_id(ident)
+    c.app.state.almacen._entregas[ident] = entrega.model_copy(
+        update={"marca_admision": "VERSION_CONFLICT"}
+    )
+
+    elegida = c.post(f"/api/entregas/{ident}/version-elegida")
+    assert elegida.status_code == 200
+    assert elegida.json()["marca_admision"] is None
+    assert elegida.json()["estado_version"] == "VIGENTE"
+
+    r = c.post(f"/api/entregas/{ident}/analisis", json={"confirmo_datos_reales": True})
+    assert r.status_code == 200

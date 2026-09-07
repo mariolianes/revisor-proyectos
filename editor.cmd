@@ -12,6 +12,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Las dependencias, ANTES de nada. Hasta el 2026-09-07 este script no las
+REM instalaba: con un Python recien instalado, lo primero que veia quien
+REM abriera esto era un ModuleNotFoundError de fastapi y ninguna pista de
+REM que faltaba un "pip install". Es rapido si ya estan: pip no reinstala lo
+REM que ya cumple la version pedida.
+echo Comprobando las dependencias...
+python -m pip install --quiet --disable-pip-version-check -r requirements.txt
+if errorlevel 1 (
+    echo.
+    echo No se han podido instalar las dependencias. Revisa los mensajes de
+    echo arriba: lo mas comun es no tener conexion, o que pip no este
+    echo instalado con este Python.
+    pause
+    exit /b 1
+)
+
 REM El frontend se compila SIEMPRE, no solo cuando falta.
 REM
 REM Antes se compilaba unicamente "if not exist frontend\dist\index.html", y

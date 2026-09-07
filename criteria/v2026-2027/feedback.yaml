@@ -16,12 +16,24 @@ economia_pedagogica:
   # prioridades concretas", semaforo.yaml) es el trabajo sólido del §2.3: dos
   # o tres bastan casi siempre, y tres es el techo. ROJO ("carencia crítica
   # o bloqueo académico") es el trabajo débil: ahí el techo sube a cuatro,
-  # bien agrupadas por causa -ver 'agrupacion_de_causa', más abajo-. VERDE y
-  # GRIS no aparecen aquí porque nunca tienen una valoración P1-P3 fiable de
-  # la que partir -ver 'semaforo_por_valoraciones' en
-  # backend/analisis/verificacion.py-: el límite nunca llega a aplicarse
-  # sobre ellos, y forzar un número ahí sería inventar un caso que no ocurre.
+  # bien agrupadas por causa -ver 'agrupacion_de_causa', más abajo-.
+  #
+  # VERDE entró aquí el 2026-09-02, y hace falta explicar por qué. Hasta el
+  # 31 de agosto un P3 sin P1 ni P2 daba AMBAR, así que VERDE nunca tenía
+  # ninguna valoración de la que partir y el límite no llegaba a aplicarse.
+  # Desde D-026 ese caso da VERDE con alerta, y entonces SÍ hay candidatas:
+  # sin una entrada propia, VERDE caía en el tope absoluto de cuatro y un
+  # trabajo que "cumple la fase y puede avanzar" habría recibido MÁS
+  # acciones que un ÁMBAR. Dos, y no tres, porque el docente describe ese
+  # verde como "ajustes menores o alertas no bloqueantes"
+  # (decisiones#12-semaforo): menos que el ámbar, que es donde empiezan las
+  # "correcciones prioritarias antes de considerarse cerrado".
+  #
+  # GRIS sigue sin aparecer: no evaluable no produce ninguna valoración
+  # fiable de la que partir, y forzar un número ahí sería inventar un caso
+  # que no ocurre.
   prioridades_maximas_por_semaforo:
+    VERDE: 2
     AMBAR: 3
     ROJO: 4
   caracter: orientativo

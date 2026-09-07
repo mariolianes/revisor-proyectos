@@ -28,6 +28,7 @@ from backend.persistencia.modelos import EntregaNueva
 from backend.salidas.borrador import Devolucion
 from backend.salidas.informe import Informe
 from tools.calibrar import (
+    FASE_DESCONOCIDA,
     PRESUPUESTO_CALIBRACION,
     PROYECCIONES_DE_ANALISIS,
     UMBRALES_DE_ALERTA_PCT,
@@ -1680,3 +1681,88 @@ def test_formatear_menciona_que_la_cola_de_reintento_no_esta_construida() -> Non
 
     assert "vuelve a RECIBIDO" in texto
     assert "alcance nuevo" in texto
+
+
+# --- Fase desconocida (decisiones#11-fases-desconocidas) -------------------
+
+
+def _caso_sin_fase(**cambios):
+    datos = dict(
+        codigo="P01", archivo="p01.pdf", fase=FASE_DESCONOCIDA,
+        semaforo_esperado="AMBAR",
+    )
+    datos.update(cambios)
+    return CasoDeCalibracion(**datos)
+
+
+def test_un_caso_sin_fase_confirmada_no_compara_su_color() -> None:
+    """El docente: «no utilizarlos en métricas o comparaciones sensibles a la
+    fase». El sistema activa dimensiones distintas según la fase, así que
+    comparar el color de un caso cuya fase nadie confirmó mide nuestra
+    suposición, no el sistema."""
+    resultado = evaluar(_caso_sin_fase(), _informe(semaforo="ROJO"))
+
+    assert resultado.fase_desconocida is True
+    assert resultado.acierta_semaforo is None
+    assert resultado.direccion is None
+    assert resultado.semaforo_esperado is None
+    # Pero el caso SÍ se ha ejecutado y se ha mirado.
+    assert resultado.saltado is False
+    assert resultado.semaforo_obtenido == "ROJO"
+
+
+def test_lo_que_no_depende_de_la_fase_sigue_contando_sin_fase() -> None:
+    """«Mantenerlos como pruebas generales de estructura, calidad y
+    detección». Las evidencias localizadas no dependen de la fase."""
+    resultado = evaluar(
+        _caso_sin_fase(no_debe=["una frase que no debe aparecer"]),
+        _informe(
+            semaforo="AMBAR",
+            valoraciones=[_valoracion("Una observación con su cita.")],
+        ),
+    )
+
+    assert resultado.valoraciones_totales == 1
+    assert resultado.valoraciones_con_evidencia == 1
+    assert resultado.no_debe_hallado == []
+
+
+def test_los_casos_sin_fase_no_entran_en_el_recuento_de_semaforos() -> None:
+    """El recuento que el docente lee tiene que salir solo de los casos
+    comparables, o la cifra dice menos de lo que parece."""
+    resultados = [
+        ResultadoDeCaso(codigo="P01", fase_desconocida=True,
+                        semaforo_obtenido="ROJO"),
+        ResultadoDeCaso(codigo="P03", semaforo_esperado="AMBAR",
+                        semaforo_obtenido="AMBAR", acierta_semaforo=True,
+                        direccion="COINCIDE"),
+        ResultadoDeCaso(codigo="P05", semaforo_esperado="VERDE",
+                        semaforo_obtenido="AMBAR", acierta_semaforo=False,
+                        direccion="MAS_DURO"),
+    ]
+
+    informe = _componer_informe(resultados)
+
+    assert informe.evaluados == 3
+    assert informe.sin_fase_confirmada == 1
+    # Uno de dos comparables, no uno de tres.
+    assert informe.aciertos_semaforo == 1
+    assert informe.mas_duro == 1
+    assert "1/2 semáforos coinciden" in informe.indicadores["prioridad"].lectura
+
+
+def test_el_informe_dice_cuantos_casos_quedaron_fuera_del_recuento() -> None:
+    """Un recuento sobre menos casos de los que se ejecutaron tiene que
+    decirlo, o se lee como si fueran todos."""
+    resultados = [
+        ResultadoDeCaso(codigo="P01", fase_desconocida=True,
+                        semaforo_obtenido="ROJO"),
+        ResultadoDeCaso(codigo="P03", semaforo_esperado="AMBAR",
+                        semaforo_obtenido="AMBAR", acierta_semaforo=True,
+                        direccion="COINCIDE"),
+    ]
+
+    texto = _formatear(_componer_informe(resultados))
+
+    assert "no entran en ese recuento" in texto
+    assert "su fase no está confirmada" in texto

@@ -3,6 +3,8 @@
 from datetime import date, datetime
 from pathlib import Path
 
+import pytest
+
 from backend.analisis.contrato import Evidencia
 from backend.analisis.verificacion import (
     AnalisisVerificado,
@@ -518,13 +520,42 @@ def test_semaforo_por_valoraciones_sin_nada_da_gris() -> None:
 # --- D-019: la escala pasa a cuatro niveles, con regla fronteriza ----------
 
 
-def test_p3_sin_p1_ni_p2_da_verde_con_alertas() -> None:
+def test_p3_sin_p1_ni_p2_da_verde_y_levanta_la_alerta() -> None:
     """La regla fronteriza del docente (2026-08-31): entre ámbar y verde, se
     usa verde con alertas cuando todos los mínimos están cumplidos. Antes,
     un P3 sin P1 ni P2 llegaba igual que un P2 a AMBAR -el color más severo
     ante la duda-, aunque el §7 del calibrador ya describe P3 como algo que
-    "refina, pero no cambia el nivel global"."""
-    assert semaforo_por_valoraciones([_v("D05", "P3")]) == "VERDE_CON_ALERTAS"
+    "refina, pero no cambia el nivel global".
+
+    El 2026-09-02 el docente cerró cómo se expresa eso: VERDE, y la alerta
+    al lado (`decisiones#12-semaforo`). No un quinto color."""
+    from backend.analisis.verificacion import hay_alertas
+
+    assert semaforo_por_valoraciones([_v("D05", "P3")]) == "VERDE"
+    assert hay_alertas([_v("D05", "P3")])
+
+
+def test_sin_ninguna_prioridad_el_verde_no_lleva_alerta() -> None:
+    """Control: la alerta es del P3, no del color."""
+    from backend.analisis.verificacion import hay_alertas
+
+    assert not hay_alertas([])
+
+
+@pytest.mark.parametrize("prioridad", ["P1", "P2"])
+def test_sobre_ambar_y_rojo_no_se_marca_alerta(prioridad) -> None:
+    """Sobre un color que ya obliga a actuar, la marca no dice nada nuevo, y
+    dejarla puesta invitaría a leerla como si el trabajo pudiera avanzar."""
+    from backend.analisis.verificacion import hay_alertas
+
+    assert not hay_alertas([_v("D05", prioridad), _v("D06", "P3")])
+
+
+def test_una_alerta_apoyada_en_una_cita_que_no_existe_no_cuenta() -> None:
+    """Misma criba que el color: lo que no se localizó no decide nada."""
+    from backend.analisis.verificacion import hay_alertas
+
+    assert not hay_alertas([_v("D05", "P3", localizada=False)])
 
 
 def test_semaforo_por_valoraciones_distingue_p2_de_p3() -> None:
@@ -541,17 +572,22 @@ def test_un_p1_sigue_dando_rojo_aunque_haya_p2_y_p3() -> None:
     assert semaforo_por_valoraciones(valoraciones) == "ROJO"
 
 
-def test_verde_con_alertas_esta_en_los_codigos_y_su_severidad_es_intermedia() -> None:
-    """`CODIGOS_SEMAFORO` y `SEVERIDAD_SEMAFORO` son los que usan
-    `revisar()` (`backend/api/analisis.py`) y `Revision.tsx` para validar el
-    semáforo final: el quinto código tiene que estar en los dos, y su
-    severidad tiene que quedar entre VERDE y AMBAR, no fuera de ese orden."""
+def test_los_codigos_son_los_cuatro_oficiales_y_ninguno_mas() -> None:
+    """El docente lo decidió el 2026-09-02 (`decisiones#12-semaforo`):
+    «Mantener el enum de cuatro estados del Documento Maestro. El calibrador
+    puede añadir alertas o matices, pero no crear un color oficial nuevo.»
+
+    Este test es el que impide que vuelva a colarse un quinto color: la
+    columna `semaforo` de Supabase es un enum de PostgreSQL, y un valor
+    añadido a un enum no se puede quitar. Un color de más aquí es
+    irreversible allí."""
     from backend.salidas.informe import CODIGOS_SEMAFORO, SEVERIDAD_SEMAFORO
 
-    assert "VERDE_CON_ALERTAS" in CODIGOS_SEMAFORO
+    assert set(CODIGOS_SEMAFORO) == {"VERDE", "AMBAR", "ROJO", "GRIS"}
+    assert set(SEVERIDAD_SEMAFORO) == {"VERDE", "AMBAR", "ROJO", "GRIS"}
     assert (
-        SEVERIDAD_SEMAFORO["VERDE"]
-        < SEVERIDAD_SEMAFORO["VERDE_CON_ALERTAS"]
+        SEVERIDAD_SEMAFORO["GRIS"]
+        < SEVERIDAD_SEMAFORO["VERDE"]
         < SEVERIDAD_SEMAFORO["AMBAR"]
         < SEVERIDAD_SEMAFORO["ROJO"]
     )
@@ -564,7 +600,7 @@ def test_color_sostenido_por_prioridades_sigue_el_mismo_mapeo() -> None:
     cuando hay algo fiable de lo que partir."""
     from backend.salidas.informe import color_sostenido_por_prioridades
 
-    assert color_sostenido_por_prioridades([_v("D05", "P3")]) == "VERDE_CON_ALERTAS"
+    assert color_sostenido_por_prioridades([_v("D05", "P3")]) == "VERDE"
     assert color_sostenido_por_prioridades([_v("D05", "P1")]) == "ROJO"
 
 

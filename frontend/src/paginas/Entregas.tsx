@@ -6,6 +6,30 @@ import type {
   ArchivoVisto, Confirmacion, EntregaRegistrada, Entorno, FichaDeLectura,
 } from "../lib/tipos"
 
+/**
+ * La bandeja, agrupada por lo que espera del docente y no por si una entrega
+ * está registrada o no.
+ *
+ * El orden de los grupos es el del recorrido del §16.1, y el criterio para
+ * agruparlos es una sola pregunta: **¿le toca a él?** Antes había dos listas
+ * -pendientes y registradas- y toda la información sobre en qué punto estaba
+ * cada trabajo se resumía en una palabra en minúscula al pie de cada fila.
+ * Con doscientas entregas eso no se lee.
+ *
+ * BLOQUEADO va con las que esperan al docente, no aparte: una entrega
+ * bloqueada es exactamente algo que él tiene que mirar.
+ */
+const GRUPOS: { clave: string; titulo: string; estados: string[] }[] = [
+  { clave: "analizar", titulo: "Listas para analizar", estados: ["RECIBIDO"] },
+  {
+    clave: "revisar",
+    titulo: "Esperan tu revisión",
+    estados: ["ANALIZADO", "BORRADORES_GENERADOS", "EN_REVISION_DOCENTE"],
+  },
+  { clave: "bloqueadas", titulo: "Bloqueadas", estados: ["BLOQUEADO"] },
+  { clave: "cerradas", titulo: "Cerradas", estados: ["APROBADO", "COMUNICADO"] },
+]
+
 interface Props {
   /**
    * `leida` es la ficha que devuelve confirmar, y se pasa entera a
@@ -76,10 +100,17 @@ export function Entregas({ alAbrirFicha }: Props) {
         <p className="mb-6 max-w-lectura text-[13px] text-tinta">{error}</p>
       )}
 
-      <section className="mb-14">
-        <h2 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-4">
-          Pendientes de confirmar
-        </h2>
+      <section className="mb-12">
+        <div className="mb-4 flex items-baseline justify-between">
+          <h2 className="text-[12px] uppercase tracking-[0.12em] text-gris">
+            Esperan tu confirmación
+          </h2>
+          {!cargando && (
+            <span className="font-mono text-[12px] text-gris">
+              {pendientes.length}
+            </span>
+          )}
+        </div>
         {cargando ? (
           <p className="text-[13px] text-gris">Mirando la carpeta…</p>
         ) : pendientes.length === 0 ? (
@@ -99,39 +130,57 @@ export function Entregas({ alAbrirFicha }: Props) {
         )}
       </section>
 
-      <section>
-        <h2 className="text-[12px] uppercase tracking-[0.12em] text-gris mb-4">
-          Registradas
-        </h2>
-        {registradas.length === 0 ? (
-          <p className="text-[13px] text-gris">Todavía no hay ninguna.</p>
-        ) : (
-          <ol className="regla-fina">
-            {registradas.map((entrega) => (
-              <li key={entrega.id} className="border-b border-grisclaro">
-                <button
-                  onClick={() => alAbrirFicha(entrega.id)}
-                  className="w-full text-left py-4 px-1 hover:bg-papel transition-colors"
-                >
-                  <span className="block text-[15px]">
-                    {entrega.codigo_alumno} · {entrega.fase} · versión {entrega.version}
-                  </span>
-                  <span className="block mt-1 font-mono text-[12px] text-gris">
-                    {entrega.nombre_archivo}
-                  </span>
-                  <span className="block mt-1 text-[12px] uppercase tracking-[0.08em]">
-                    {entrega.estado === "BLOQUEADO" ? (
-                      <span className="senal">bloqueada</span>
-                    ) : (
-                      <span className="text-gris">{entrega.estado.toLowerCase()}</span>
-                    )}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      {GRUPOS.map((grupo) => {
+        const suyas = registradas.filter((e) => grupo.estados.includes(e.estado))
+        // Un grupo vacío no se pinta salvo que sea el de las cerradas, que
+        // sirve de recuento aunque esté a cero. Pintarlos todos llenaría la
+        // pantalla de encabezados sin nada debajo, que es justo el ruido que
+        // esta agrupación quiere quitar.
+        if (suyas.length === 0 && grupo.clave !== "cerradas") return null
+        return (
+          <section key={grupo.clave} className="mb-12">
+            <div className="mb-4 flex items-baseline justify-between">
+              <h2 className="text-[12px] uppercase tracking-[0.12em] text-gris">
+                {grupo.titulo}
+              </h2>
+              <span className="font-mono text-[12px] text-gris">
+                {suyas.length}
+              </span>
+            </div>
+            {suyas.length === 0 ? (
+              <p className="text-[13px] text-gris">Todavía no hay ninguna.</p>
+            ) : (
+              <ol className="regla-fina">
+                {suyas.map((entrega) => (
+                  <li key={entrega.id} className="border-b border-grisclaro">
+                    <button
+                      onClick={() => alAbrirFicha(entrega.id)}
+                      className="w-full text-left py-4 px-1 hover:bg-papel transition-colors"
+                    >
+                      <span className="block text-[15px]">
+                        {entrega.codigo_alumno} · {entrega.fase} · versión{" "}
+                        {entrega.version}
+                      </span>
+                      <span className="block mt-1 font-mono text-[12px] text-gris">
+                        {entrega.nombre_archivo}
+                      </span>
+                      <span className="block mt-1 text-[12px] uppercase tracking-[0.08em]">
+                        {entrega.estado === "BLOQUEADO" ? (
+                          <span className="senal">bloqueada</span>
+                        ) : (
+                          <span className="text-gris">
+                            {entrega.estado.toLowerCase().replace(/_/g, " ")}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        )
+      })}
     </div>
   )
 }

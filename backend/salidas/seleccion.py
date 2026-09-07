@@ -107,12 +107,16 @@ def _maximo(raiz: Path, version: str, color: str) -> int:
     `prioridades_maximas` -el tope absoluto de siempre-, exactamente igual
     que antes de que existiera esta distinción.
 
-    VERDE y GRIS no van a tener nunca una entrada útil en ese mapa: los dos
-    implican que no hay ninguna valoración P1-P3 fiable -ver
-    `semaforo_por_valoraciones`-, así que `candidatas` en
-    `seleccionar_prioridades` ya está vacía antes de que este número llegue
-    a usarse. No se les asigna un número aparte porque no hay caso real que
-    lo necesite, no por descuido.
+VERDE sí tiene entrada desde D-026, y conviene saber por qué. Hasta
+    entonces un P3 sin P1 ni P2 daba AMBAR y VERDE no tenía nunca ninguna
+    candidata; ahora ese caso da VERDE con alerta y sí las tiene. Sin
+    entrada propia habría caído en el tope absoluto de cuatro, y un trabajo
+    que "cumple la fase y puede avanzar" habría recibido más acciones que un
+    ÁMBAR.
+
+    GRIS sigue sin tenerla: no evaluable no produce ninguna valoración
+    fiable de la que partir, así que `candidatas` ya está vacía antes de que
+    este número llegue a usarse.
     """
     economia = _feedback(raiz, version).get("economia_pedagogica") or {}
     por_color = economia.get("prioridades_maximas_por_semaforo") or {}

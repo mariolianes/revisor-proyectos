@@ -19,8 +19,13 @@
 #
 # El párrafo 6 no fija la fase de cada caso: solo el párrafo 3 dice, de la
 # muestra entera, que predominan tercera entrega o entrega final y que no
-# se simulan fases iniciales. Se asume E3 para los nueve salvo aviso en
-# contra en la nota de un caso concreto; si el docente conoce la fase real
+# se simulan fases iniciales. P01, P02, P04 y P09 llevan fase DESCONOCIDA
+# desde el 2026-09-02: el docente confirmó la de los otros cinco y de estos
+# cuatro dijo que no dispone del dato (`decisiones#11-fases-desconocidas`).
+# No se asume ninguna: se ejecutan y se miran, pero su color no se compara.
+# Antes figuraban como E3 por suposición nuestra, y como el sistema activa
+# dimensiones distintas según la fase, esas comparaciones medían la
+# suposición y no el sistema. Si el docente conoce la fase real
 # de alguno, debe corregirla antes de ejecutar el arnés.
 #
 # debe_encontrar y no_debe son búsquedas literales (sin tildes ni
@@ -57,7 +62,7 @@
 
 - codigo: P01
   archivo: P01.pdf
-  fase: E3
+  fase: DESCONOCIDA
   semaforo_esperado: ROJO
   debe_encontrar:
     - desarrollo superficial
@@ -87,7 +92,7 @@
 
 - codigo: P02
   archivo: P02.pdf
-  fase: E3
+  fase: DESCONOCIDA
   semaforo_esperado: AMBAR
   debe_encontrar:
     - extensión insuficiente
@@ -133,7 +138,7 @@
 
 - codigo: P04
   archivo: P04.pdf
-  fase: E3
+  fase: DESCONOCIDA
   semaforo_esperado: AMBAR
   debe_encontrar:
     - ausencia de fuentes
@@ -241,7 +246,7 @@
 
 - codigo: P09
   archivo: P09.pdf
-  fase: E3
+  fase: DESCONOCIDA
   semaforo_esperado: AMBAR
   debe_encontrar:
     - inconsistencia entre beneficio

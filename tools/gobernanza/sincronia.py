@@ -40,7 +40,7 @@ FICHERO_SINCRONIA = "criteria/.sincronia.json"
 # cambio sin que su texto se hubiera tocado. Ver también
 # test_hash_no_se_extiende_a_la_siguiente_ancla_calibracion.
 PATRON_CUALQUIER_ANCLA = re.compile(
-    r"^<!-- ancla: (?:maestro|indice|guia|calibracion)#[a-z0-9-]+ -->$", re.M
+    r"^<!-- ancla: (?:maestro|indice|guia|calibracion|decisiones)#[a-z0-9-]+ -->$", re.M
 )
 
 _DOCUMENTOS = {
@@ -51,6 +51,12 @@ _DOCUMENTOS = {
     # tres anteriores, y nunca puede contradecirlos. Lo dice él mismo en su
     # recuadro de apertura.
     "calibracion": "04-calibracion.md",
+    # Respuesta del docente del 2026-09-02 a las ocho preguntas de
+    # arquitectura. Mismo nivel que el calibrador: concreta lo que los
+    # tres primeros dejan abierto, y no puede contradecirlos. Donde
+    # aclara una interpretación anterior -el semáforo de cuatro estados,
+    # las fases del banco- manda este.
+    "decisiones": "05-decisiones-arquitectura.md",
 }
 
 

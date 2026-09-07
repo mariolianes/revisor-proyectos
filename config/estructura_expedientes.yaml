@@ -1,0 +1,317 @@
+# Arquitectura de expedientes en el equipo del profesor: rutas, códigos y
+# reglas técnicas, en un dato, no en una constante de Python.
+#
+# El docente lo pidió así, textualmente, al entregar el documento de
+# arquitectura: «Este Word es la referencia funcional y humana, pero no debe
+# interpretarse de nuevo en cada ejecución. Sus reglas estables deben
+# traducirse a una configuración estructurada -YAML, JSON o tablas- con al
+# menos: rutas base y carpetas vigiladas; códigos de comunidades, centros,
+# ciclos y fases; extensiones y tamaños admitidos; reglas y umbrales de
+# identificación; política de versiones, duplicados y reintentos; versión de
+# criterios y calibrador; retención local, limpieza y tratamiento de
+# incidencias.»
+#
+# Este fichero es esa traducción, para la parte que ya tiene una respuesta
+# firme del documento aprobado: la forma del árbol de carpetas y los códigos
+# cerrados de comunidad, fase y ciclo. `backend/expedientes/estructura.py` lo
+# lee; no lo declara.
+#
+# Los nombres de carpeta van sin tildes ni caracteres fuera de
+# [A-Za-z0-9_-]: el docente lo exige expresamente por las rutas largas de
+# Windows, y `backend/expedientes/estructura.py` lo comprueba al cargar este
+# fichero, no solo lo respeta de palabra. Los campos `nombre` y `descripcion`
+# sí llevan su ortografía normal: son prosa para que la lea el docente, no
+# un nombre de carpeta.
+#
+# Lo que el documento pide y todavía no tiene una respuesta firme -
+# extensiones y tamaños admitidos, umbral de identificación, política de
+# duplicados y reintentos, versión propia del calibrador, retención y
+# limpieza- se deja bajo `pendiente_de_definir`, a `null`, en vez de
+# inventarse un valor razonable: mismo criterio que ya aplican
+# `config/precios_openai.yaml` con una tarifa que falta y
+# `docs/PENDIENTE_OFICIAL.md` con un dato que no ha llegado. La versión de
+# criterios sí existe ya, pero vive en
+# `backend.configuracion.VERSION_CRITERIOS_POR_OMISION`: no se repite aquí,
+# para no crear dos sitios que puedan decir cosas distintas.
+
+version_configuracion: "2026-09-02"
+
+raiz:
+  nombre_carpeta: CESUR_2026-2027
+  # El profesor apunta aquí con la variable de entorno REVISOR_RAIZ_EXPEDIENTES
+  # (ver backend/configuracion.py), con el mismo mecanismo que ya usan
+  # REVISOR_CARPETA_ENTREGAS y REVISOR_DATOS_LOCALES: esta arquitectura vive en
+  # su equipo, nunca dentro del repositorio.
+  variable_de_entorno: REVISOR_RAIZ_EXPEDIENTES
+
+# Las ocho carpetas del primer nivel. `vigilada: true` marca una carpeta que
+# un proceso automático debe mirar para encontrar trabajo pendiente; el resto
+# son destino o archivo, y nadie las recorre buscando novedades.
+#
+# 01_ENTRADA_TRABAJOS no lleva aquí `vigilada: true`: la vigilancia real está
+# un nivel más abajo, solo en las subcarpetas PENDIENTES de cada comunidad y
+# fase (ver `entrada_trabajos`, más abajo). Marcarla vigilada aquí habría dado
+# a entender que toda la carpeta se recorre, y no es así: INCIDENCIAS, por
+# ejemplo, cuelga de la misma comunidad y no se vigila.
+carpetas_raiz:
+  - carpeta: 00_LISTADOS_ALUMNOS
+    vigilada: false
+    descripcion: >-
+      Listados de matrícula que entrega el centro. No se vigila: es un
+      origen de datos que se importa a mano, no una bandeja de trabajo.
+  - carpeta: 01_ENTRADA_TRABAJOS
+    vigilada: false
+    descripcion: >-
+      Única puerta de entrada de los trabajos de los alumnos. Se organiza
+      por comunidad y fase; ver `entrada_trabajos`.
+  - carpeta: 02_EXPEDIENTES_ALUMNOS
+    vigilada: false
+    descripcion: >-
+      Repositorio permanente de cada alumno, nombrado solo por su ID. Nunca
+      se vigila: a esta carpeta no llega nada por sí sola, el sistema
+      escribe en ella cuando procesa un trabajo ya identificado.
+  - carpeta: 03_INFORMES_CENTROS
+    vigilada: false
+    descripcion: >-
+      Resultados agregados por evaluación, comunidad, centro y ciclo.
+  - carpeta: 04_DOCUMENTACION_MAESTRA
+    vigilada: false
+    descripcion: >-
+      Copia de trabajo de los documentos normativos del docente.
+  - carpeta: 05_CALIBRACION
+    vigilada: false
+    descripcion: >-
+      El banco de casos y los informes que produce `tools/calibrar.py`.
+  - carpeta: 06_LOGS_Y_COSTES
+    vigilada: false
+    descripcion: >-
+      Registro técnico de ejecuciones y de lo que ha costado cada una.
+  - carpeta: 99_ARCHIVO_CERRADO
+    vigilada: false
+    descripcion: >-
+      Cursos y evaluaciones ya cerrados, fuera del flujo activo.
+
+# Comunidades autónomas del curso 2026-2027. Lista cerrada: una comunidad que
+# no está aquí no tiene carpeta de entrada, y el código y el nombre de
+# carpeta son los que ya fijó el documento aprobado, letra por letra.
+comunidades:
+  - codigo: AND
+    carpeta: AND_ANDALUCIA
+    nombre: Andalucía
+  - codigo: MAD
+    carpeta: MAD_MADRID
+    nombre: Comunidad de Madrid
+  - codigo: CAN
+    carpeta: CAN_CANARIAS
+    nombre: Canarias
+  - codigo: MUR
+    carpeta: MUR_MURCIA
+    nombre: Región de Murcia
+  - codigo: ARA
+    carpeta: ARA_ARAGON
+    nombre: Aragón
+  - codigo: EXT
+    carpeta: EXT_EXTREMADURA
+    nombre: Extremadura
+
+# Fases de la bandeja de entrada, en su orden real dentro del curso.
+# `codigo` es la fase tal como la nombra el 16.1 del Documento Maestro y la
+# columna `fase` de la base de datos (E1, E2, E3, FINAL). `carpeta` es como
+# el docente dibujó la bandeja en su documento de arquitectura (E01, E02,
+# E03, FINAL). No son lo mismo y hasta el 2026-09-04 estaban confundidos en
+# un solo valor: la admisión buscaba la carpeta «E2» y no existía, porque en
+# disco se llama «E02». Mismo patrón que ya usan las comunidades, donde el
+# `codigo` es AND y la `carpeta` AND_ANDALUCIA.
+fases:
+  - codigo: E1
+    carpeta: E01
+    orden: 1
+  - codigo: E2
+    carpeta: E02
+    orden: 2
+  - codigo: E3
+    carpeta: E03
+    orden: 3
+  - codigo: FINAL
+    carpeta: FINAL
+    orden: 4
+
+# Cómo se organiza cada comunidad dentro de 01_ENTRADA_TRABAJOS: una
+# subcarpeta por fase, con su PENDIENTES vigilada dentro, más una
+# INCIDENCIAS que no se vigila -es destino de lo que un proceso ya miró y no
+# pudo identificar, no origen de trabajo nuevo-.
+entrada_trabajos:
+  subcarpeta_vigilada: PENDIENTES
+  subcarpeta_incidencias: INCIDENCIAS
+
+# Ciclos formativos del curso 2026-2027, en el código cerrado que ya fijó el
+# documento aprobado. No se expande aquí a qué título completo corresponde
+# cada sigla: el documento no lo dio, y no se inventa.
+ciclos:
+  - MYP
+  - CIN
+  - AYF
+
+# El código de centro tiene forma <comunidad>-<provincia>-<número de dos
+# cifras>, por ejemplo AND-MAL-01. El primer tramo tiene que ser uno de los
+# códigos de `comunidades`; eso lo comprueba
+# `backend/expedientes/estructura.py` al validar un código concreto, no este
+# patrón por sí solo, que solo sabe reconocer la forma.
+centros:
+  patron: '^[A-Z]{2,4}-[A-Z]{2,4}-\d{2}$'
+  ejemplo: AND-MAL-01
+  descripcion: >-
+    Comunidad (el código de `comunidades`), guion, provincia en tres letras,
+    guion, número de centro de dos cifras dentro de esa provincia.
+
+# El expediente de un alumno, dentro de 02_EXPEDIENTES_ALUMNOS, nombrado solo
+# con su ID -nunca con su nombre, comunidad, centro ni ciclo-.
+expediente_alumno:
+  patron_id: '^ALU-\d{6}$'
+  ejemplo_id: ALU-260087
+
+  # `tiene_entregas: true` marca las carpetas que llevan dentro las cinco
+  # subcarpetas de `subcarpetas_de_entrega` -00_ORIGINAL, 01_PROCESADO...-.
+  #
+  # Interpretación de este punto 1, a confirmar por el docente: el documento
+  # dice «cada carpeta de entrega lleva dentro...» sin enumerar cuáles son
+  # «de entrega». Aquí se ha leído en el sentido más literal posible: las
+  # cuatro que llevan la palabra ENTREGA en su nombre
+  # (02_ENTREGA_1..05_ENTREGA_FINAL). 00_FICHA, 01_TEMA, 06_DEFENSA y
+  # 07_HISTORICO se crean como carpetas simples, sin ese contenido interno,
+  # hasta que el docente diga lo contrario -en particular 01_TEMA y
+  # 06_DEFENSA, que también reciben un documento del alumno y podrían
+  # merecer la misma subestructura-.
+  #
+  # `fase` dice qué llega a cada carpeta. El docente lo confirmó en
+  # decisiones#9-carpetas: TEMA y DEFENSA son bloques propios y las cuatro
+  # entregas evaluables son E1, E2, E3 y FINAL. FICHA e HISTORICO no reciben
+  # nada del alumno -son administración interna- y por eso su fase es nula.
+  # Sin este dato, la admisión no sabría dónde dejar un archivo.
+  carpetas:
+    - carpeta: 00_FICHA
+      tiene_entregas: false
+      fase: null
+    - carpeta: 01_TEMA
+      tiene_entregas: false
+      fase: TEMA
+    - carpeta: 02_ENTREGA_1
+      tiene_entregas: true
+      fase: E1
+    - carpeta: 03_ENTREGA_2
+      tiene_entregas: true
+      fase: E2
+    - carpeta: 04_ENTREGA_3
+      tiene_entregas: true
+      fase: E3
+    - carpeta: 05_ENTREGA_FINAL
+      tiene_entregas: true
+      fase: FINAL
+    - carpeta: 06_DEFENSA
+      tiene_entregas: false
+      fase: DEFENSA
+    - carpeta: 07_HISTORICO
+      tiene_entregas: false
+      fase: null
+
+  subcarpetas_de_entrega:
+    - 00_ORIGINAL
+    - 01_PROCESADO
+    - 02_INFORME_INTERNO
+    - 03_FEEDBACK_DOCENTE
+    - 04_EVIDENCIAS
+
+# Las reglas que el docente fijó el 2026-09-02 al responder a las ocho
+# preguntas (docs/maestro/05-decisiones-arquitectura.md). Hasta esa fecha
+# estaban aquí a `null` bajo `pendiente_de_definir`, sin inventarles un valor
+# razonable. Ahora tienen el suyo, y cada bloque dice de qué sección sale.
+
+# decisiones#5-extensiones. El proyecto y la presentación de defensa admiten
+# cosas distintas a propósito: una presentación no sustituye nunca al
+# proyecto final, y por eso no comparten lista.
+archivos:
+  extensiones_del_proyecto: [pdf, docx]
+  extensiones_de_defensa: [pdf, pptx]
+  tamano_maximo_mb: 20
+  # .doc antiguo: no se analiza directamente. Va a incidencia técnica, y si
+  # se convierte, la conversión es un acto explícito y no un apaño silencioso.
+  politica_doc_antiguo: incidencia
+  otras_extensiones: incidencia
+
+# decisiones#6-identificacion. NO hay umbral de parecido, y eso es la
+# decisión, no un hueco: «no estableceremos un porcentaje de parecido para
+# asignar automáticamente un trabajo». Las tres primeras prioridades asignan;
+# las dos últimas van a Incidencias. Un caso ambiguo no se resuelve solo
+# jamás.
+identificacion:
+  politica: determinista
+  umbral_de_parecido: null   # deliberado: ver arriba, no es un pendiente
+  # La normalización puede ignorar todo esto al comparar nombres.
+  normalizacion_ignora:
+    - mayusculas
+    - tildes
+    - guiones
+    - comas
+    - dobles_espacios
+    - orden_apellidos_nombre
+  prioridades:
+    - prioridad: 1
+      condicion: Identificador exacto de CESUR o metadato fiable disponible
+      resultado: asignacion_automatica
+    - prioridad: 2
+      condicion: >-
+        Nombre completo normalizado y único dentro del curso y comunidad
+        esperados
+      resultado: asignacion_automatica
+    - prioridad: 3
+      condicion: >-
+        Nombre más al menos un apellido, candidato único y portada compatible
+      resultado: asignacion_automatica
+    - prioridad: 4
+      condicion: >-
+        Nombre parcial sin confirmación, varios candidatos o datos
+        insuficientes
+      resultado: incidencias
+    - prioridad: 5
+      condicion: >-
+        Contradicción entre identificador, nombre, portada o matrícula
+      resultado: incidencias
+
+# decisiones#7-versiones. Un duplicado exacto no vuelve a analizarse -no
+# generar coste API es parte de la regla, no una optimización nuestra-, y un
+# archivo distinto para la misma fase detiene el análisis hasta que el
+# docente elija cuál vale.
+versiones:
+  duplicado_exacto:
+    marca: DUPLICATE_EXACT
+    analizar: false
+    sobrescribir_original: false
+    aviso_bloqueante: false
+  archivo_distinto_misma_fase:
+    marca: VERSION_CONFLICT
+    conservar_como_version_nueva: true
+    detener_analisis_hasta_decision_docente: true
+  version_elegida:
+    anteriores_pasan_a: historica
+    eliminar_anteriores: false
+
+# decisiones#8-retencion. No hay borrado automático de nada, y el valor nulo
+# de `borrar_pasados_dias` es la regla, no un dato que falte.
+retencion:
+  politica: retencion_manual
+  borrado_automatico: false
+  borrar_pasados_dias: null
+  al_cerrar_el_curso:
+    mover_a: 99_ARCHIVO_CERRADO
+    comprobar_copia_de_seguridad: true
+
+# Lo que sigue sin respuesta firme. Se queda a `null` por el mismo criterio
+# de siempre: ningún valor razonable sustituye a uno que nadie ha fijado.
+pendiente_de_definir:
+  # Cuántas veces se reintenta un análisis que falla por un corte del
+  # proveedor. Hoy la entrega vuelve a RECIBIDO y se pide a mano; encolar o
+  # reintentar solo es alcance nuevo, y él no lo ha pedido.
+  politica_reintentos: null
+  # La versión del calibrador, cuando el calibrador se versione aparte de los
+  # criterios. Hoy van juntos en REVISOR_VERSION_CRITERIOS.
+  version_calibrador: null

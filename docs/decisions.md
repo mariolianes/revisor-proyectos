@@ -1182,3 +1182,549 @@ causa y límite variable), `tools/gobernanza/sincronia.py`
 `tests/analisis/test_instruccion.py`, `tests/salidas/test_seleccion.py`,
 `tests/salidas/test_informe.py`, `tests/salidas/test_borrador.py` y
 `tests/gobernanza/test_sincronia.py`.
+
+## D-024 · La arquitectura de expedientes vive en un YAML, nunca en constantes de Python
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional, punto 1 de la orden de
+implantación del docente · **Responsable:** colaborador técnico
+
+El docente entregó un documento de arquitectura aprobado -distinto de los
+cuatro de `docs/maestro/`, y externo a este repositorio- con el árbol de
+carpetas que va a usar en su equipo para recibir, procesar y archivar los
+trabajos de varias comunidades autónomas, y pidió expresamente que «no deba
+interpretarse de nuevo en cada ejecución»: sus reglas estables debían
+traducirse a una configuración estructurada. Se adopta el mismo patrón que
+ya usa `config/precios_openai.yaml` con `backend/analisis/precios.py`:
+`config/estructura_expedientes.yaml` declara los nombres de carpeta, los
+códigos de comunidad, fase y ciclo, y el patrón de código de centro y de ID
+de expediente; `backend/expedientes/estructura.py` solo lee ese fichero y no
+declara ningún nombre por su cuenta.
+
+Esta arquitectura es distinta de la que ya vigilaba `backend/vigilancia/`
+-una única carpeta plana (`REVISOR_CARPETA_ENTREGAS`), con el alumno y la
+fase deducidos del nombre del archivo, §15.2-15.3 del Documento Maestro-.
+Este punto 1 no toca `backend/vigilancia/` ni lo sustituye: crea la base
+-carpetas, códigos, configuración- de una arquitectura nueva y más amplia,
+multi-comunidad y multi-centro, que un punto posterior de la orden de
+implantación tendrá que decidir cómo conecta con lo que ya existe, o si lo
+reemplaza. Queda explícitamente sin resolver aquí.
+
+**Dos guardas nuevas, mismo patrón que ya usan `backend/configuracion.py` y
+`tools/calibrar.py`:** la raíz de esta arquitectura -la carpeta
+`CESUR_2026-2027`- vive fuera del repositorio, apuntada por
+`REVISOR_RAIZ_EXPEDIENTES` y comprobada con la misma `revisar_carpeta` que ya
+protege `REVISOR_CARPETA_ENTREGAS` y `REVISOR_DATOS_LOCALES`; y
+`backend/expedientes/creacion.py` no escribe ninguna carpeta sin haber
+contado antes cuántas va a crear, con un tope duro
+(`LIMITE_DIRECTORIOS_DE_SEGURIDAD`) que ni siquiera una confirmación explícita
+puede saltar, y un umbral más bajo (`LIMITE_LOTE_SIN_CONFIRMAR`) para que
+crear el expediente de muchos alumnos de golpe exija una confirmación
+explícita. Ningún test de este cambio toca una carpeta real del docente:
+todos escriben dentro de `tmp_path`.
+
+**No se inventa lo que el documento no fijó.** El propio documento del
+docente enumera seis cosas que la configuración debe recoger «al menos»:
+rutas y carpetas vigiladas, códigos, extensiones y tamaños admitidos, reglas
+de identificación, política de versiones y reintentos, versión de criterios
+y calibrador, y retención y limpieza. Este punto 1 solo tiene una respuesta
+firme para la primera -rutas, carpetas y códigos-; las demás quedan en
+`pendiente_de_definir`, a `null`, dentro del propio YAML, con el mismo
+criterio que ya aplican `docs/PENDIENTE_OFICIAL.md` y la tabla de tarifas de
+OpenAI ante un dato que nadie ha fijado todavía: no se inventa un valor
+razonable en su lugar.
+
+**Queda abierto, a confirmar por el docente:** el documento dice «cada
+carpeta de entrega lleva dentro» las cinco subcarpetas
+(`00_ORIGINAL`...`04_EVIDENCIAS`) sin enumerar cuáles carpetas del
+expediente cuentan como «de entrega». Este punto 1 lo ha leído en el sentido
+más literal -las cuatro que llevan la palabra ENTREGA en su nombre-, dejando
+`00_FICHA`, `01_TEMA`, `06_DEFENSA` y `07_HISTORICO` como carpetas simples.
+En particular, `01_TEMA` y `06_DEFENSA` también reciben un documento del
+alumno y podrían merecer la misma subestructura; la interpretación está
+marcada como tal en el propio `config/estructura_expedientes.yaml`, para que
+el docente la corrija si no es la que él quería.
+
+**Arrastra:** `config/estructura_expedientes.yaml` (nuevo),
+`backend/expedientes/estructura.py` y `backend/expedientes/creacion.py`
+(nuevos), `backend/configuracion.py` (`REVISOR_RAIZ_EXPEDIENTES`,
+`raiz_expedientes`, `problema_raiz_expedientes`),
+`tools/crear_estructura_expedientes.py` (nuevo), y los tests de
+`tests/expedientes/`, `tests/tools/test_crear_estructura_expedientes.py` y
+las ampliaciones de `tests/backend/test_configuracion.py`.
+## D-025 · Registro maestro de alumnos: el student_id reutiliza `alumno.codigo`, el nombre nunca sale del equipo del docente
+
+**Fecha:** 2026-08-31 · **Estado:** Provisional · **Responsable:** Marcos
+
+El punto 2 del orden de implantación pide poder dar de alta a los 200-250
+alumnos de un curso desde un Excel por comunidad -que puede venir
+directamente de CESUR, con columnas que no coinciden entre comunidades-,
+antes de que llegue ninguna entrega, con centro, ciclo, comunidad autónoma,
+estado de matrícula y, si el centro lo facilita, un ID de plataforma
+preferible al nombre para emparejar.
+
+**El `student_id` (`ALU-AANNNN`, p.ej. `ALU-260001`) no es un segundo
+identificador en paralelo.** Reutiliza la misma columna `alumno.codigo` que
+ya llevaba `AF023` cuando el código lo elegía el nombre del archivo
+(`backend/vigilancia/nombres.py`, §15.3). El docstring de
+`backend/privacidad/listado_local.py` ya advertía contra crear un segundo
+ID: esta migración sigue esa misma regla, solo que ahora el código lo asigna
+el sistema (`backend/persistencia/alumnos.py`, `generar_student_id`) en vez
+de elegirlo el alumno. `alumno.ciclo` sigue siendo la misma columna de
+siempre, con el vocabulario cerrado MYP/CIN/AYF. Se amplía la tabla
+`alumno` con `centro_code`, `ccaa_code`, `curso`, `estado_matricula` y
+`platform_id` (`supabase/migrations/20260831210000_registro_maestro_de_
+alumnos.sql`); ninguna columna nueva admite un nombre.
+
+**El nombre no sale del equipo del docente, y eso tiene una consecuencia
+que hay que resolver: ¿cómo se ve un listado de quién no ha entregado, si
+la base de datos no sabe nombres?** La respuesta es la misma frontera que ya
+traza `listado_local.py` para minimizar una entrega: el informe se compone
+en dos pasos, nunca en uno. `Almacen.listar_alumnos()` (Supabase o memoria)
+da la lista de `student_id` sin entrega, con centro, ciclo y estado -eso
+viaja por la API sin problema, porque no lleva ningún dato personal-, y es
+la capa LOCAL, en el propio proceso del docente -la CLI, o una vista que
+lea `ListadoLocal.todos()` directamente en su equipo-, la que sustituye cada
+`student_id` por su nombre antes de que el docente lo lea. La API nunca ve
+esa sustitución: no hay ningún endpoint que devuelva un nombre, y no puede
+haberlo mientras `listado_local.py` sea la única fuente de esa
+correspondencia. El listado de faltas de entrega en pantalla, si algún día
+existe, se construye igual: pide `student_id`s a la API y resuelve nombres
+en el cliente que el docente ya tiene delante -su navegador o su terminal-,
+nunca en el servidor.
+
+**Fila dudosa: se detiene, no decide.** El importador
+(`backend/servicios/importacion_alumnos.py`) no registra una fila sin
+centro, con un centro fuera del catálogo (`config/centros.yaml`), con un
+ciclo o un estado de matrícula que no reconoce, repetida dentro del propio
+listado, o con un nombre que coincide con otra fila o con un alumno ya
+conocido y sin `platform_id` con el que confirmarlo. Ninguna de esas filas
+llega a `dar_de_alta_alumno`: quedan en `pendientes`, identificadas por
+número de fila -nunca por nombre, ni siquiera en la salida de la propia CLI
+del docente-, para que las revise a mano. Es la traducción literal del
+principio del §13: la automatización se detiene antes que asignar mal.
+
+**Pendiente, y a propósito no resuelto aquí: la estabilidad del
+`student_id` entre cursos.** `generar_student_id` numera dentro de un curso
+-el mismo alumno, dos cursos distintos, produce dos `student_id` distintos
+por construcción, porque el curso forma parte del número-. Un alumno
+repetidor con el mismo `platform_id` que un curso anterior NO se fusiona en
+automático con su identidad anterior: el importador lo detecta y lo manda a
+revisión (`REPETIDOR_POSIBLE`) en vez de decidir. Reutilizar el
+`student_id` del curso anterior para un repetidor, frente a darle uno
+nuevo y dejar rastro de la relación por otra vía, es una decisión que
+todavía no ha tomado el docente. Mientras siga abierta, cada repetidor que
+aparezca en un listado se detiene y se pregunta, uno por uno.
+
+**Pendiente, y fuera del alcance de esta tarea: la convención de nombre de
+archivo.** `backend/vigilancia/nombres.py` sigue esperando un código con
+forma `[A-Za-z]{1,4}\d{1,5}` (p.ej. `AF023`) en el nombre del PDF que
+entrega el alumno; no reconoce `ALU-260001` -el guion no encaja en ese
+patrón-. Un alumno dado de alta por el registro maestro no puede, todavía,
+nombrar su archivo con su `student_id` de forma que el sistema lo reconozca
+solo. Tocar esa convención no es parte de este punto del orden de
+implantación, y no se ha tocado: se dice aquí para que quien construya el
+siguiente punto -o el docente, al decidir- lo tenga en cuenta antes de que
+el primer alumno reciba un `student_id` con el que no pueda entregar nada.
+
+**Arrastra:** `backend/persistencia/alumnos.py` (nuevo),
+`backend/servicios/importacion_alumnos.py` (nuevo),
+`tools/importar_listado_alumnos.py` (nuevo), `config/centros.yaml` (nuevo),
+`supabase/migrations/20260831210000_registro_maestro_de_alumnos.sql`
+(nueva), `backend/persistencia/modelos.py` (el `Protocol` `Almacen` gana
+`dar_de_alta_alumno`, `listar_alumnos`, `alumnos_por_platform_id`),
+`backend/persistencia/memoria.py` (el registro maestro sustituye a
+`_ciclo_del_alumno`, que quedaba fuera de sincronía con Supabase en cuanto
+un alumno se daba de alta por el listado antes que por una entrega),
+`backend/persistencia/supabase.py`, `backend/privacidad/listado_local.py`
+(`importar_pares`, `todos`), `requirements-dev.txt` (`openpyxl`).
+
+## D-026 · El semáforo se queda en cuatro estados; «verde con alertas» es una marca sobre VERDE
+
+**Fecha:** 2026-09-02 · **Estado:** Firme · **Responsable:** Marcos
+
+Revoca la mitad de D-019 que introducía VERDE_CON_ALERTAS como quinto color.
+La regla que lo motivaba se mantiene intacta -un P3 fiable sin ningún P1 ni
+P2 no sube a ÁMBAR-; lo que cambia es cómo se expresa: da VERDE, y lo que
+queda por atender viaja en `con_alertas`, no en el color.
+
+Lo decidió él en `decisiones#12-semaforo`: «Mantener el enum de cuatro
+estados del Documento Maestro. El calibrador puede añadir alertas o matices,
+pero no crear un color oficial nuevo.» Es una decisión de jerarquía, no de
+gusto: el calibrador concreta lo que el Maestro deja abierto, pero no
+inventa un valor que el Maestro no reconoce.
+
+**Lo que hace que esto importe más de lo que parece.** La columna `semaforo`
+es un `enum` de PostgreSQL, y **un valor añadido a un enum no se puede
+quitar**. La migración que iba a añadir el quinto color estaba escrita y
+esperando a que el docente la aplicara desde su panel. Si la hubiera
+ejecutado antes de esta respuesta, la base habría quedado con un estado que
+el Documento Maestro no reconoce y sin forma de eliminarlo. Se retiró antes
+de aplicarse.
+
+El coste de equivocarse es asimétrico -un color de menos se añade cuando haga
+falta; uno de más es permanente-, y por eso el test que lo protege compara
+conjuntos y no pertenencia: `test_los_codigos_son_los_cuatro_oficiales_y_
+ninguno_mas`.
+
+**Arrastra:** `criteria/v2026-2027/semaforo.yaml`,
+`backend/analisis/verificacion.py` (`hay_alertas`, nueva),
+`backend/salidas/informe.py` (`Informe.con_alertas`),
+`frontend/src/lib/tipos.ts`, `frontend/src/paginas/Revision.tsx`,
+`supabase/migrations/20260902190000_alertas_sobre_verde.sql` (sustituye a la
+retirada), y `docs/changes/2026-09-02-el-semaforo-vuelve-a-cuatro-estados.md`.
+
+## D-027 · Un repetidor no detiene la importación: identidad nueva cada curso, con rastro del anterior
+
+**Fecha:** 2026-09-02 · **Estado:** Firme · **Responsable:** Marcos
+
+Revoca la parte de D-025 que dejaba abierta la pregunta y detenía cada fila
+de repetidor para preguntársela. Él la contestó en `decisiones#3-repetidores`:
+«cada curso genera una matrícula y un ID operativo nuevo», «la coincidencia
+con un nombre de un curso archivado no es una incidencia», «no detener la
+importación por encontrar a la misma persona en un curso histórico».
+
+Lo que se conserva entre cursos es un rastro y nada más: `matricula_anterior`
+—su `previous_enrollment_id`, en castellano como el resto— anota el
+`student_id` del curso previo cuando el ID de CESUR permite saberlo. No
+enlaza expedientes, no hereda entregas y no cambia el circuito, porque él lo
+pidió explícitamente «sin afectar al nuevo circuito».
+
+**Lo que la decisión destapó, y es lo importante de este cambio.** El índice
+único que D-025 había creado sobre `platform_id` —sin más— **habría hecho
+imposible la regla que él acaba de fijar**: el segundo curso de cualquier
+repetidor habría chocado contra ese índice y la importación entera habría
+fallado. Pasa a ser único sobre `(platform_id, curso)`. La migración no
+estaba aplicada, así que se corrigió a tiempo; de haberse aplicado antes de
+su respuesta, el fallo habría aparecido el primer día del curso 2027-2028 y
+sin ninguna pista de por qué.
+
+El límite se mantiene donde él lo puso: **dentro** del curso activo, un ID de
+CESUR repetido sigue siendo una contradicción y se detiene.
+
+**Arrastra:** `backend/persistencia/alumnos.py` (`matricula_anterior`, y
+`error_de_platform_id_duplicado` acotado al curso),
+`backend/persistencia/memoria.py`, `backend/persistencia/supabase.py`,
+`backend/servicios/importacion_alumnos.py` (desaparece el motivo
+`REPETIDOR_POSIBLE`),
+`supabase/migrations/20260831210000_registro_maestro_de_alumnos.sql`,
+y dos tests de paridad que fijan la regla en los dos almacenes.
+
+## D-028 · La comprobación del nombre en portada sí se construye, en local y antes de minimizar
+
+**Fecha:** 2026-09-02 · **Estado:** Firme · **Responsable:** Marcos
+
+Revoca la decisión que habíamos tomado el 31 de agosto de **no** construir el
+tercer criterio de identificación. Lo habíamos dejado fuera por entender que
+leer el nombre del alumno del documento contradecía la capa de minimización
+que él acababa de aprobar. Él lo corrigió, y su razonamiento es mejor que el
+nuestro:
+
+> «Leer el nombre dentro del equipo no contradice la capa de privacidad: lo
+> que debe evitarse es enviar el nombre al servidor o incluirlo en el texto
+> remitido al modelo.»
+
+La distinción que nos faltaba: la minimización no protege contra *leer*, sino
+contra *enviar*. El orden que él fija es leer, identificar y **después**
+enmascarar, y tiene que ser ese: sobre un texto ya minimizado no quedaría
+nombre que reconocer.
+
+**Cómo se construye, y por qué así.** `backend/identificacion/determinista.py`
+implementa su escalera de cinco prioridades con dos garantías estructurales:
+
+1. **La contradicción se comprueba antes que nada.** Su prioridad 5 dice
+   «Incidencias siempre», y «siempre» tenía que ganar a las tres asignaciones
+   automáticas, no ordenarse detrás de ellas. Un trabajo cuyo identificador
+   de plataforma apunta a un alumno y cuya portada nombra a otro **no** se
+   asigna al primero por tener más prioridad: se detiene.
+2. **`Identificacion` no lleva ningún nombre.** Ni el del alumno, ni el
+   leído de la portada, ni siquiera dentro del motivo de una incidencia
+   -que es justo donde resultaría natural escribirlo-. Es el objeto que
+   cruza la frontera hacia el resto del sistema: si no lleva nombre, no
+   puede filtrarlo. Hay un test que lo comprueba sobre los tres desenlaces.
+
+**Y no hay ningún umbral de parecido**, porque él lo descartó: «no
+estableceremos un porcentaje de parecido». O las palabras del nombre
+coinciden -ignorando mayúsculas, tildes, guiones, comas, dobles espacios y el
+orden «apellidos, nombre», que es lo que él autoriza a ignorar- o no
+coinciden. La configuración se niega a cargar si alguien escribe un umbral
+con la política determinista (D-026 y `backend/expedientes/estructura.py`).
+
+**Arrastra:** `backend/identificacion/nombres.py` y
+`backend/identificacion/determinista.py` (nuevos),
+`tests/identificacion/test_determinista.py`.
+
+**La portada, y por qué no extrae un nombre.** `backend/identificacion/
+portada.py` **no saca un nombre del documento: comprueba si alguno de los
+alumnos que ya conocemos aparece en él**. Es la diferencia entre una
+comprobación y una adivinanza. Extraer un nombre de un texto libre exige
+decidir dónde empieza y dónde acaba, y equivocarse ahí produce exactamente lo
+que él quiere evitar. Comprobar si un nombre conocido aparece no requiere
+adivinar nada y responde a la única pregunta que la portada tiene que
+responder: si confirma al candidato o lo contradice. Él la llama «evidencia
+auxiliar», y eso es lo que se ha construido.
+
+Se busca una ventana de palabras consecutivas cuyo conjunto sea exactamente
+el del nombre, así que «Ficticia Inventada, Ana» en el listado encuentra «Ana
+Ficticia Inventada» en la portada, pero las tres palabras desperdigadas por
+la página no cuentan. Se leen tres páginas y no el documento entero: buscar
+nombres por todo el trabajo es justo la costumbre que la capa de privacidad
+no quiere.
+
+## D-029 · La admisión: un solo servicio que va de la bandeja al expediente
+
+**Fecha:** 2026-09-04 · **Estado:** Firme · **Responsable:** Colaborador técnico
+
+Hasta hoy había piezas sueltas —la estructura de carpetas, el registro de
+alumnos, la identificación determinista, la lectura de la portada— y ninguna
+se llamaba entre sí. `backend/servicios/admision.py` es la costura, en el
+orden exacto que fija `decisiones#4-portada`: leer el nombre del archivo,
+consultar la correspondencia en local, leer la portada si hace falta,
+confirmar el identificador o mandar el caso a Incidencias.
+
+**El enmascarado no está aquí, a propósito.** Es el quinto paso de su
+secuencia y ocurre después, al analizar. Este módulo no llama a ningún
+proveedor externo: nada sale del equipo.
+
+**Nada se mueve y nada se borra.** El archivo se copia al expediente con su
+nombre normalizado y el original se queda donde estaba. Él no ha dicho qué
+hacer con el original una vez copiado, y adivinarlo puede costarle el trabajo
+de un alumno. Que la bandeja no se vacíe sola no reprocesa nada: la huella
+reconoce el archivo y sale como `DUPLICATE_EXACT`, que es justo lo que él
+pide para ese caso.
+
+**Tres costuras que solo aparecieron al unir las piezas**, y las tres eran
+fallos reales que ninguna prueba de unidad podía ver:
+
+1. **Los nombres de archivo traen palabras de más.** La identificación
+   comparaba nombres por igualdad de palabras, y
+   `Ana_Ficticia_Inventada_Entrega_2.pdf` no es igual a `Ana Ficticia
+   Inventada`: es ese nombre con dos palabras pegadas. Con la comparación
+   anterior, **ningún archivo real se habría identificado nunca**. Nacen
+   `nombra_a` y `nombra_parcialmente_a` en
+   `backend/identificacion/nombres.py`, que comparan un nombre contra un
+   texto que lo contiene y siguen sin usar ningún parecido difuso.
+2. **La bandeja usa `E01` y el sistema usa `E1`.** Son dos cosas distintas
+   —el nombre de una carpeta y el código de una fase— y la configuración las
+   tenía confundidas en un solo valor. Se separan con el mismo patrón que ya
+   usaban las comunidades (`codigo: AND`, `carpeta: AND_ANDALUCIA`).
+3. **Las carpetas del expediente no decían qué fase reciben.** Sin ese dato
+   no había forma de saber dónde dejar un archivo. Ahora lo declaran, con la
+   correspondencia que él confirmó en `decisiones#9-carpetas`.
+
+**Arrastra:** `backend/servicios/admision.py` (nuevo),
+`backend/identificacion/nombres.py`, `backend/identificacion/determinista.py`,
+`backend/expedientes/estructura.py`, `config/estructura_expedientes.yaml`,
+`tests/servicios/test_admision.py` (nuevo) y
+`tests/expedientes/test_estructura_expedientes.py`.
+
+**Lo que todavía no hace.** Nadie lo llama: la vigilancia de la carpeta sigue
+siendo la de la Parte A, sobre una carpeta única. Enchufar la admisión a las
+bandejas por comunidad y fase es el punto 5 del orden de implantación.
+
+## D-030 · El registro de auditoría del §19.1 se escribe desde el almacén, no desde quien lo llama
+
+**Fecha:** 2026-09-06 · **Estado:** Firme · **Responsable:** Colaborador técnico
+
+La tabla `registro` existe desde el esquema inicial, con un comentario que
+cita el §19.1 —«permite reconstruir qué se hizo y con qué criterios»— y
+**hasta hoy no la escribía nadie**. No fallaba nada: simplemente no había
+histórico.
+
+**Cómo se encontró.** Mirando la base después del primer recorrido completo
+del circuito contra infraestructura real: entrega registrada, análisis hecho,
+corrección guardada, revisión cerrada, y cero filas de auditoría. Ninguna de
+las 1.293 pruebas podía verlo, porque el simulador de PostgREST tampoco
+conocía la tabla: no existía en su lista, así que un intento de escribir en
+ella habría dado 404 y nadie lo intentaba.
+
+**Dónde se anota, y por qué ahí.** Dentro de los métodos del almacén que
+escriben, no en quien los llama. Un registro que depende de que alguien se
+acuerde de invocarlo acaba con huecos justo en los caminos menos transitados,
+que son los que más falta hace poder reconstruir. Anotando en el punto de
+escritura, una vía nueva hacia la base queda auditada por construcción o no
+llega a existir.
+
+**Dos decisiones sobre qué no se hace:**
+
+- **No se anota el estado del que se venía.** Averiguarlo exigía una lectura
+  más contra la base en cada cambio, y el histórico ya lo dice: el estado
+  anterior es el de la línea anterior de esa misma entrega. Pagar una
+  petición por un dato que ya está en la secuencia no compensa.
+- **En Supabase, un fallo al anotar no propaga.** Perder una línea de
+  histórico es malo; perder la entrega que el docente acaba de confirmar por
+  no haber podido anotar que la confirmó, es peor.
+
+**La frontera.** `detalle` lleva códigos, cifras y estados, nunca texto del
+trabajo ni citas: la tabla de auditoría es donde más fácil sería colarlo sin
+darse cuenta, porque parece metadato. Hay un límite de longitud que lo
+rechaza y un test de paridad que lo comprueba sobre lo que el sistema sabe
+producir.
+
+**Verificado contra la base real**, no solo en pruebas: registrar una entrega
+y bloquearla dejó las dos líneas esperadas, con su código de alumno, su fase,
+su huella y su motivo. Las filas de esa sonda se retiraron después.
+
+**Arrastra:** `backend/persistencia/auditoria.py` (nuevo),
+`backend/persistencia/memoria.py`, `backend/persistencia/supabase.py`,
+`backend/persistencia/modelos.py` (el `Protocol` gana `anotar` y
+`listar_registro`), `tests/conftest.py` (el simulador conoce la tabla) y
+`tests/persistencia/test_paridad.py`.
+
+## D-031 · Un conflicto de versión detiene el análisis, y la marca es la decisión pendiente
+
+**Fecha:** 2026-09-07 · **Estado:** Firme · **Responsable:** Marcos
+
+`decisiones#7-versiones`, literal: «marcar VERSION_CONFLICT y detener el
+análisis nuevo hasta que Marcos elija la versión válida».
+
+**Dónde va la guarda, y por qué ahí.** Antes del candado y antes de llamar al
+motor. No es una validación más: analizar la versión que luego se descarta
+**cuesta dinero y produce un informe que hay que tirar**. Un test comprueba
+que el proveedor no llega a recibir ninguna llamada.
+
+**La marca ES la decisión pendiente.** No hace falta un segundo campo que
+diga si ya se eligió: `elegir_version` borra la marca al resolver, y eso es
+lo que vuelve a permitir analizar. Un campo aparte podría desincronizarse de
+la marca y dejar una entrega bloqueada sin que nada explicara por qué.
+
+**Elegir no borra nada.** Las otras versiones pasan a SUSTITUIDA. Él lo dijo
+con todas las letras -«nunca se eliminan»- y por eso la operación no tiene
+ningún DELETE, en ninguno de los dos almacenes.
+
+**Es una decisión suya, no del sistema.** Por eso es una operación explícita
+-`POST /api/entregas/{id}/version-elegida`- y no algo que se resuelva solo al
+detectar el conflicto: elegir entre dos entregas de un alumno es exactamente
+lo que el §13 le reserva.
+
+**Arrastra:** `backend/api/analisis.py` (la guarda),
+`backend/api/entregas.py` (el endpoint), `backend/persistencia/memoria.py`,
+`backend/persistencia/supabase.py`, `backend/persistencia/modelos.py`,
+`tests/persistencia/test_paridad.py`, `tests/backend/test_api_analisis.py`.
+## D-032 · El informe por centro: sin nombre por diseño, y un umbral que oculta la lista nominal en un grupo pequeño
+
+**Fecha:** 2026-09-07 · **Estado:** Provisional (el umbral, a confirmar por
+Marcos) · **Responsable:** Colaborador técnico
+
+Punto 7 del orden de implantación: `03_INFORMES_CENTROS` — «resultados por
+evaluación, comunidad, centro y ciclo». `backend/servicios/informe_centro.py`
+compone, para una comunidad, un centro, un ciclo, un curso y una fase
+-cualquier combinación, todos opcionales-, la cobertura de matrícula, el
+estado del proceso, la distribución de semáforos y el coste, y
+`backend/api/informes.py` lo sirve en `GET /api/informes/centro`.
+
+**El coste, punto por punto de `decisiones#13-estabilidad`.** El docente
+pidió, antes de concluir que el coste no es un problema: «modelo exacto,
+tokens, coste por análisis principal, coste por verificación, coste de un
+segundo análisis, promedio por fase y proyección mensual y anual». Dos de
+esas siete cosas no tienen hoy una fuente de datos limpia, y se devuelven
+como `None` explícito -nunca una cifra inventada, la misma regla que ya
+sigue `backend/analisis/precios.py` cuando un modelo no tiene tarifa-:
+
+- **Coste por verificación**, siempre `None`: la verificación de hoy
+  (`backend/analisis/verificacion.py`) es código determinista -siete
+  defensas contra el motor, ninguna es una llamada al motor-, así que no
+  genera ningún gasto que `ejecucion_motor` pueda registrar.
+- **Coste de un segundo análisis** se aproxima con el promedio de toda
+  ejecución que no es la primera guardada para su entrega, ordenadas por
+  `creada_en` -un reanálisis, o un segundo intento tras un fallo-: es lo que
+  el sistema puede distinguir hoy. No es necesariamente lo mismo que «un
+  segundo análisis completo para comparar con el primero» de la estrategia
+  acordada, que todavía no es una operación propia del sistema -no hay un
+  botón «vuelve a analizar y compara»-, y el informe lo dice con esas
+  palabras en `InformeDeCoste.notas`, no en silencio.
+
+La proyección mensual y anual es una extrapolación lineal del gasto
+observado en el propio ámbito filtrado -coste total con fecha conocida entre
+el número de días que separan la primera y la última ejecución-, nunca del
+calendario oficial: `programacion_didactica` sigue en
+`docs/PENDIENTE_OFICIAL.md`, así que no hay fechas de entrega ni número de
+entregas restantes con las que construir una proyección de capacidad. Con
+menos de dos ejecuciones con coste calculable en fechas distintas, la
+proyección es `None` con una nota que lo explica, no un cero que se leería
+como «no cuesta nada».
+
+**Modelo exacto, tokens, coste por análisis principal y promedio por fase**
+sí tienen una fuente limpia y se leen tal cual de `ejecucion_motor`, ahora
+accesible entero a través de `Almacen.consumos()` -antes solo existía en
+`AlmacenEnMemoria`, sin estar en el `Protocol`, con un comentario que decía
+que nadie había pedido leerlo de vuelta desde Supabase: ese «nadie» ya no es
+cierto-. `Almacen` gana también `listar_semaforos()`, una lectura lean de
+`correccion.semaforo_propuesto`/`semaforo_aprobado` sin `informe` ni
+`devolucion`, para que un recuento agregado no tenga que pedir cada
+corrección entera -con sus citas- entrega por entrega. Las dos son lecturas
+nuevas, sin equivalente de escritura que cambie: `registrar_consumo` y
+`guardar_correccion` siguen igual.
+
+**Cómo se ve un listado de quién no ha entregado, si la base de datos no
+sabe nombres.** Es la misma pregunta que ya resolvió D-025, y la misma
+respuesta: `Cobertura.por_fase[].sin_entregar_codigos` es una lista de
+`student_id`, nunca de nombres -este módulo no recibe `ListadoLocal` como
+dependencia, así que no hay ningún camino por el que un nombre pudiera
+llegar hasta aquí, ni siquiera por accidente-. Si Marcos necesita nombres
+para escribir un correo, los resuelve en su equipo después de leer el
+informe, con `ListadoLocal.nombre_de`, nunca al revés.
+
+**Lo que D-025 no llegó a plantear: un grupo pequeño identifica sin
+nombre.** Si un ciclo tiene tres matriculados y el informe dice que uno está
+en rojo, Marcos sabe quién es -es su trabajo, y el sistema no se lo puede ni
+se lo debe ocultar a él-, pero cualquiera que reciba este informe después de
+él también podría deducirlo, sin que haga falta ningún nombre: el propio
+`student_id`, en una lista de tres, es la clave que permite señalar cuál de
+los tres es. Por debajo de `UMBRAL_GRUPO_PEQUENO` (10) alumnos
+matriculados-activos en el ámbito filtrado, `sin_entregar_codigos` se
+sustituye por `None` y `Cobertura.aviso_grupo_pequeno` explica por qué, en
+el mismo texto que lee Marcos.
+
+**Lo que no se oculta, ni siquiera en un grupo de tres.** Los recuentos
+-cuántos matriculados, cuántos han entregado, la distribución de semáforos,
+el coste- se muestran siempre, con cualquier tamaño de grupo. Un número
+solo, sin ningún identificador que lo acompañe, no permite señalar a una
+persona concreta del mismo modo que sí lo permite una lista con un
+`student_id` propio de cada una; y sin esos recuentos, un centro pequeño
+quedaría invisible para el propio mecanismo que existe para vigilar que
+nadie se quede sin corregir -exactamente lo contrario de lo que pidió el
+docente-. La frontera se traza en la lista nominal, no en la cifra.
+
+**`UMBRAL_GRUPO_PEQUENO = 10` es una propuesta de este módulo, no un dato
+del Documento Maestro ni una cifra que haya fijado el docente.** No va a
+`docs/PENDIENTE_OFICIAL.md` porque no es un criterio de corrección -no
+decide nada sobre el trabajo de un alumno-, es una salvaguarda de
+publicación de este informe, de la misma naturaleza que `LIMITE_DE_
+OBSERVACION` o los ±0,5 cm de tolerancia de márgenes: una cifra que alguien
+tuvo que elegir para que el mecanismo funcionara, y que se documenta como lo
+que es -una elección, no un hecho- para que Marcos la confirme o la ajuste.
+Diez es un punto de partida razonable para un umbral de confidencialidad
+estadística sobre grupos de un aula, no una cifra derivada de nada más
+preciso.
+
+**Ninguna migración.** Todo lo que este informe necesita ya existe tras el
+punto 2 (registro maestro de alumnos: `alumno.ccaa_code`, `centro_code`,
+`ciclo_code`, `curso`, `estado_matricula`) y el punto sobre el registro de
+consumo (`ejecucion_motor`, `correccion.semaforo_propuesto`/`semaforo_
+aprobado`). Se comprobó expresamente antes de escribir código: no hace
+falta ningún fichero nuevo en `supabase/migrations/`.
+
+**Roto a propósito, para comprobar que algo se entera:** un `+ 1` colado en
+el recuento de matriculados (`tests/servicios/test_informe_centro.py::
+test_mutacion_un_alumno_de_mas_en_matriculados_rompe_el_recuento`, que deja
+constancia de que el test de cobertura normal distingue el recuento real del
+mutado); un nombre en vez de un `student_id` intentando colarse en
+`AlumnoNuevo` (`test_ningun_codigo_de_alumno_es_un_nombre_de_persona`, que
+lo ve rechazado por `extra="forbid"` antes de que exista ocasión de
+guardarlo); y un `id`/`creada_en` mandados como `null` explícito en
+`registrar_consumo`, que sustituirían silenciosamente el `default` de
+Postgres por nada (`tests/persistencia/test_consumo.py::
+test_supabase_no_manda_id_ni_creada_en_como_nulos`).
+
+**Arrastra:** `backend/servicios/informe_centro.py` (nuevo),
+`backend/api/informes.py` (nuevo), `backend/app.py` (registra el router),
+`backend/persistencia/consumo.py` (`id`, `creada_en`,
+`CAMPOS_QUE_ASIGNA_EL_ALMACEN`), `backend/persistencia/correccion.py`
+(`SemaforoDeEntrega`, nuevo), `backend/persistencia/modelos.py` (el
+`Protocol` `Almacen` gana `consumos` y `listar_semaforos`),
+`backend/persistencia/memoria.py`, `backend/persistencia/supabase.py`,
+`tests/conftest.py` (el simulador conoce `ejecucion_motor` y aplica
+`creada_en` como `now()` genérico, igual que ya hacía con `recibida_en`),
+`tests/persistencia/test_paridad.py`, `tests/persistencia/test_consumo.py`,
+`tests/servicios/test_informe_centro.py` (nuevo),
+`tests/backend/test_api_informes.py` (nuevo).

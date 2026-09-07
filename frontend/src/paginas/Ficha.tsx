@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react"
 
 import { TablaComprobaciones } from "../componentes/TablaComprobaciones"
+import { PasosDelAnalisis, pasosEnCurso } from "../componentes/PasosDelAnalisis"
+import { RailDeProceso } from "../componentes/RailDeProceso"
 import { api } from "../lib/api"
-import type { FichaDeLectura, ResultadoAnalisis } from "../lib/tipos"
+import type { Entorno, FichaDeLectura, ResultadoAnalisis } from "../lib/tipos"
 
 interface Props {
   id: string
@@ -64,6 +66,10 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
   const [ficha, setFicha] = useState<FichaDeLectura | null>(inicial ?? null)
   const [error, setError] = useState("")
   const [analizando, setAnalizando] = useState(false)
+  // Solo para poder decir con qué motor se está analizando. Si falla, no se
+  // avisa de nada: el análisis no depende de esto y un fallo aquí no debe
+  // impedir corregir.
+  const [entorno, setEntorno] = useState<Entorno | null>(null)
   const [errorAnalisis, setErrorAnalisis] = useState("")
   // El texto que devuelve el backend (`AVISO_PROTECCION_DATOS`, en
   // `backend/api/analisis.py`) cuando `POST /analisis` responde 428:
@@ -89,6 +95,17 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
       })
     return () => { vigente = false }
   }, [id, inicial])
+
+  useEffect(() => {
+    let vigente = true
+    // Sin `catch` que avise: saber el nombre del motor es una comodidad, no
+    // un requisito. Si esto falla, los pasos del análisis dicen «Analizando…»
+    // a secas y todo lo demás sigue funcionando igual.
+    api.entorno()
+      .then((el) => { if (vigente) setEntorno(el) })
+      .catch(() => {})
+    return () => { vigente = false }
+  }, [])
 
   if (error) {
     return (
@@ -176,9 +193,11 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
         {entrega.codigo_alumno} · {entrega.ciclo} · {entrega.fase} · versión{" "}
         {entrega.version}
       </h2>
-      <p className="font-mono text-[12px] text-gris mb-6">
+      <p className="font-mono text-[12px] text-gris mb-8">
         {entrega.nombre_archivo}
       </p>
+
+      <RailDeProceso estado={entrega.estado} />
 
       {puedeAnalizar && (
         <div className="mb-10">
@@ -207,6 +226,14 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
                   Cancelar
                 </button>
               </div>
+              {analizando && (
+                <PasosDelAnalisis
+                  pasos={pasosEnCurso(
+                    medidas?.total_paginas ?? null,
+                    entorno?.motor ?? null,
+                  )}
+                />
+              )}
             </div>
           ) : (
             <>
@@ -217,6 +244,14 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
               >
                 {analizando ? "Analizando…" : "Analizar"}
               </button>
+              {analizando && (
+                <PasosDelAnalisis
+                  pasos={pasosEnCurso(
+                    medidas?.total_paginas ?? null,
+                    entorno?.motor ?? null,
+                  )}
+                />
+              )}
               {errorAnalisis && (
                 <p className="mt-3 max-w-lectura text-[13px] text-tinta">
                   {errorAnalisis}

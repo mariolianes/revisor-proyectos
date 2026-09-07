@@ -25,7 +25,9 @@ if TYPE_CHECKING:
     # se ejecuta nunca fuera de un comprobador de tipos: si se ejecutara,
     # cerraría un ciclo, porque `salidas/informe.py` importa
     # `EntregaRegistrada` de este mismo módulo.
-    from backend.persistencia.correccion import Correccion
+    from backend.persistencia.alumnos import AlumnoNuevo, AlumnoRegistrado
+    from backend.persistencia.consumo import RegistroDeConsumo
+    from backend.persistencia.correccion import Correccion, SemaforoDeEntrega
     from backend.salidas.borrador import Devolucion
     from backend.salidas.informe import Informe
 
@@ -41,6 +43,19 @@ ESTADOS: tuple[str, ...] = (
 )
 
 ESTADO_INICIAL = "RECIBIDO"
+
+# El vocabulario de `decisiones#7-versiones`, tal como lo escribe el docente.
+# Se enumera aquí y no en cada consumidor para que una marca inventada no
+# parta el histórico en dos vocabularios, igual que con las acciones del
+# registro de auditoría.
+DUPLICADO_EXACTO = "DUPLICATE_EXACT"
+CONFLICTO_DE_VERSION = "VERSION_CONFLICT"
+MARCAS_DE_ADMISION: tuple[str, ...] = (DUPLICADO_EXACTO, CONFLICTO_DE_VERSION)
+
+VIGENTE = "VIGENTE"
+SUSTITUIDA = "SUSTITUIDA"
+ESTADOS_DE_VERSION: tuple[str, ...] = (VIGENTE, SUSTITUIDA, "HISTORICA")
+ESTADO_DE_VERSION_INICIAL = VIGENTE
 BLOQUEADO = "BLOQUEADO"
 
 
@@ -111,6 +126,21 @@ class EntregaNueva(BaseModel):
     # Puede faltar: nadie debería quedar bloqueado por un dato que el
     # Documento Maestro no exige antes de la validación del tema.
     modalidad: str | None = None
+    # Lo que la admisión decide sobre esta entrega
+    # (`backend/servicios/admision.py`). Los tres son opcionales porque una
+    # entrega puede confirmarse a mano, sin haber pasado por la bandeja: un
+    # `None` aquí significa «no vino por ahí», no «se perdió el dato».
+    #
+    # `marca_admision`: DUPLICATE_EXACT o VERSION_CONFLICT, el vocabulario
+    # que fija el docente en `decisiones#7-versiones`.
+    marca_admision: str | None = None
+    # VIGENTE, SUSTITUIDA o HISTORICA. Por omisión vigente: una entrega
+    # recién confirmada es la buena mientras nadie diga lo contrario, y
+    # ninguna se elimina jamás -«nunca se eliminan», dice él-.
+    estado_version: str = ESTADO_DE_VERSION_INICIAL
+    # Dónde quedó la copia normalizada, relativa a la raíz de expedientes.
+    # Nunca absoluta: esa lleva el nombre de usuario del equipo del docente.
+    ruta_expediente: str | None = None
 
     @field_validator("codigo_alumno", "ciclo", "fase")
     @classmethod
@@ -121,6 +151,44 @@ class EntregaNueva(BaseModel):
     @classmethod
     def _validar_modalidad(cls, valor: str | None) -> str | None:
         return _normalizar_modalidad(valor)
+
+    @field_validator("marca_admision")
+    @classmethod
+    def _validar_marca(cls, valor: str | None) -> str | None:
+        if valor is not None and valor not in MARCAS_DE_ADMISION:
+            raise ValueError(
+                f"«{valor}» no es una marca de admisión conocida. Las que "
+                "hay son: " + ", ".join(MARCAS_DE_ADMISION) + "."
+            )
+        return valor
+
+    @field_validator("estado_version")
+    @classmethod
+    def _validar_estado_de_version(cls, valor: str) -> str:
+        if valor not in ESTADOS_DE_VERSION:
+            raise ValueError(
+                f"«{valor}» no es un estado de versión conocido. Los que hay "
+                "son: " + ", ".join(ESTADOS_DE_VERSION) + "."
+            )
+        return valor
+
+    @field_validator("ruta_expediente")
+    @classmethod
+    def _sin_ruta_absoluta(cls, valor: str | None) -> str | None:
+        """Una ruta absoluta lleva el nombre de usuario del equipo del
+        docente, y eso es un dato personal en una columna que no debe
+        llevarlos. Se rechaza al construir, no al guardar: así no depende de
+        qué almacén haya detrás."""
+        if valor is None:
+            return valor
+        if valor.startswith(("/", "\\")) or (len(valor) > 1 and valor[1] == ":"):
+            raise ValueError(
+                f"«{valor}» es una ruta absoluta. La ruta del expediente se "
+                "guarda relativa a la raíz de expedientes: una absoluta lleva "
+                "el nombre de usuario del equipo."
+            )
+        return valor
+
 
 
 class EntregaRegistrada(BaseModel):
@@ -144,10 +212,41 @@ class EntregaRegistrada(BaseModel):
     recibida_en: datetime
     estado: str
     motivo_bloqueo: str | None
+    # Lo que la admisión decide sobre esta entrega
+    # (`backend/servicios/admision.py`). Los tres son opcionales porque una
+    # entrega puede confirmarse a mano, sin haber pasado por la bandeja: un
+    # `None` aquí significa «no vino por ahí», no «se perdió el dato».
+    #
+    # `marca_admision`: DUPLICATE_EXACT o VERSION_CONFLICT, el vocabulario
+    # que fija el docente en `decisiones#7-versiones`.
+    marca_admision: str | None = None
+    # VIGENTE, SUSTITUIDA o HISTORICA. Por omisión vigente: una entrega
+    # recién confirmada es la buena mientras nadie diga lo contrario, y
+    # ninguna se elimina jamás -«nunca se eliminan», dice él-.
+    estado_version: str = ESTADO_DE_VERSION_INICIAL
+    # Dónde quedó la copia normalizada, relativa a la raíz de expedientes.
+    # Nunca absoluta: esa lleva el nombre de usuario del equipo del docente.
+    ruta_expediente: str | None = None
+
     version_criterios: str
     # Del proyecto, igual que `ciclo` es del alumno. Ver el comentario de
     # `EntregaNueva.modalidad`.
     modalidad: str | None = None
+    # Lo que la admisión decide sobre esta entrega
+    # (`backend/servicios/admision.py`). Los tres son opcionales porque una
+    # entrega puede confirmarse a mano, sin haber pasado por la bandeja: un
+    # `None` aquí significa «no vino por ahí», no «se perdió el dato».
+    #
+    # `marca_admision`: DUPLICATE_EXACT o VERSION_CONFLICT, el vocabulario
+    # que fija el docente en `decisiones#7-versiones`.
+    marca_admision: str | None = None
+    # VIGENTE, SUSTITUIDA o HISTORICA. Por omisión vigente: una entrega
+    # recién confirmada es la buena mientras nadie diga lo contrario, y
+    # ninguna se elimina jamás -«nunca se eliminan», dice él-.
+    estado_version: str = ESTADO_DE_VERSION_INICIAL
+    # Dónde quedó la copia normalizada, relativa a la raíz de expedientes.
+    # Nunca absoluta: esa lleva el nombre de usuario del equipo del docente.
+    ruta_expediente: str | None = None
 
     @field_validator("codigo_alumno", "ciclo", "fase")
     @classmethod
@@ -158,6 +257,44 @@ class EntregaRegistrada(BaseModel):
     @classmethod
     def _validar_modalidad(cls, valor: str | None) -> str | None:
         return _normalizar_modalidad(valor)
+
+    @field_validator("marca_admision")
+    @classmethod
+    def _validar_marca(cls, valor: str | None) -> str | None:
+        if valor is not None and valor not in MARCAS_DE_ADMISION:
+            raise ValueError(
+                f"«{valor}» no es una marca de admisión conocida. Las que "
+                "hay son: " + ", ".join(MARCAS_DE_ADMISION) + "."
+            )
+        return valor
+
+    @field_validator("estado_version")
+    @classmethod
+    def _validar_estado_de_version(cls, valor: str) -> str:
+        if valor not in ESTADOS_DE_VERSION:
+            raise ValueError(
+                f"«{valor}» no es un estado de versión conocido. Los que hay "
+                "son: " + ", ".join(ESTADOS_DE_VERSION) + "."
+            )
+        return valor
+
+    @field_validator("ruta_expediente")
+    @classmethod
+    def _sin_ruta_absoluta(cls, valor: str | None) -> str | None:
+        """Una ruta absoluta lleva el nombre de usuario del equipo del
+        docente, y eso es un dato personal en una columna que no debe
+        llevarlos. Se rechaza al construir, no al guardar: así no depende de
+        qué almacén haya detrás."""
+        if valor is None:
+            return valor
+        if valor.startswith(("/", "\\")) or (len(valor) > 1 and valor[1] == ":"):
+            raise ValueError(
+                f"«{valor}» es una ruta absoluta. La ruta del expediente se "
+                "guarda relativa a la raíz de expedientes: una absoluta lleva "
+                "el nombre de usuario del equipo."
+            )
+        return valor
+
 
 
 class Almacen(Protocol):
@@ -174,6 +311,32 @@ class Almacen(Protocol):
     def registrar(self, entrega: EntregaNueva) -> EntregaRegistrada: ...
 
     def listar(self) -> list[EntregaRegistrada]: ...
+
+    def elegir_version(self, identificador: str) -> "EntregaRegistrada | None":
+        """El docente elige qué versión de una fase vale.
+
+        Las demás versiones de ese alumno y esa fase pasan a SUSTITUIDA, y
+        ninguna se elimina: `decisiones#7-versiones` lo dice expresamente.
+        Borra la marca de conflicto en todas -la marca ES la decisión
+        pendiente, y ya está tomada-, que es lo que vuelve a permitir
+        analizar. Devuelve `None` si no existe esa entrega.
+        """
+        ...
+
+    def anotar(self, anotacion) -> None:
+        """Escribe una línea en el registro de auditoría del §19.1.
+
+        Lo llaman los propios métodos que guardan, no quien los usa: un
+        registro que depende de que alguien se acuerde de invocarlo acaba con
+        huecos justo en los caminos menos transitados. Ver
+        `backend/persistencia/auditoria.py`.
+        """
+        ...
+
+    def listar_registro(self) -> list:
+        """El histórico completo, en orden. Para que el docente pueda
+        reconstruir qué se hizo y con qué criterios."""
+        ...
 
     def por_id(self, identificador: str) -> EntregaRegistrada | None: ...
 
@@ -243,6 +406,87 @@ class Almacen(Protocol):
         Supabase y otro para memoria: los dos devuelven exactamente el mismo
         tipo, `backend.persistencia.correccion.Correccion`, con sus dos
         salidas ya reconstruidas.
+        """
+        ...
+
+    def dar_de_alta_alumno(self, alumno: AlumnoNuevo) -> AlumnoRegistrado:
+        """Registra o actualiza una fila del registro maestro
+        (`backend/persistencia/alumnos.py`). Nunca lleva nombre.
+
+        Si `alumno.student_id` es `None`, asigna uno nuevo con
+        `generar_student_id`, contando solo los `student_id` ya usados en
+        `alumno.curso`. Si trae un valor, da de alta esa identidad si no
+        existía o actualiza sus datos si ya existía -es la misma operación
+        para un alta nueva y para una reimportación que corrige un dato-.
+
+        Un `platform_id` que ya pertenece a OTRO `student_id` es un
+        `ValueError` con el texto de `error_de_platform_id_duplicado`: dos
+        identidades no pueden compartir el mismo ID de CESUR, y esto se
+        comprueba antes de escribir nada, en los dos almacenes.
+        """
+        ...
+
+    def listar_alumnos(self) -> list[AlumnoRegistrado]:
+        """Todo el registro maestro. Sin nombre, como siempre."""
+        ...
+
+    def alumnos_por_platform_id(self, platform_id: str) -> list[AlumnoRegistrado]:
+        """Las identidades que llevan ese ID de CESUR -normalmente ninguna o
+        una, salvo el instante entre detectar un choque y resolverlo-.
+
+        Puede devolver identidades de cursos distintos: es justo lo que
+        `backend.servicios.importacion_alumnos` necesita para distinguir una
+        reimportación del mismo curso -actualiza sin más- de un posible
+        repetidor de un curso anterior -se detiene y lo pregunta, D-025-.
+        """
+        ...
+
+    def consumos(self) -> list[RegistroDeConsumo]:
+        """Todo lo registrado en `ejecucion_motor`, sin filtrar. Punto 7 del
+        orden de implantación: el informe por centro necesita poder leer
+        de vuelta lo que costó cada ejecución, no solo escribirlo.
+
+        Hasta esta tarea existía en `AlmacenEnMemoria` -bajo el nombre
+        `consumos`- pero no en el `Protocol`, con este comentario en su
+        docstring: «`AlmacenSupabase` no lo implementa porque leer el
+        histórico completo desde la base de datos es un consumo aparte que
+        nadie ha pedido todavía». El §13 de `decisiones#13-estabilidad` lo
+        pide expresamente -modelo exacto, tokens, coste por fase,
+        proyección-, así que ese «nadie» ya no es cierto: las dos
+        implementaciones existen y este método pasa a ser obligatorio.
+
+        `registrar_consumo`, en cambio, sigue siendo una capacidad opcional
+        -`backend/servicios/analisis_de_entrega.py` la busca con `getattr`
+        antes de llamarla, para no obligar a los dobles de prueba
+        existentes a aprender un método nuevo-. No hay el mismo motivo para
+        tratar la lectura como opcional: nada llama a `consumos()` en el
+        camino caliente de un análisis, solo un informe que se pide aparte,
+        así que exigirla no arriesga tumbar ningún flujo existente.
+
+        Cada fila trae `id` y `creada_en`, que `registrar_consumo` nunca
+        recibe del llamador -los asigna el propio almacén al guardar, el uno
+        con `uuid4()` en memoria y `gen_random_uuid()` en Supabase, el otro
+        con el reloj y con `now()`, respectivamente-. Sin orden garantizado:
+        quien necesite las ejecuciones de una entrega en el orden en que
+        ocurrieron -para distinguir el análisis principal de un reanálisis,
+        por ejemplo- las ordena por `creada_en` después de leerlas.
+        """
+        ...
+
+    def listar_semaforos(self) -> list[SemaforoDeEntrega]:
+        """El semáforo propuesto y el confirmado por el docente de cada
+        entrega con corrección guardada, sin el resto de `Correccion`.
+
+        Existe porque un informe agregado -cuántas entregas hay en cada
+        color, en un centro o un ciclo- no necesita el informe completo de
+        cada una, con sus citas y su prosa: solo dos columnas por fila. Pedir
+        `correccion_de` entrega por entrega para componer ese recuento
+        haría una petición a Supabase por cada entrega del ámbito; este
+        método hace una sola, sobre las dos columnas que hacen falta
+        (`correccion.semaforo_propuesto`, `correccion.semaforo_aprobado`),
+        sin tocar ni transferir la columna `informe` -que si acaso lleva
+        alguna cita larga, es exactamente el dato que D-001 no quiere ver
+        salir sin necesidad-.
         """
         ...
 

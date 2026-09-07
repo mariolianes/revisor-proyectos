@@ -12,10 +12,19 @@ from pathlib import Path
 
 import uvicorn
 
+from backend.empaquetado import raiz_de_recursos
+
 from backend.app import crear_app
 
 HOST = "127.0.0.1"
 PUERTO = 8000
+# Cuántos puertos se prueban a partir del preferido antes de rendirse.
+# Hasta el 2026-09-07 no se probaba ninguno: si el 8000 estaba ocupado por
+# cualquier otra cosa -y en un equipo cualquiera lo está más a menudo de lo
+# que parece-, el programa se negaba a arrancar y ahí se acababa. Para una
+# beta que el docente abre con doble clic, eso es un programa que no
+# funciona y ninguna forma de averiguar por qué.
+PUERTOS_A_PROBAR = 20
 
 
 def _hay_alguien_escuchando(host: str, puerto: int) -> bool:
@@ -45,7 +54,15 @@ def _avisar(raiz: Path) -> None:
         )
 
 
-def _abrir_navegador_cuando_escuche() -> None:
+def _primer_puerto_libre() -> int | None:
+    """El primero libre a partir de `PUERTO`, o `None` si no hay ninguno."""
+    for candidato in range(PUERTO, PUERTO + PUERTOS_A_PROBAR):
+        if not _hay_alguien_escuchando(HOST, candidato):
+            return candidato
+    return None
+
+
+def _abrir_navegador_cuando_escuche(puerto: int = PUERTO) -> None:
     """Abre el navegador en cuanto el puerto empieza a aceptar conexiones.
 
     No basta con engancharse al evento de arranque de FastAPI: uvicorn
@@ -56,34 +73,47 @@ def _abrir_navegador_cuando_escuche() -> None:
     hilo aparte, es lo único determinista: el navegador no se abre hasta
     que una conexión real tiene éxito.
     """
-    while not _hay_alguien_escuchando(HOST, PUERTO):
+    while not _hay_alguien_escuchando(HOST, puerto):
         time.sleep(0.1)
-    webbrowser.open(f"http://{HOST}:{PUERTO}")
+    webbrowser.open(f"http://{HOST}:{puerto}")
 
 
 if __name__ == "__main__":
-    raiz = Path(__file__).resolve().parents[1]
+    # Empaquetado, esto es la carpeta temporal donde PyInstaller ha dejado
+    # los criterios, la prosa normativa y el frontend compilado. El `.env`
+    # del docente NO se lee de aquí: ver `backend/empaquetado.py`.
+    raiz = raiz_de_recursos()
 
     # El sondeo del hilo no sabe distinguir «ya escucha el editor» de «ya
-    # escuchaba otra cosa»: si el puerto está ocupado por otro programa, se
-    # conecta con él y abre el navegador contra el servicio equivocado,
-    # mientras uvicorn falla por debajo. Se comprueba antes de arrancar nada
-    # y se dice qué puerto es, que es lo que hace falta para liberarlo.
-    if _hay_alguien_escuchando(HOST, PUERTO):
-        print(f"\nEl puerto {PUERTO} de {HOST} ya está ocupado por otro programa.")
-        print("El editor no se arranca para no abrir el navegador contra algo "
-              "que no es él.")
-        print(f"Cierra lo que esté usando el puerto {PUERTO} -puede ser otro "
-              "editor ya abierto- y vuelve a intentarlo.")
+    # escuchaba otra cosa»: si se arrancara sobre un puerto ocupado, el
+    # navegador se abriría contra el servicio equivocado. Eso sigue sin
+    # poder pasar. Lo que cambia desde el 2026-09-07 es qué se hace cuando
+    # ocurre: en vez de rendirse, se busca el primer puerto libre. Nunca se
+    # comparte puerto con nadie; solo se elige otro.
+    #
+    # Antes se negaba a arrancar, y para una beta que el docente abre con
+    # doble clic eso es un programa que no funciona y ninguna forma de
+    # averiguar por qué.
+    puerto = _primer_puerto_libre()
+    if puerto is None:
+        print(f"\nNo hay ningún puerto libre entre el {PUERTO} y el "
+              f"{PUERTO + PUERTOS_A_PROBAR - 1} en {HOST}.")
+        print("Cierra algún programa que esté usando esos puertos y vuelve a "
+              "intentarlo.")
         sys.exit(1)
+    if puerto != PUERTO:
+        print(f"El puerto {PUERTO} está ocupado por otro programa. Se usa el "
+              f"{puerto}.")
 
     _avisar(raiz)
 
-    threading.Thread(target=_abrir_navegador_cuando_escuche, daemon=True).start()
+    threading.Thread(
+        target=_abrir_navegador_cuando_escuche, args=(puerto,), daemon=True
+    ).start()
 
     try:
         # Solo 127.0.0.1: esta aplicación escribe en el disco y ejecuta git.
-        uvicorn.run(crear_app(raiz), host=HOST, port=PUERTO, log_level="warning")
+        uvicorn.run(crear_app(raiz), host=HOST, port=puerto, log_level="warning")
     except Exception as error:
         # El .cmd que lanza esto corre en una consola que se cierra sola al
         # terminar el script: sin este mensaje, el profesor solo vería un

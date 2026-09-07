@@ -22,8 +22,11 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
     from fastapi.responses import JSONResponse
 
     from backend.analisis import crear_proveedor
-    from backend.api import analisis, documentos, edicion, entregas, estado
+    from backend.api import (
+        alumnos, analisis, documentos, edicion, entregas, estado, informes,
+    )
     from backend.configuracion import cargar
+    from backend.empaquetado import raiz_de_recursos
     from backend.persistencia import crear_almacen
     from backend.persistencia.supabase import ChoqueDeAlmacen, ErrorDeAlmacen
 
@@ -98,6 +101,8 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
     app.include_router(estado.router)
     app.include_router(entregas.router)
     app.include_router(analisis.router)
+    app.include_router(alumnos.router)
+    app.include_router(informes.router)
 
     @app.get("/api/salud")
     def salud() -> dict[str, str]:
@@ -105,7 +110,9 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
 
     # El front compilado se sirve desde el propio backend: una sola pieza
     # que arrancar, no dos.
-    dist = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+    # `raiz_de_recursos` y no la raíz del repositorio: empaquetado, el
+    # frontend compilado viaja dentro del ejecutable, no al lado del .py.
+    dist = raiz_de_recursos() / "frontend" / "dist"
     if dist.is_dir():
         from fastapi.staticfiles import StaticFiles
         app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")

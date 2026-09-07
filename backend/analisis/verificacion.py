@@ -447,22 +447,47 @@ class AnalisisVerificado(BaseModel):
 # sin que ninguno de los dos tenga que importar del otro. `informe.py`
 # vuelve a exponer los cuatro nombres de abajo -están reexportados, no
 # duplicados- para que nada que ya los importara de allí se rompa.
-# P3 da VERDE_CON_ALERTAS y no AMBAR desde D-019: un defecto que conviene
-# atender no cambia el nivel global si los minimos estan cumplidos.
-SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "VERDE_CON_ALERTAS"}
+# P3 da VERDE, no AMBAR: un defecto que conviene atender no cambia el nivel
+# global si los mínimos están cumplidos (D-019). Lo que sí deja es una
+# alerta sobre ese verde, que calcula `hay_alertas` -no un color propio-.
+SEMAFORO_POR_PRIORIDAD = {"P1": "ROJO", "P2": "AMBAR", "P3": "VERDE"}
 
-# Los cinco códigos válidos, en el mismo orden que declara
+# Los cuatro códigos válidos, en el mismo orden que declara
 # `criteria/<version>/semaforo.yaml`.
-CODIGOS_SEMAFORO: tuple[str, ...] = (
-    "VERDE", "VERDE_CON_ALERTAS", "AMBAR", "ROJO", "GRIS",
-)
+#
+# Son cuatro y no cinco por decisión del docente del 2026-09-02
+# (`decisiones#12-semaforo`): «Verde con alertas no será un quinto estado.
+# Se implementará como VERDE acompañado por alertas estructuradas o por un
+# indicador complementario. Mantener el enum de cuatro estados del Documento
+# Maestro.» Hubo un quinto código, VERDE_CON_ALERTAS, entre el 31 de agosto
+# y esa decisión; su migración se retiró antes de aplicarse.
+CODIGOS_SEMAFORO: tuple[str, ...] = ("VERDE", "AMBAR", "ROJO", "GRIS")
 
 # La severidad de cada color, de menos a más -no la enumeración de arriba,
 # que es solo de lectura-. GRIS queda por debajo de VERDE a propósito: no es
 # "mejor que todo", es "no evaluable". Ver D-016 en `docs/decisions.md`.
-SEVERIDAD_SEMAFORO = {
-    "GRIS": -1, "VERDE": 0, "VERDE_CON_ALERTAS": 1, "AMBAR": 2, "ROJO": 3,
-}
+SEVERIDAD_SEMAFORO = {"GRIS": -1, "VERDE": 0, "AMBAR": 2, "ROJO": 3}
+
+
+def hay_alertas(valoraciones: list[ValoracionVerificada]) -> bool:
+    """Si el resultado es un VERDE que conserva algo por atender.
+
+    Es lo que el docente llama «verde con alertas», y que expresamente no
+    quiso como color: el proyecto cumple los mínimos y puede avanzar, pero
+    arrastra algún hallazgo P3 fiable que conviene corregir antes del
+    cierre. Devuelve False en cuanto el color no es VERDE: sobre un ámbar o
+    un rojo la marca no aporta nada, porque el propio color ya obliga a
+    actuar.
+
+    Solo cuentan las valoraciones cuya evidencia se localizó, por la misma
+    razón que en `semaforo_por_valoraciones`: una alerta levantada por una
+    cita que no existe no es una alerta.
+    """
+    if semaforo_por_valoraciones(valoraciones) != "VERDE":
+        return False
+    return any(
+        v.prioridad == "P3" for v in valoraciones if v.evidencia_localizada
+    )
 
 
 def semaforo_por_valoraciones(valoraciones: list[ValoracionVerificada]) -> str:

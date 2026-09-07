@@ -144,7 +144,33 @@ def _consumo_de(uso) -> ConsumoDeLlamada | None:
 # versiones nuevas -`o3-2025-04-16`, `o4-mini-...`- que se comportan igual.
 # Si aparece una familia nueva que tampoco lo admita, se añade aquí: es
 # preferible a descubrirlo con un 400 en mitad de una corrección.
-_SIN_TEMPERATURA = ("o1", "o3", "o4")
+#
+# La lista no se deduce del nombre: se mide contra la API antes de
+# escribirla. La familia `gpt-5` está partida por la mitad y no hay forma de
+# adivinar por dónde -`gpt-5.2` y `gpt-5.4` aceptan `temperature`; `gpt-5.5`
+# y los tres `gpt-5.6` la rechazan-, así que se enumeran los prefijos que
+# fallaron de verdad y no el «gpt-5» que parecería razonable.
+_SIN_TEMPERATURA = ("o1", "o3", "o4", "gpt-5.5", "gpt-5.6")
+
+# Modelos que admiten `reasoning.effort`. Mismo criterio: medido, no
+# supuesto. `gpt-4.1` responde 400 «Unsupported parameter:
+# 'reasoning.effort'», así que mandarlo a todo el mundo rompería el modelo
+# que el sistema usaba hasta ahora.
+_CON_ESFUERZO = ("o1", "o3", "o4", "gpt-5.5", "gpt-5.6")
+
+ESFUERZOS = ("minimal", "low", "medium", "high")
+
+
+def admite_esfuerzo(modelo: str) -> bool:
+    """Si a este modelo se le puede pedir cuánto quiere razonar.
+
+    Un modelo de razonamiento decide por su cuenta cuánto piensa antes de
+    contestar, y `reasoning.effort` es la única palanca para pedirle que
+    piense más. Cuesta más y tarda más; a cambio, en un juicio con doce
+    dimensiones y una cita por cada una, la diferencia se nota. Los modelos
+    que no razonan rechazan el parámetro con un 400.
+    """
+    return modelo.startswith(_CON_ESFUERZO)
 
 
 def admite_temperatura(modelo: str) -> bool:
@@ -162,7 +188,9 @@ def admite_temperatura(modelo: str) -> bool:
 class ProveedorOpenAI:
     """Pide el análisis a OpenAI y devuelve el formulario ya validado."""
 
-    def __init__(self, clave: str, modelo: str, cliente=None) -> None:
+    def __init__(
+        self, clave: str, modelo: str, esfuerzo: str | None = None, cliente=None
+    ) -> None:
         if not clave:
             raise ValueError(
                 "No hay clave de OpenAI configurada. Indícala en "
@@ -174,7 +202,21 @@ class ProveedorOpenAI:
                 "No hay modelo de análisis configurado. Indica cuál usar en "
                 "REVISOR_MODELO_ANALISIS, dentro del fichero .env."
             )
+        if esfuerzo is not None and esfuerzo not in ESFUERZOS:
+            raise ValueError(
+                f"«{esfuerzo}» no es un esfuerzo de razonamiento válido. "
+                f"Los que admite OpenAI son: {', '.join(ESFUERZOS)}. "
+                "Se indica en REVISOR_ESFUERZO_ANALISIS, dentro del .env."
+            )
+        if esfuerzo is not None and not admite_esfuerzo(modelo):
+            raise ValueError(
+                f"El modelo «{modelo}» no admite que se le pida un esfuerzo "
+                "de razonamiento: responde con un error si se le manda. "
+                "Quita REVISOR_ESFUERZO_ANALISIS del .env, o elige un modelo "
+                "de razonamiento."
+            )
         self._modelo = modelo
+        self._esfuerzo = esfuerzo
         if cliente is None:
             from openai import OpenAI
 
@@ -248,6 +290,14 @@ class ProveedorOpenAI:
                 # docente debe conocer antes de elegir uno: ver
                 # `admite_temperatura`.
                 **({"temperature": 0} if admite_temperatura(self._modelo) else {}),
+                # Cuánto se le pide que piense antes de contestar. Solo se
+                # manda si el docente lo ha configurado: sin esto, el modelo
+                # usa su valor por omisión, que no es el mismo en todos.
+                **(
+                    {"reasoning": {"effort": self._esfuerzo}}
+                    if self._esfuerzo
+                    else {}
+                ),
                 # El profesor lo pidió expresamente: que OpenAI no conserve
                 # un objeto persistente de esta llamada en su lado. Sin
                 # `store=False`, la API de Responses guarda la conversación

@@ -64,6 +64,12 @@ class Entorno(BaseModel):
     carpeta: str | None
     persistencia_duradera: bool
     version_criterios: str
+    # Qué motor va a analizar, tal como lo nombra el propio proveedor
+    # («openai:gpt-5.6-luna», o «simulado»). Se expone antes de analizar y no
+    # solo después, para que el docente sepa con qué va a gastar antes de
+    # pulsar: hasta ahora el nombre del motor solo aparecía cuando el
+    # análisis ya se había hecho y ya se había pagado.
+    motor: str
     avisos: list[str]
 
 
@@ -108,6 +114,7 @@ def obtener_entorno(peticion: Request) -> Entorno:
                 if configuracion.carpeta_entregas else None,
         persistencia_duradera=almacen.es_duradero,
         version_criterios=configuracion.version_criterios,
+        motor=peticion.app.state.proveedor.nombre,
         avisos=avisos,
     )
 
@@ -308,3 +315,22 @@ def cambiar_estado(
     if cambiada is None:
         raise HTTPException(status_code=404, detail="No existe esa entrega.")
     return cambiada
+
+
+@router.post("/entregas/{identificador}/version-elegida")
+def elegir_version(identificador: str, peticion: Request) -> EntregaRegistrada:
+    """El docente elige qué versión de una fase vale.
+
+    Es una de las decisiones que el §13 le reserva, y por eso es una
+    operación explícita suya y no algo que el sistema resuelva al detectar
+    el conflicto: cuando llegan dos archivos para la misma fase, la
+    admisión los conserva los dos, marca el conflicto y **detiene el
+    análisis** hasta que él pulse aquí. Ver `decisiones#7-versiones`.
+
+    Las otras versiones pasan a sustituidas. Ninguna se elimina: «nunca se
+    eliminan», dice él, y por eso esta operación no borra nada.
+    """
+    elegida = _almacen(peticion).elegir_version(identificador)
+    if elegida is None:
+        raise HTTPException(status_code=404, detail="No existe esa entrega.")
+    return elegida

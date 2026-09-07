@@ -54,6 +54,26 @@ def test_memoria_guarda_el_registro_y_lo_devuelve() -> None:
     assert guardados[0].coste_estimado_usd == 0.037012
 
 
+def test_memoria_asigna_id_y_creada_en_aunque_el_registro_no_los_traiga() -> None:
+    """Quien construye el registro para guardarlo -`backend/servicios/
+    analisis_de_entrega.py`- nunca rellena `id` ni `creada_en`: los asigna
+    el almacén, mismo criterio que `EntregaRegistrada.id`/`recibida_en` en
+    `registrar()`. Sin esto, un informe por centro que ordenara las
+    ejecuciones de una entrega por fecha para distinguir el análisis
+    principal de un reanálisis se quedaría sin con qué ordenar."""
+    almacen = AlmacenEnMemoria()
+
+    registro = _registro()
+    assert registro.id is None
+    assert registro.creada_en is None
+
+    almacen.registrar_consumo(registro)
+
+    guardado = almacen.consumos()[0]
+    assert guardado.id is not None
+    assert guardado.creada_en is not None
+
+
 def test_memoria_conserva_el_historico_entre_varias_ejecuciones() -> None:
     """Una entrega puede reanalizarse: cada intento es su propio gasto, y
     ninguno debe tapar al anterior."""
@@ -85,3 +105,30 @@ def test_supabase_escribe_en_ejecucion_motor() -> None:
     assert cuerpos[0]["entrega_id"] == "id-entrega"
     assert cuerpos[0]["tokens_entrada"] == 10290
     assert cuerpos[0]["modelo"] == "openai:gpt-4.1"
+
+
+def test_supabase_no_manda_id_ni_creada_en_como_nulos() -> None:
+    """`id` y `creada_en` tienen `default gen_random_uuid()` y `default
+    now()` en la migración. Un `null` explícito sobre una columna con
+    `default` la sustituye por `null` en vez de dejar que Postgres aplique
+    el suyo -es la regla que ya explica el comentario de `_viola_el_
+    esquema` en `tests/conftest.py`-, así que si `registrar_consumo`
+    mandara estas dos claves con valor `None`, cada ejecución guardada
+    perdería su fecha de creación y Postgres tendría que generar el `id` de
+    otra forma o rechazar la fila. Ninguna de las dos claves debe aparecer
+    en absoluto en el cuerpo de la petición."""
+    cuerpos: list[dict] = []
+
+    def responder(peticion: httpx.Request) -> httpx.Response:
+        if peticion.content:
+            import json
+            cuerpos.append(json.loads(peticion.content))
+        return httpx.Response(201, json=[{"id": "id-ejecucion"}])
+
+    cliente = httpx.Client(transport=httpx.MockTransport(responder))
+    almacen = AlmacenSupabase(URL, CLAVE, cliente=cliente)
+
+    almacen.registrar_consumo(_registro())
+
+    assert "id" not in cuerpos[0]
+    assert "creada_en" not in cuerpos[0]

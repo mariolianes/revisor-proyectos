@@ -102,3 +102,94 @@ def test_un_json_corrupto_se_trata_como_listado_vacio_y_no_tumba_nada(tmp_path: 
     listado = ListadoLocal(tmp_path)
 
     assert listado.nombre_de("AF023") is None
+
+
+# --- importar_pares -------------------------------------------------------
+#
+# El importador de listados de alumnos (tools/importar_listado_alumnos.py)
+# resuelve nombres desde un Excel, no desde un CSV, así que escribe
+# directamente con `{codigo: nombre}` en vez de generar un fichero
+# intermedio. `importar_csv` es, desde esta tarea, un envoltorio sobre esto.
+
+
+def test_importar_pares_da_de_alta_lo_mismo_que_importar_csv(tmp_path: Path) -> None:
+    listado = ListadoLocal(tmp_path)
+
+    incorporadas = listado.importar_pares({"ALU-260001": "Nombre Apellido"})
+
+    assert incorporadas == 1
+    assert listado.nombre_de("ALU-260001") == "Nombre Apellido"
+
+
+def test_importar_pares_normaliza_el_codigo_igual_que_importar_csv(tmp_path: Path) -> None:
+    listado = ListadoLocal(tmp_path)
+
+    listado.importar_pares({" alu-260001 ": "Nombre Apellido"})
+
+    assert listado.nombre_de("ALU-260001") == "Nombre Apellido"
+
+
+def test_importar_pares_actualiza_en_vez_de_duplicar(tmp_path: Path) -> None:
+    listado = ListadoLocal(tmp_path)
+    listado.importar_pares({"ALU-260001": "Nombre Viejo"})
+
+    listado.importar_pares({"ALU-260001": "Nombre Corregido"})
+
+    assert listado.nombre_de("ALU-260001") == "Nombre Corregido"
+
+
+def test_importar_pares_descarta_una_clave_o_un_valor_vacios_sin_fallar(
+    tmp_path: Path,
+) -> None:
+    listado = ListadoLocal(tmp_path)
+
+    incorporadas = listado.importar_pares({
+        "ALU-260001": "", "": "Sin Codigo", "ALU-260002": "Alumno Valido",
+    })
+
+    assert incorporadas == 1
+    assert listado.nombre_de("ALU-260001") is None
+    assert listado.nombre_de("ALU-260002") == "Alumno Valido"
+
+
+def test_importar_pares_conserva_las_altas_de_antes_que_no_se_repiten(
+    tmp_path: Path,
+) -> None:
+    listado = ListadoLocal(tmp_path)
+    listado.importar_pares({"ALU-260001": "Alumno Uno"})
+
+    listado.importar_pares({"ALU-260002": "Alumno Dos"})
+
+    assert listado.nombre_de("ALU-260001") == "Alumno Uno"
+    assert listado.nombre_de("ALU-260002") == "Alumno Dos"
+
+
+# --- todos ------------------------------------------------------------------
+
+
+def test_todos_esta_vacio_sin_nada_importado(tmp_path: Path) -> None:
+    listado = ListadoLocal(tmp_path)
+
+    assert listado.todos() == {}
+
+
+def test_todos_devuelve_toda_la_correspondencia(tmp_path: Path) -> None:
+    listado = ListadoLocal(tmp_path)
+    listado.importar_pares({
+        "ALU-260001": "Alumno Uno", "ALU-260002": "Alumno Dos",
+    })
+
+    assert listado.todos() == {
+        "ALU-260001": "Alumno Uno", "ALU-260002": "Alumno Dos",
+    }
+
+
+def test_todos_devuelve_una_copia_no_el_fichero_en_vivo(tmp_path: Path) -> None:
+    """Quien llama no puede alterar lo guardado a través de lo que recibe."""
+    listado = ListadoLocal(tmp_path)
+    listado.importar_pares({"ALU-260001": "Alumno Uno"})
+
+    copia = listado.todos()
+    copia["ALU-260001"] = "Manipulado"
+
+    assert listado.nombre_de("ALU-260001") == "Alumno Uno"

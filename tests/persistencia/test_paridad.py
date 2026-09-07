@@ -24,12 +24,15 @@ parte de la respuesta: el profesor no debería leer un texto distinto según
 haya credenciales.
 """
 
+import json
 import re
 
 import pytest
 
 from backend.analisis.contrato import Evidencia
 from backend.analisis.verificacion import ValoracionVerificada
+from backend.persistencia.alumnos import AlumnoNuevo, AlumnoRegistrado
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva, EntregaRegistrada
 from backend.persistencia.supabase import (
@@ -81,6 +84,13 @@ def _comparable(valor):
         return [_comparable(elemento) for elemento in valor]
     if isinstance(valor, ValueError):
         return UN_UUID.sub("«id de la ficha»", f"ValueError: {valor}")
+    if isinstance(valor, AlumnoRegistrado):
+        # Sin `id`, por el mismo motivo que una `EntregaRegistrada`: lo
+        # genera cada almacén por su cuenta y no puede coincidir.
+        return (
+            valor.student_id, valor.curso, valor.ccaa_code, valor.centro_code,
+            valor.ciclo_code, valor.estado_matricula, valor.platform_id,
+        )
     assert isinstance(valor, EntregaRegistrada), valor
     return (
         valor.codigo_alumno, valor.ciclo, valor.fase, valor.version,
@@ -816,3 +826,507 @@ def test_la_tabla_estructurada_coincide_con_lo_reconstruido(
         in reconstruido_supabase.items()
     }
     assert estructurado == esperado_estructurado
+
+
+# --- dar_de_alta_alumno / listar_alumnos / alumnos_por_platform_id ---------
+#
+# El registro maestro de alumnos (importador de listados). Mismo criterio que
+# el resto del fichero: lo comparable de una `AlumnoRegistrado` es todo menos
+# `id`, y un `ValueError` se compara por su mensaje.
+
+
+def _alumno_nuevo(**cambios) -> AlumnoNuevo:
+    datos = dict(
+        curso="2026-2027", ccaa_code="AND", centro_code="AND-MAL-01",
+        ciclo_code="MYP",
+    )
+    datos.update(cambios)
+    return AlumnoNuevo(**datos)
+
+
+def test_dar_de_alta_un_alumno_nuevo_asigna_el_mismo_student_id_en_los_dos(
+    dos_almacenes,
+) -> None:
+    memoria, supabase = _los_dos(
+        dos_almacenes, lambda a: a.dar_de_alta_alumno(_alumno_nuevo())
+    )
+
+    assert memoria == supabase
+    assert memoria[0] == "ALU-260001"
+
+
+def test_el_segundo_alumno_del_curso_continua_la_secuencia_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        almacen.dar_de_alta_alumno(_alumno_nuevo())
+        return almacen.dar_de_alta_alumno(_alumno_nuevo(centro_code="AND-SEV-02"))
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria[0] == "ALU-260002"
+
+
+def test_dar_de_alta_con_un_student_id_ya_existente_actualiza_en_vez_de_duplicar(
+    dos_almacenes,
+) -> None:
+    """Reimportar un listado con datos corregidos no crea una segunda fila."""
+    def guion(almacen):
+        primero = almacen.dar_de_alta_alumno(_alumno_nuevo())
+        actualizado = almacen.dar_de_alta_alumno(_alumno_nuevo(
+            student_id=primero.student_id, estado_matricula="TRASLADADO",
+        ))
+        return [actualizado, almacen.listar_alumnos()]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert len(memoria[1]) == 1
+    assert memoria[0][5] == "TRASLADADO"
+
+
+def test_un_platform_id_duplicado_falla_igual_en_los_dos(dos_almacenes) -> None:
+    def guion(almacen):
+        almacen.dar_de_alta_alumno(_alumno_nuevo(platform_id="cesur-99"))
+        return _intentar(lambda: almacen.dar_de_alta_alumno(
+            _alumno_nuevo(centro_code="AND-SEV-02", platform_id="cesur-99")
+        ))
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria.startswith("ValueError: El ID de plataforma")
+    assert "cesur-99" in memoria and "ALU-260001" in memoria
+
+
+def test_reimportar_el_mismo_platform_id_con_su_propio_student_id_no_choca(
+    dos_almacenes,
+) -> None:
+    """Actualizar la propia fila con su propio ID de plataforma no es un
+    choque contra sí misma."""
+    def guion(almacen):
+        primero = almacen.dar_de_alta_alumno(_alumno_nuevo(platform_id="cesur-99"))
+        return almacen.dar_de_alta_alumno(_alumno_nuevo(
+            student_id=primero.student_id, platform_id="cesur-99",
+            estado_matricula="BAJA",
+        ))
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria[5] == "BAJA"
+
+
+def test_un_alumno_invalido_falla_igual_en_los_dos(dos_almacenes) -> None:
+    memoria, supabase = _los_dos(
+        dos_almacenes,
+        lambda a: _intentar(lambda: a.dar_de_alta_alumno(
+            _alumno_nuevo(ciclo_code="DAM")
+        )),
+    )
+
+    assert memoria == supabase
+    assert "ciclo reconocido" in memoria
+
+
+def test_listar_alumnos_vacio_es_lista_vacia_en_los_dos(dos_almacenes) -> None:
+    memoria, supabase = _los_dos(dos_almacenes, lambda a: a.listar_alumnos())
+
+    assert memoria == supabase == []
+
+
+def test_alumnos_por_platform_id_encuentra_lo_mismo_en_los_dos(dos_almacenes) -> None:
+    def guion(almacen):
+        almacen.dar_de_alta_alumno(_alumno_nuevo(platform_id="cesur-99"))
+        return [
+            almacen.alumnos_por_platform_id("cesur-99"),
+            almacen.alumnos_por_platform_id("no-existe"),
+        ]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert len(memoria[0]) == 1
+    assert memoria[1] == []
+
+
+def test_el_mismo_id_de_cesur_en_dos_cursos_convive_igual_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """El repetidor: identidad nueva cada curso, mismo ID de CESUR
+    (`decisiones#3-repetidores`, D-027). Si un almacén lo rechazara y el otro
+    no, el docente veria comportamientos distintos según tuviera
+    credenciales de Supabase o no."""
+    def guion(almacen):
+        viejo = almacen.dar_de_alta_alumno(
+            _alumno_nuevo(curso="2025-2026", platform_id="cesur-7")
+        )
+        nuevo = almacen.dar_de_alta_alumno(
+            _alumno_nuevo(
+                curso="2026-2027", platform_id="cesur-7",
+                matricula_anterior=viejo.student_id,
+            )
+        )
+        return [viejo.student_id, nuevo.student_id, nuevo.matricula_anterior,
+                len(almacen.listar_alumnos())]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria[0] != memoria[1]
+    assert memoria[2] == memoria[0]
+    assert memoria[3] == 2
+
+
+def test_el_mismo_id_de_cesur_dos_veces_en_el_mismo_curso_falla_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """El límite: dentro del curso activo sigue siendo una contradicción, y
+    los dos almacenes tienen que decir lo mismo."""
+    def guion(almacen):
+        almacen.dar_de_alta_alumno(
+            _alumno_nuevo(student_id="ALU-260001", platform_id="cesur-7")
+        )
+        try:
+            almacen.dar_de_alta_alumno(
+                _alumno_nuevo(student_id="ALU-260002", platform_id="cesur-7")
+            )
+            return "no falló"
+        except ValueError as fallo:
+            return str(fallo)
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert "ya esta asignado" in memoria.replace("á", "a")
+
+
+def test_el_ciclo_del_registro_maestro_manda_sobre_el_que_declara_una_entrega(
+    dos_almacenes,
+) -> None:
+    """Un alumno dado de alta por el listado con un ciclo, y luego declarado
+    con otro por una entrega, conserva el del listado -en los dos almacenes-.
+
+    Es la corrección que motivó unificar, en `AlmacenEnMemoria`, el
+    diccionario aparte que llevaba el ciclo (`_ciclo_del_alumno`) con el
+    registro maestro nuevo: antes de esa unificación, memoria no sabía nada
+    del alumno dado de alta por `dar_de_alta_alumno` y dejaba mandar al
+    ciclo que declarara la primera entrega, mientras que Supabase -que
+    siempre leyó y escribió la misma columna `alumno.ciclo`- ya respetaba el
+    ciclo del listado. Los dos almacenes respondían distinto a lo mismo.
+    """
+    def guion(almacen):
+        registrado = almacen.dar_de_alta_alumno(_alumno_nuevo(ciclo_code="CIN"))
+        entrega = almacen.registrar(_entrega("E1", codigo_alumno=registrado.student_id, ciclo="MYP"))
+        return entrega.ciclo
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase == "CIN"
+
+
+# --- El registro de auditoría del §19.1 -------------------------------------
+
+
+def test_registrar_una_entrega_deja_su_linea_de_auditoria(dos_almacenes) -> None:
+    """La tabla `registro` existía desde el esquema inicial y no la escribía
+    nadie. Se descubrió mirando la base después del primer recorrido completo
+    del circuito: entrega, análisis, corrección y revisión, y cero filas."""
+    from backend.persistencia.auditoria import ENTREGA_REGISTRADA
+
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        anotaciones = almacen.listar_registro()
+        return [
+            [a.accion for a in anotaciones],
+            [a.detalle.get("codigo_alumno") for a in anotaciones],
+            [a.detalle.get("huella") == entrega.huella for a in anotaciones],
+        ]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria[0] == [ENTREGA_REGISTRADA]
+    assert memoria[2] == [True]
+
+
+def test_el_recorrido_entero_deja_su_rastro_en_los_dos(dos_almacenes) -> None:
+    """Lo que el §19.1 llama «reconstruir qué ocurrió»: de la entrega al
+    cambio de estado y a la corrección, en orden y en los dos almacenes."""
+    from backend.persistencia.auditoria import (
+        CORRECCION_GUARDADA,
+        ENTREGA_REGISTRADA,
+        ESTADO_CAMBIADO,
+    )
+
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.cambiar_estado(entrega.id, "ANALIZADO", None)
+        almacen.guardar_correccion(
+            entrega.id, _informe(valoraciones=[_valoracion()]), None, "simulado"
+        )
+        return [a.accion for a in almacen.listar_registro()]
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert memoria == [ENTREGA_REGISTRADA, ESTADO_CAMBIADO, CORRECCION_GUARDADA]
+
+
+def test_la_auditoria_no_guarda_ni_una_cita_ni_una_observacion(
+    dos_almacenes,
+) -> None:
+    """La frontera que no se puede cruzar. El §19 dice que el texto del
+    trabajo no se almacena, y la tabla de auditoría es el sitio donde más
+    fácil sería colarlo sin darse cuenta: parece metadato."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(
+            entrega.id, _informe(valoraciones=[_valoracion()]), None, "simulado"
+        )
+        # Sin el identificador ni la marca de tiempo, que son distintos por
+        # construcción en cada almacén y no dicen nada de lo que aquí se
+        # comprueba.
+        return json.dumps(
+            [
+                {"accion": a.accion, "entidad": a.entidad, "detalle": a.detalle}
+                for a in almacen.listar_registro()
+            ],
+            ensure_ascii=False, sort_keys=True,
+        )
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    entero = memoria.lower()
+    assert "cita" not in entero
+    assert "observaci" not in entero
+    assert "el presupuesto asciende" not in entero
+
+
+def test_una_accion_inventada_no_entra_en_el_registro() -> None:
+    """Para que el histórico no acabe partido en dos vocabularios."""
+    from backend.persistencia.auditoria import Anotacion
+
+    with pytest.raises(ValueError, match="no es una acción conocida"):
+        Anotacion(accion="ALGO_QUE_ME_INVENTO")
+
+
+def test_un_detalle_con_prosa_larga_se_rechaza() -> None:
+    """La guarda que impide que alguien meta un trozo del trabajo del alumno
+    donde solo van códigos y cifras."""
+    from pydantic import ValidationError
+
+    from backend.persistencia.auditoria import ENTREGA_REGISTRADA, Anotacion
+
+    with pytest.raises(ValidationError, match="nunca texto del trabajo"):
+        Anotacion(accion=ENTREGA_REGISTRADA, detalle={"texto": "x" * 1200})
+
+
+# --- Elegir versión (decisiones#7-versiones) --------------------------------
+
+
+def test_elegir_una_version_sustituye_las_otras_sin_borrar_ninguna(
+    dos_almacenes,
+) -> None:
+    """«Marcarla como vigente. Las anteriores pasan a sustituida o histórica,
+    pero nunca se eliminan.» Lo que se comprueba aquí es sobre todo lo
+    último: después de elegir, siguen estando las dos."""
+    def guion(almacen):
+        primera = almacen.registrar(_entrega(
+            "E2", 1, huella="v1".ljust(64, "0"),
+            marca_admision="VERSION_CONFLICT",
+        ))
+        segunda = almacen.registrar(_entrega(
+            "E2", 2, huella="v2".ljust(64, "0"),
+            marca_admision="VERSION_CONFLICT",
+        ))
+        almacen.elegir_version(segunda.id)
+        return json.dumps(
+            sorted(
+                (e.version, e.estado_version, e.marca_admision)
+                for e in almacen.listar()
+            ),
+            ensure_ascii=False,
+        )
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert json.loads(memoria) == [
+        [1, "SUSTITUIDA", None],
+        [2, "VIGENTE", None],
+    ]
+
+
+def test_elegir_version_no_toca_otra_fase_del_mismo_alumno(dos_almacenes) -> None:
+    """El límite: elegir la versión de la segunda entrega no puede degradar
+    la tercera."""
+    def guion(almacen):
+        otra_fase = almacen.registrar(_entrega("E3", 1, huella="e3".ljust(64, "0")))
+        elegida = almacen.registrar(_entrega("E2", 1, huella="e2".ljust(64, "0")))
+        almacen.elegir_version(elegida.id)
+        return almacen.por_id(otra_fase.id).estado_version
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase == "VIGENTE"
+
+
+def test_elegir_una_version_que_no_existe_no_revienta(dos_almacenes) -> None:
+    memoria, supabase = _los_dos(
+        dos_almacenes, lambda a: a.elegir_version(UUID_INEXISTENTE)
+    )
+
+    assert memoria == supabase is None
+
+# --- consumos / listar_semaforos --------------------------------------------
+#
+# Punto 7 del orden de implantación: el informe por centro necesita leer de
+# vuelta lo que ya escriben `registrar_consumo` y `guardar_correccion`.
+# `consumos()` no existía en `AlmacenSupabase` hasta esta tarea -memoria lo
+# tenía, sin estar en el `Protocol`, con un comentario que decía que nadie lo
+# había pedido todavía-; `listar_semaforos()` es enteramente nuevo en los
+# dos. Ninguna de las dos lecturas tenía test de paridad, así que se añaden
+# aquí.
+
+
+def _registro_de_consumo(**cambios) -> RegistroDeConsumo:
+    datos = dict(
+        entrega_id="se-sustituye-antes-de-usar",
+        modelo="openai:gpt-4.1",
+        tokens_entrada=10290,
+        tokens_salida=2054,
+        tokens_entrada_cacheados=0,
+        coste_estimado_usd=0.037012,
+        tarifa_aplicada="gpt-4.1@2026-08-30",
+        duracion_ms=4200,
+        estado="OK",
+        intentos=1,
+        causa_error=None,
+        paginas=22,
+        caracteres_texto=32000,
+        reutilizado=False,
+    )
+    datos.update(cambios)
+    return RegistroDeConsumo(**datos)
+
+
+def _sin_id_ni_reloj(registro: RegistroDeConsumo) -> dict:
+    """Lo comparable de un `RegistroDeConsumo` leído: todo menos `id`,
+    `creada_en` y `entrega_id`. Los dos primeros los asigna cada almacén
+    por su cuenta -mismo motivo que `_sin_id` para `Correccion`, y que la
+    nota del docstring del módulo sobre `recibida_en`-; `entrega_id` es,
+    aquí, el id de una `EntregaRegistrada` que también genera cada almacén
+    por su cuenta (el mismo uuid4-en-memoria-o-la-base-de-datos-en-Supabase
+    de siempre), así que tampoco puede coincidir entre los dos aunque se
+    refiera «a la misma» entrega dentro de cada guión."""
+    return registro.model_dump(
+        mode="json", exclude={"id", "creada_en", "entrega_id"}
+    )
+
+
+def test_consumos_vacio_es_lista_vacia_en_los_dos(dos_almacenes) -> None:
+    memoria, supabase = dos_almacenes
+    assert memoria.consumos() == []
+    assert supabase.consumos() == []
+
+
+def test_registrar_consumo_y_releerlo_da_lo_mismo_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.registrar_consumo(_registro_de_consumo(entrega_id=entrega.id))
+        guardados = almacen.consumos()
+        assert len(guardados) == 1
+        # El propio almacén asigna `id` y `creada_en`: ninguno de los dos
+        # se queda en blanco, aunque quien registró el consumo no los trajo.
+        assert guardados[0].id is not None
+        assert guardados[0].creada_en is not None
+        assert guardados[0].entrega_id == entrega.id
+        return _sin_id_ni_reloj(guardados[0])
+
+    memoria, supabase = dos_almacenes
+    resultado_memoria = guion(memoria)
+    resultado_supabase = guion(supabase)
+
+    assert resultado_memoria == resultado_supabase
+    assert resultado_memoria["tokens_entrada"] == 10290
+    assert resultado_memoria["coste_estimado_usd"] == 0.037012
+
+
+def test_varias_ejecuciones_de_la_misma_entrega_se_conservan_todas_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """Un reanálisis no tapa el gasto del intento anterior: los dos se
+    conservan, porque el coste ya se produjo aunque el resultado se
+    sustituya (`guardar_correccion` sí sustituye; `registrar_consumo`,
+    nunca)."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.registrar_consumo(_registro_de_consumo(
+            entrega_id=entrega.id, estado="ERROR", causa_error="sin red",
+            coste_estimado_usd=None, tarifa_aplicada=None,
+        ))
+        almacen.registrar_consumo(_registro_de_consumo(entrega_id=entrega.id))
+        return sorted(
+            (_sin_id_ni_reloj(r) for r in almacen.consumos()), key=str,
+        )
+
+    memoria, supabase = dos_almacenes
+    resultado_memoria = guion(memoria)
+    resultado_supabase = guion(supabase)
+
+    assert resultado_memoria == resultado_supabase
+    assert len(resultado_memoria) == 2
+
+
+def test_listar_semaforos_vacio_es_lista_vacia_en_los_dos(dos_almacenes) -> None:
+    memoria, supabase = dos_almacenes
+    assert memoria.listar_semaforos() == []
+    assert supabase.listar_semaforos() == []
+
+
+def test_listar_semaforos_trae_propuesto_y_aprobado_igual_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(
+            entrega.id, _informe(semaforo_propuesto="ROJO"), None, "simulado",
+        )
+        semaforos = almacen.listar_semaforos()
+        assert len(semaforos) == 1
+        assert semaforos[0].entrega_id == entrega.id
+        return (semaforos[0].semaforo_propuesto, semaforos[0].semaforo_aprobado)
+
+    memoria, supabase = dos_almacenes
+    resultado_memoria = guion(memoria)
+    resultado_supabase = guion(supabase)
+
+    assert resultado_memoria == resultado_supabase == ("ROJO", None)
+
+
+def test_listar_semaforos_no_confunde_sin_revisar_con_ningun_color(
+    dos_almacenes,
+) -> None:
+    """`semaforo_aprobado` es `None` mientras el docente no confirme
+    (§13): un informe agregado que lo tratara como un color más -o que lo
+    descartara en silencio- contaría mal cuántas entregas siguen
+    pendientes de que él las revise."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(
+            entrega.id,
+            _informe(semaforo_propuesto="AMBAR", semaforo_final_docente="VERDE"),
+            None, "simulado",
+        )
+        semaforo = almacen.listar_semaforos()[0]
+        return (semaforo.semaforo_propuesto, semaforo.semaforo_aprobado)
+
+    memoria, supabase = dos_almacenes
+
+    assert guion(memoria) == ("AMBAR", "VERDE")
+    assert guion(supabase) == ("AMBAR", "VERDE")

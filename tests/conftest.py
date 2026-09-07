@@ -167,6 +167,28 @@ def criterios_de_analisis(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def raiz_con_estructura_expedientes(tmp_path: Path) -> Path:
+    """Una raíz con una copia de `config/estructura_expedientes.yaml`.
+
+    Mismo motivo que `criterios_de_analisis`: es una copia del fichero real
+    del repositorio, no uno inventado para la prueba, así que lo que
+    comprueba una prueba sobre esta raíz es lo mismo que ve el docente. Sirve
+    para las pruebas que arrancan por `backend.configuracion.cargar` -la CLI
+    de `tools/crear_estructura_expedientes.py`, sobre todo-, que necesitan un
+    `.env` propio y controlado por la prueba, y por eso no pueden usar
+    directamente la raíz real del repositorio: ese `.env` es del docente, no
+    del test.
+    """
+    destino = tmp_path / "repo"
+    (destino / "config").mkdir(parents=True)
+    shutil.copy(
+        RAIZ_DEL_REPOSITORIO / "config" / "estructura_expedientes.yaml",
+        destino / "config" / "estructura_expedientes.yaml",
+    )
+    return destino
+
+
+@pytest.fixture
 def pdf_simple(tmp_path: Path) -> Path:
     """Dos páginas con texto, ninguna vacía."""
     return escribir_pdf(
@@ -713,6 +735,18 @@ class PostgrestSimulado:
         self.tablas: dict[str, list[dict]] = {
             "alumno": [], "proyecto": [], "entrega": [],
             "correccion": [], "valoracion_dimension": [], "evidencia": [],
+            # El registro de auditoría del §19.1. Existía en el esquema
+            # inicial desde el primer día y aquí faltaba, así que ninguna
+            # prueba podía ver que nadie lo escribía.
+            "registro": [],
+            # El registro de consumo (§13, punto 7 del orden de
+            # implantación): hasta ahora este servidor de mentira solo veía
+            # la escritura de `ejecucion_motor` -con un mock hecho a mano en
+            # `tests/persistencia/test_consumo.py`-, nunca la lectura. Sin
+            # esta tabla aquí, `AlmacenSupabase.consumos()` respondería 404
+            # en cualquier prueba de paridad, como cualquier tabla que este
+            # servidor no reconoce.
+            "ejecucion_motor": [],
         }
         self.peticiones: list[str] = []
 
@@ -878,6 +912,13 @@ class PostgrestSimulado:
             fila = {
                 "id": str(_uuid.uuid4()),
                 "recibida_en": _datetime.now().isoformat(),
+                # `default now()` de `ejecucion_motor.creada_en`
+                # (`ejecucion_motor.creada_en`): igual que `recibida_en`, se
+                # aplica sin condicionar por tabla -una clave que la tabla no
+                # tiene es inofensiva, la ignora quien lee-, para no tener
+                # que enseñarle a este servidor de mentira qué tablas llevan
+                # qué columna con reloj.
+                "creada_en": _datetime.now().isoformat(),
                 **VALORES_POR_OMISION.get(tabla, {}),
                 **datos,
             }

@@ -17,13 +17,31 @@ from pathlib import Path
 import httpx
 import yaml
 
-from backend.persistencia.consumo import RegistroDeConsumo
+from backend.persistencia.auditoria import (
+    Anotacion,
+    de_cambio_de_estado,
+    de_correccion,
+    de_entrega,
+)
+from backend.persistencia.alumnos import (
+    ESTADO_MATRICULA_INICIAL,
+    AlumnoNuevo,
+    AlumnoRegistrado,
+    error_de_platform_id_duplicado,
+    generar_student_id,
+    validar_alumno,
+)
+from backend.persistencia.consumo import CAMPOS_QUE_ASIGNA_EL_ALMACEN, RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     Correccion,
+    SemaforoDeEntrega,
     validar_textos_acotados,
 )
 from backend.persistencia.modelos import (
+    ESTADO_DE_VERSION_INICIAL,
+    SUSTITUIDA,
+    VIGENTE,
     EntregaNueva,
     EntregaRegistrada,
     choca_con_lo_declarado,
@@ -297,6 +315,13 @@ class AlmacenSupabase:
             motivo_bloqueo=fila.get("motivo_bloqueo"),
             version_criterios=fila["version_criterios"],
             modalidad=fila.get("modalidad"),
+            # `SELECCION` pide `*`, así que estas tres llegan solas en cuanto
+            # la migración de 2026-09-04 está aplicada. Con `.get` y no
+            # indexado: una base sin esa migración devuelve la entrega
+            # entera igualmente, sin las marcas, en vez de reventar.
+            marca_admision=fila.get("marca_admision"),
+            estado_version=fila.get("estado_version") or ESTADO_DE_VERSION_INICIAL,
+            ruta_expediente=fila.get("ruta_expediente"),
         )
 
     # PostgREST devuelve el alumno anidado atravesando las dos claves ajenas:
@@ -352,6 +377,9 @@ class AlmacenSupabase:
             "nombre_archivo": entrega.nombre_archivo,
             "huella_archivo": entrega.huella,
             "version_criterios": entrega.version_criterios,
+            "marca_admision": entrega.marca_admision,
+            "estado_version": entrega.estado_version,
+            "ruta_expediente": entrega.ruta_expediente,
         })
         fila = filas[0]
         # El ciclo del alumno guardado y la modalidad del proyecto guardada,
@@ -360,7 +388,9 @@ class AlmacenSupabase:
         # recién confirmada tiene que decir lo mismo.
         fila["alumno"] = {"codigo": entrega.codigo_alumno, "ciclo": ciclo}
         fila["modalidad"] = modalidad
-        return self._componer(fila)
+        registrada = self._componer(fila)
+        self.anotar(de_entrega(registrada))
+        return registrada
 
     def listar(self) -> list[EntregaRegistrada]:
         filas = self._pedir("GET", "entrega", parametros={
@@ -442,7 +472,10 @@ class AlmacenSupabase:
             },
             json={"estado": estado, "motivo_bloqueo": motivo},
         )
-        return self._componer(self._aplanar(filas[0])) if filas else None
+        cambiada = self._componer(self._aplanar(filas[0])) if filas else None
+        if cambiada is not None:
+            self.anotar(de_cambio_de_estado(cambiada, motivo))
+        return cambiada
 
     def guardar_correccion(
         self,
@@ -526,6 +559,7 @@ class AlmacenSupabase:
             "aviso": aviso,
         })
         correccion_id = filas[0]["id"]
+        self.anotar(de_correccion(entrega_id, informe, motor))
 
         try:
             if informe.valoraciones:
@@ -589,6 +623,74 @@ class AlmacenSupabase:
             aviso=fila.get("aviso"),
         )
 
+    def elegir_version(self, identificador: str) -> EntregaRegistrada | None:
+        """El docente elige qué versión vale de una fase con varias.
+
+        Las otras pasan a SUSTITUIDA. **Ninguna se elimina**: él lo dijo con
+        todas las letras, y por eso aquí no hay ningún DELETE.
+
+        La marca de conflicto se borra en las dos, elegida y sustituidas: la
+        marca es la decisión pendiente, y ya está tomada. Es lo que vuelve a
+        permitir analizar -ver la guarda de `analizar()`-.
+        """
+        if not _es_uuid(identificador):
+            return None
+        elegida = self.por_id(identificador)
+        if elegida is None:
+            return None
+        hermanas = [
+            e for e in self.listar()
+            if e.id != identificador
+            and (e.codigo_alumno, e.fase) == (elegida.codigo_alumno, elegida.fase)
+        ]
+        for otra in hermanas:
+            self._pedir(
+                "PATCH", "entrega", parametros={"id": f"eq.{otra.id}"},
+                json={"estado_version": SUSTITUIDA, "marca_admision": None},
+            )
+        filas = self._pedir(
+            "PATCH", "entrega",
+            parametros={"id": f"eq.{identificador}", "select": self.SELECCION_AL_ESCRIBIR},
+            json={"estado_version": VIGENTE, "marca_admision": None},
+        )
+        return self._componer(self._aplanar(filas[0])) if filas else None
+
+    def anotar(self, anotacion: Anotacion) -> None:
+        """Escribe una línea en el registro de auditoría del §19.1.
+
+        No propaga un fallo suyo: una anotación que no se puede escribir no
+        debe tirar la operación que la produjo. Perder una línea de histórico
+        es malo; perder la entrega que el docente acaba de confirmar, por no
+        haber podido anotar que la confirmó, es peor.
+        """
+        try:
+            self._pedir("POST", "registro", json={
+                "ocurrido_en": anotacion.ocurrido_en.isoformat(),
+                "usuario": anotacion.usuario,
+                "accion": anotacion.accion,
+                "entidad": anotacion.entidad,
+                "entidad_id": anotacion.entidad_id,
+                "version_criterios": anotacion.version_criterios,
+                "detalle": anotacion.detalle,
+            })
+        except Exception:
+            pass
+
+    def listar_registro(self) -> list[Anotacion]:
+        filas = self._pedir("GET", "registro", parametros={
+            "select": "*", "order": "ocurrido_en.asc",
+        })
+        return [
+            Anotacion(
+                accion=f["accion"], entidad=f.get("entidad"),
+                entidad_id=f.get("entidad_id"),
+                version_criterios=f.get("version_criterios"),
+                detalle=f.get("detalle") or {}, usuario=f["usuario"],
+                ocurrido_en=f["ocurrido_en"],
+            )
+            for f in filas
+        ]
+
     def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
         """Escribe una fila en `ejecucion_motor`
         (`supabase/migrations/20260830090000_registro_de_consumo.sql`).
@@ -600,5 +702,154 @@ class AlmacenSupabase:
         `backend/servicios/analisis_de_entrega.py`, que la trata como
         telemetría best-effort y no deja que un fallo aquí tumbe un análisis
         que sí se completó-.
+
+        `id` y `creada_en` se excluyen del cuerpo -`exclude=CAMPOS_QUE_
+        ASIGNA_EL_ALMACEN`-, nunca se mandan como `null`: la columna tiene
+        `default gen_random_uuid()` y `default now()` respectivamente, y un
+        `null` explícito sobre una columna con `default` la sustituye por
+        `null` en vez de dejar que Postgres aplique el suyo. `registro` los
+        trae a `None` siempre que llega desde un análisis real -nadie los
+        rellena antes de guardar-, así que en la práctica esto nunca
+        descarta un valor que alguien quisiera de verdad; es la misma
+        garantía que ya cerró este mismo problema en otras escrituras del
+        esquema, ahora explícita aquí.
         """
-        self._pedir("POST", "ejecucion_motor", json=registro.model_dump(mode="json"))
+        self._pedir("POST", "ejecucion_motor", json=registro.model_dump(
+            mode="json", exclude=set(CAMPOS_QUE_ASIGNA_EL_ALMACEN),
+        ))
+
+    def consumos(self) -> list[RegistroDeConsumo]:
+        """Todo `ejecucion_motor`, en el orden en que se creó.
+
+        Ver el docstring de `Almacen.consumos`
+        (`backend/persistencia/modelos.py`) para por qué este método existe
+        ahora y no solo en `AlmacenEnMemoria`.
+
+        Se leen los campos uno a uno -no `RegistroDeConsumo(**fila)`-
+        porque el modelo declara `extra="forbid"`: una fila con alguna
+        columna que el modelo no conoce tumbaría la lectura entera en vez
+        de ignorarla. `RegistroDeConsumo` acepta explícitamente `**fila`
+        cuando la fila ya viene filtrada a las columnas que declara este
+        `select`; aquí se pide `select=*`, así que la fila puede traer
+        alguna clave de más el día que la tabla gane una columna que este
+        módulo no lea todavía.
+        """
+        filas = self._pedir("GET", "ejecucion_motor", parametros={
+            "select": "*", "order": "creada_en.asc",
+        })
+        return [
+            RegistroDeConsumo(
+                id=fila.get("id"),
+                creada_en=fila.get("creada_en"),
+                entrega_id=fila["entrega_id"],
+                modelo=fila["modelo"],
+                tokens_entrada=fila.get("tokens_entrada"),
+                tokens_salida=fila.get("tokens_salida"),
+                tokens_entrada_cacheados=fila.get("tokens_entrada_cacheados"),
+                coste_estimado_usd=fila.get("coste_estimado_usd"),
+                tarifa_aplicada=fila.get("tarifa_aplicada"),
+                duracion_ms=fila["duracion_ms"],
+                estado=fila["estado"],
+                intentos=fila["intentos"],
+                causa_error=fila.get("causa_error"),
+                paginas=fila.get("paginas"),
+                caracteres_texto=fila.get("caracteres_texto"),
+                reutilizado=fila.get("reutilizado", False),
+            )
+            for fila in filas
+        ]
+
+    def listar_semaforos(self) -> list[SemaforoDeEntrega]:
+        """Solo `entrega_id`, `semaforo_propuesto` y `semaforo_aprobado` de
+        `correccion` -nunca `informe` ni `devolucion`-. Ver el docstring de
+        `Almacen.listar_semaforos` (`backend/persistencia/modelos.py`).
+        """
+        filas = self._pedir("GET", "correccion", parametros={
+            "select": "entrega_id,semaforo_propuesto,semaforo_aprobado",
+        })
+        return [
+            SemaforoDeEntrega(
+                entrega_id=fila["entrega_id"],
+                semaforo_propuesto=fila["semaforo_propuesto"],
+                semaforo_aprobado=fila.get("semaforo_aprobado"),
+            )
+            for fila in filas
+        ]
+
+    def _componer_alumno(self, fila: dict) -> AlumnoRegistrado:
+        """Una fila de `alumno` tal como la usa el registro maestro.
+
+        Los alumnos creados antes de esta tarea -o por el camino antiguo,
+        cuando llega una entrega de un código sin listado previo, en
+        `_alumno`- no tienen `centro_code`, `ccaa_code` ni `curso`: esas
+        columnas quedan `NULL`. Se leen aquí como cadena vacía, nunca como
+        `None`, porque `AlumnoRegistrado` no admite `None` en esos campos -
+        son un dato que falta, no una ausencia con significado propio-.
+        """
+        return AlumnoRegistrado(
+            id=fila["id"],
+            student_id=fila["codigo"],
+            curso=fila.get("curso") or "",
+            ccaa_code=fila.get("ccaa_code") or "",
+            centro_code=fila.get("centro_code") or "",
+            ciclo_code=fila.get("ciclo") or "",
+            estado_matricula=fila.get("estado_matricula") or ESTADO_MATRICULA_INICIAL,
+            platform_id=fila.get("platform_id"),
+            matricula_anterior=fila.get("matricula_anterior"),
+        )
+
+    def dar_de_alta_alumno(self, alumno: AlumnoNuevo) -> AlumnoRegistrado:
+        validar_alumno(alumno)
+
+        if alumno.platform_id is not None:
+            # Acotado al curso, igual que en el almacén de memoria: entre
+            # cursos, el mismo ID de CESUR es un repetidor con identidad
+            # nueva (`decisiones#3-repetidores`).
+            chocado = self._uno(
+                "alumno",
+                platform_id=f"eq.{alumno.platform_id}",
+                curso=f"eq.{alumno.curso}",
+            )
+            if chocado is not None and chocado["codigo"] != alumno.student_id:
+                raise error_de_platform_id_duplicado(alumno.platform_id, chocado["codigo"])
+
+        if alumno.student_id is not None:
+            student_id = alumno.student_id
+        else:
+            existentes = self._pedir("GET", "alumno", parametros={
+                "curso": f"eq.{alumno.curso}", "select": "codigo",
+            })
+            student_id = generar_student_id(
+                alumno.curso, (fila["codigo"] for fila in existentes)
+            )
+
+        payload = {
+            "codigo": student_id,
+            "ciclo": alumno.ciclo_code,
+            "ccaa_code": alumno.ccaa_code,
+            "centro_code": alumno.centro_code,
+            "curso": alumno.curso,
+            "estado_matricula": alumno.estado_matricula,
+            "platform_id": alumno.platform_id,
+            "matricula_anterior": alumno.matricula_anterior,
+        }
+        existente = self._uno("alumno", codigo=f"eq.{student_id}")
+        if existente is not None:
+            filas = self._pedir(
+                "PATCH", "alumno",
+                parametros={"id": f"eq.{existente['id']}"},
+                json=payload,
+            )
+        else:
+            filas = self._pedir("POST", "alumno", json=payload)
+        return self._componer_alumno(filas[0])
+
+    def listar_alumnos(self) -> list[AlumnoRegistrado]:
+        filas = self._pedir("GET", "alumno", parametros={"select": "*"})
+        return [self._componer_alumno(fila) for fila in filas]
+
+    def alumnos_por_platform_id(self, platform_id: str) -> list[AlumnoRegistrado]:
+        filas = self._pedir("GET", "alumno", parametros={
+            "platform_id": f"eq.{platform_id}", "select": "*",
+        })
+        return [self._componer_alumno(fila) for fila in filas]

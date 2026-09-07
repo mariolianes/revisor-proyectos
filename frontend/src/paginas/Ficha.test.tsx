@@ -82,6 +82,12 @@ describe("Ficha", () => {
     // fallar por una llamada de OTRO test, no por esta pantalla.
     vi.clearAllMocks()
     vi.mocked(api.ficha).mockResolvedValue(COMPLETA)
+    // La ficha pide el entorno solo para poder decir con qué motor está
+    // analizando. No condiciona nada más de esta pantalla.
+    vi.mocked(api.entorno).mockResolvedValue({
+      hay_carpeta: true, carpeta: "/entregas", persistencia_duradera: true,
+      version_criterios: "v2026-2027", motor: "simulado", avisos: [],
+    })
   })
 
   it("enseña de quién es la entrega", async () => {

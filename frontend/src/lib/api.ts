@@ -2,6 +2,7 @@ import type {
   ArchivoVisto, CambioDeValor, Confirmacion, Documento, EntregaRegistrada,
   Entorno, EstadoGobernanza, FichaDeLectura, Pendiente, PeticionRevision,
   Propuesta, ResultadoAnalisis, Resultado, Seccion, CriterioDerivado,
+  ListadoDisponible, ResultadoDeImportacion,
 } from "./tipos"
 
 const BASE = "/api"
@@ -69,6 +70,15 @@ export const api = {
   pendientes: () => pedir<Pendiente[]>("/pendientes"),
 
   entorno: () => pedir<Entorno>("/entorno"),
+
+  listados: () => pedir<ListadoDisponible[]>("/alumnos/listados"),
+
+  importarListado: (datos: {
+    nombre_archivo: string; ccaa_code: string; curso: string
+  }) =>
+    pedir<ResultadoDeImportacion>("/alumnos/importacion", {
+      method: "POST", body: JSON.stringify(datos),
+    }),
 
   archivosPendientes: () => pedir<ArchivoVisto[]>("/entregas/pendientes"),
 

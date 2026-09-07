@@ -13,9 +13,24 @@ código anónimo que ya usa todo lo demás (§19): esta tabla no sabe ni
 necesita saber ningún nombre.
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 
 ESTADOS_DE_EJECUCION: tuple[str, ...] = ("OK", "PARCIAL", "ERROR")
+
+# Los dos campos que el propio almacén asigna al guardar, nunca quien
+# construye el registro: `id` con `uuid4()` en memoria y con
+# `gen_random_uuid()` en Supabase; `creada_en` con el reloj en memoria y con
+# `now()` en Supabase. Un `RegistroDeConsumo` recién construido para
+# guardarlo -`backend/servicios/analisis_de_entrega.py`- siempre los trae a
+# `None`, y así deben viajar a `registrar_consumo`: mandar un valor propio
+# ahí pisaría el que la base de datos habría asignado sola, exactamente el
+# motivo por el que `AlmacenSupabase.registrar_consumo` los excluye del
+# cuerpo de la petición en vez de mandarlos como `null` -un `null` explícito
+# sobre una columna con `default` no aplica ese `default`, lo sustituye por
+# `null`-. Solo llegan con valor al releer, por `Almacen.consumos()`.
+CAMPOS_QUE_ASIGNA_EL_ALMACEN: tuple[str, ...] = ("id", "creada_en")
 
 
 class RegistroDeConsumo(BaseModel):
@@ -32,6 +47,10 @@ class RegistroDeConsumo(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # `None` al construir un registro nuevo para guardarlo; con valor al
+    # releerlo con `Almacen.consumos()`. Ver `CAMPOS_QUE_ASIGNA_EL_ALMACEN`.
+    id: str | None = None
+    creada_en: datetime | None = None
     entrega_id: str
     modelo: str
     tokens_entrada: int | None = None
