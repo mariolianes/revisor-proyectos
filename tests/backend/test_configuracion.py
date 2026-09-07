@@ -329,3 +329,23 @@ def test_raiz_de_expedientes_dentro_del_repositorio_se_rechaza(tmp_path: Path) -
 
     assert configuracion.raiz_expedientes is None
     assert "dentro del repositorio" in configuracion.problema_raiz_expedientes
+
+
+def test_una_ruta_relativa_se_resuelve_contra_donde_vive_el_programa(
+    tmp_path: Path,
+) -> None:
+    """Sin esto, el `.env` que se le manda al docente tiene que llevar escrita
+    la ruta del equipo donde se preparó, y al descomprimirlo en otro sitio el
+    programa no encuentra nada.
+
+    Se resuelve contra la carpeta del programa y no contra el directorio
+    actual: quien abre un `.exe` con doble clic no controla desde dónde se
+    lanza."""
+    from backend.configuracion import _resolver
+
+    absoluta = _resolver(str(tmp_path))
+    relativa = _resolver("CESUR_2026-2027")
+
+    assert absoluta == tmp_path
+    assert relativa.is_absolute()
+    assert relativa.name == "CESUR_2026-2027"

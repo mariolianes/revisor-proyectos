@@ -121,6 +121,28 @@ def _leer_env(raiz: Path) -> dict[str, str]:
     return leido
 
 
+
+def _resolver(valor: str) -> Path:
+    """Una ruta del `.env`, absoluta o relativa a donde vive el programa.
+
+    Una ruta relativa se resuelve contra la carpeta del ejecutable, **no
+    contra el directorio actual**: quien abre un `.exe` con doble clic no
+    controla desde dónde se lanza, y resolver contra el directorio actual
+    haría que la misma configuración funcionara o no según cómo se hubiera
+    abierto.
+
+    Existe desde el 2026-09-07, para la beta. Antes solo se admitían rutas
+    absolutas, y eso obligaba a que el `.env` que se le manda al docente
+    llevara escrita la ruta del equipo donde se preparó: al descomprimirlo en
+    otro sitio, el programa no encontraba nada y el primer arranque fallaba
+    sin que se supiera por qué.
+    """
+    from backend.empaquetado import carpeta_de_trabajo
+
+    ruta = Path(valor)
+    return ruta if ruta.is_absolute() else (carpeta_de_trabajo() / ruta)
+
+
 def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
     """Configuración efectiva: el entorno manda sobre el fichero .env.
 
@@ -138,7 +160,7 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
     carpeta: Path | None = None
     problema: ProblemaDeCarpeta | None = None
     if valores.get(CARPETA):
-        candidata = Path(valores[CARPETA])
+        candidata = _resolver(valores[CARPETA])
         problema = revisar_carpeta(raiz, candidata)
         if problema is None:
             carpeta = candidata.resolve()
@@ -146,7 +168,7 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
     datos_locales: Path | None = None
     problema_datos_locales: ProblemaDeCarpeta | None = None
     if valores.get(DATOS_LOCALES):
-        candidata_local = Path(valores[DATOS_LOCALES])
+        candidata_local = _resolver(valores[DATOS_LOCALES])
         problema_datos_locales = revisar_carpeta(raiz, candidata_local)
         if problema_datos_locales is None:
             datos_locales = candidata_local.resolve()
@@ -154,7 +176,7 @@ def cargar(raiz: Path, entorno: dict[str, str] | None = None) -> Configuracion:
     raiz_expedientes: Path | None = None
     problema_raiz_expedientes: ProblemaDeCarpeta | None = None
     if valores.get(RAIZ_EXPEDIENTES):
-        candidata_expedientes = Path(valores[RAIZ_EXPEDIENTES])
+        candidata_expedientes = _resolver(valores[RAIZ_EXPEDIENTES])
         problema_raiz_expedientes = revisar_carpeta(raiz, candidata_expedientes)
         if problema_raiz_expedientes is None:
             raiz_expedientes = candidata_expedientes.resolve()
