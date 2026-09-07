@@ -55,43 +55,6 @@ def _configurar_argumentos() -> argparse.ArgumentParser:
     return parser
 
 
-def _leer_excel(ruta: Path) -> tuple[list[dict[str, str]], list[str]]:
-    """Las filas de datos -como `{columna: valor}`- y la cabecera, de la
-    primera hoja del Excel.
-
-    Solo lee: ningún libro se modifica ni se reescribe. Una fila entera en
-    blanco se descarta aquí -es habitual al final de un listado exportado-,
-    para que `importar()` no tenga que distinguir «fila en blanco de
-    verdad» de «fila con celdas vacías pero con algún valor perdido en
-    medio»; el nombre en blanco de una fila que sí tiene algún otro dato
-    sigue tratándose como «en blanco» más adelante, en
-    `backend/servicios/importacion_alumnos.py`.
-    """
-    import openpyxl
-
-    libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
-    try:
-        hoja = libro.active
-        iterador = hoja.iter_rows(values_only=True)
-        primera = next(iterador, None)
-        if primera is None:
-            return [], []
-        cabecera = [str(c).strip() if c is not None else "" for c in primera]
-
-        filas: list[dict[str, str]] = []
-        for fila in iterador:
-            valores = {
-                cabecera[indice]: (str(valor).strip() if valor is not None else "")
-                for indice, valor in enumerate(fila)
-                if indice < len(cabecera) and cabecera[indice]
-            }
-            if any(valores.values()):
-                filas.append(valores)
-        return filas, cabecera
-    finally:
-        libro.close()
-
-
 def main(argv: list[str] | None = None, raiz: Path | None = None) -> int:
     """0 importado (con o sin filas pendientes de revisión); 1 no se ha
     podido -falta configuración, Excel inválido, comunidad o curso mal
@@ -121,6 +84,7 @@ def _resolver(argv: list[str] | None, raiz: Path | None) -> int:
         ColumnasNoMapeadas,
         cargar_centros_conocidos,
         importar,
+        leer_excel,
     )
 
     ccaa_code = args.ccaa.strip().upper()
@@ -151,7 +115,7 @@ def _resolver(argv: list[str] | None, raiz: Path | None) -> int:
         return 1
 
     try:
-        filas, cabecera = _leer_excel(args.excel)
+        filas, cabecera = leer_excel(args.excel)
     except Exception as fallo:
         print(f"No se ha podido leer «{args.excel}»: {fallo}")
         return 1

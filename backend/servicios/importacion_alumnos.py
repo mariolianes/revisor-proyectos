@@ -433,3 +433,43 @@ def importar(
         total_filas=len(filas), en_blanco=en_blanco,
         nuevas=nuevas, actualizadas=actualizadas, pendientes=pendientes,
     )
+
+
+def leer_excel(ruta: Path) -> tuple[list[dict[str, str]], list[str]]:
+    """Las filas de datos -como `{columna: valor}`- y la cabecera, de la
+    primera hoja del Excel.
+
+    Vivía en `tools/importar_listado_alumnos.py` hasta el 2026-09-07. Se
+    mudó aquí para la beta: `tools/` no viaja dentro del ejecutable, así que
+    mientras esta función estuviera allí el docente no podía importar sus
+    listados sin que alguien le ejecutara una orden de consola. La CLI la
+    sigue usando, importándola de aquí.
+
+    Solo lee: ningún libro se modifica ni se reescribe. Una fila entera en
+    blanco se descarta aquí -es habitual al final de un listado exportado-,
+    para que `importar()` no tenga que distinguir «fila en blanco de verdad»
+    de «fila con celdas vacías pero con algún valor perdido en medio».
+    """
+    import openpyxl
+
+    libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+    try:
+        hoja = libro.active
+        iterador = hoja.iter_rows(values_only=True)
+        primera = next(iterador, None)
+        if primera is None:
+            return [], []
+        cabecera = [str(c).strip() if c is not None else "" for c in primera]
+
+        filas: list[dict[str, str]] = []
+        for fila in iterador:
+            valores = {
+                cabecera[indice]: (str(valor).strip() if valor is not None else "")
+                for indice, valor in enumerate(fila)
+                if indice < len(cabecera) and cabecera[indice]
+            }
+            if any(valores.values()):
+                filas.append(valores)
+        return filas, cabecera
+    finally:
+        libro.close()

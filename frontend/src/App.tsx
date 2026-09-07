@@ -2,6 +2,7 @@ import { useState } from "react"
 
 import { Migas } from "./componentes/Migas"
 import type { Miga } from "./componentes/Migas"
+import { Alumnos } from "./paginas/Alumnos"
 import { Documentos } from "./paginas/Documentos"
 import { Editor } from "./paginas/Editor"
 import { Entregas } from "./paginas/Entregas"
@@ -11,7 +12,7 @@ import { Pendientes } from "./paginas/Pendientes"
 import { Revision } from "./paginas/Revision"
 import type { FichaDeLectura, ResultadoAnalisis } from "./lib/tipos"
 
-type Vista = "entregas" | "documentos" | "estado" | "pendientes"
+type Vista = "entregas" | "alumnos" | "documentos" | "estado" | "pendientes"
 
 export default function App() {
   const [vista, setVista] = useState<Vista>("entregas")
@@ -39,6 +40,7 @@ export default function App() {
 
   const nombreDeVista: Record<Vista, string> = {
     entregas: "Entregas",
+    alumnos: "Alumnos",
     documentos: "Documentos",
     estado: "Estado",
     pendientes: "Pendientes",
@@ -72,6 +74,7 @@ export default function App() {
 
   const pestanas: { clave: Vista; texto: string }[] = [
     { clave: "entregas", texto: "Entregas" },
+    { clave: "alumnos", texto: "Alumnos" },
     { clave: "documentos", texto: "Documentos" },
     { clave: "estado", texto: "Estado" },
     { clave: "pendientes", texto: "Pendientes" },
@@ -127,6 +130,8 @@ export default function App() {
           <Entregas
             alAbrirFicha={(id, leida) => setFichaAbierta({ id, leida: leida ?? null })}
           />
+        ) : vista === "alumnos" ? (
+          <Alumnos />
         ) : vista === "documentos" ? (
           <Documentos alElegirSeccion={setAnclaEditando} />
         ) : vista === "estado" ? (

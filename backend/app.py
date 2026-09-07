@@ -22,7 +22,9 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
     from fastapi.responses import JSONResponse
 
     from backend.analisis import crear_proveedor
-    from backend.api import analisis, documentos, edicion, entregas, estado, informes
+    from backend.api import (
+        alumnos, analisis, documentos, edicion, entregas, estado, informes,
+    )
     from backend.configuracion import cargar
     from backend.empaquetado import raiz_de_recursos
     from backend.persistencia import crear_almacen
@@ -99,6 +101,7 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
     app.include_router(estado.router)
     app.include_router(entregas.router)
     app.include_router(analisis.router)
+    app.include_router(alumnos.router)
     app.include_router(informes.router)
 
     @app.get("/api/salud")

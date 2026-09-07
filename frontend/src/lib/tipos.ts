@@ -453,3 +453,28 @@ export interface PeticionRevision {
   motivo_modificacion_nota?: string | null
   sintesis_provisional?: string | null
 }
+
+
+// --- El alta de alumnos desde los Excel del docente -------------------------
+
+/** Las seis comunidades del documento de arquitectura. */
+export const COMUNIDADES = ["AND", "MAD", "CAN", "MUR", "ARA", "EXT"] as const
+
+export interface ListadoDisponible {
+  nombre: string
+  tamano_kb: number
+}
+
+export interface FilaPendienteExpuesta {
+  /** El número de fila del Excel, que es lo que él ve al abrirlo. Nunca un
+   * nombre: la correspondencia nombre-identificador no sale de su equipo. */
+  fila: number
+  motivo: string
+  detalle: string
+}
+
+export interface ResultadoDeImportacion {
+  nuevas: number
+  actualizadas: number
+  pendientes: FilaPendienteExpuesta[]
+}

@@ -56,3 +56,27 @@ def carpeta_de_trabajo() -> Path:
     if empaquetado():
         return Path(sys.executable).resolve().parent
     return _RAIZ_DEL_REPOSITORIO
+
+
+def config(nombre: str, raiz: Path) -> Path:
+    """Un fichero de `config/`, prefiriendo el del docente al del programa.
+
+    La mayoría de la configuración es del programa y viaja dentro: la
+    estructura de carpetas, las tarifas. Pero `centros.yaml` **no**: los
+    centros son suyos, cambian cuando abre uno nuevo, y no puede editarlos si
+    están dentro del ejecutable.
+
+    Empaquetado, se busca primero al lado del ejecutable y se cae al de
+    dentro si no está: el programa arranca siempre -con el catálogo que
+    traiga- y él puede poner el suyo encima sin esperar a una versión nueva.
+    Sin empaquetar, `raiz` manda y no hay sustitución que buscar.
+
+    Se descubrió importando un listado de verdad desde el ejecutable: las dos
+    filas se rechazaron por un catálogo de centros vacío que no había forma
+    de rellenar.
+    """
+    if empaquetado():
+        suyo = carpeta_de_trabajo() / "config" / nombre
+        if suyo.is_file():
+            return suyo
+    return raiz / "config" / nombre
