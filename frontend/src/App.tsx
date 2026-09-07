@@ -8,11 +8,13 @@ import { Editor } from "./paginas/Editor"
 import { Entregas } from "./paginas/Entregas"
 import { Estado } from "./paginas/Estado"
 import { Ficha } from "./paginas/Ficha"
+import { Informes } from "./paginas/Informes"
 import { Pendientes } from "./paginas/Pendientes"
 import { Revision } from "./paginas/Revision"
 import type { FichaDeLectura, ResultadoAnalisis } from "./lib/tipos"
 
-type Vista = "entregas" | "alumnos" | "documentos" | "estado" | "pendientes"
+type Vista =
+  | "entregas" | "alumnos" | "informes" | "documentos" | "estado" | "pendientes"
 
 export default function App() {
   const [vista, setVista] = useState<Vista>("entregas")
@@ -41,6 +43,7 @@ export default function App() {
   const nombreDeVista: Record<Vista, string> = {
     entregas: "Entregas",
     alumnos: "Alumnos",
+    informes: "Informes",
     documentos: "Documentos",
     estado: "Estado",
     pendientes: "Pendientes",
@@ -75,6 +78,7 @@ export default function App() {
   const pestanas: { clave: Vista; texto: string }[] = [
     { clave: "entregas", texto: "Entregas" },
     { clave: "alumnos", texto: "Alumnos" },
+    { clave: "informes", texto: "Informes" },
     { clave: "documentos", texto: "Documentos" },
     { clave: "estado", texto: "Estado" },
     { clave: "pendientes", texto: "Pendientes" },
@@ -132,6 +136,8 @@ export default function App() {
           />
         ) : vista === "alumnos" ? (
           <Alumnos />
+        ) : vista === "informes" ? (
+          <Informes />
         ) : vista === "documentos" ? (
           <Documentos alElegirSeccion={setAnclaEditando} />
         ) : vista === "estado" ? (

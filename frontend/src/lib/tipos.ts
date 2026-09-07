@@ -124,6 +124,12 @@ export interface ArchivoVisto {
 }
 
 export interface EntregaRegistrada {
+  /** DUPLICATE_EXACT o VERSION_CONFLICT, o `null` si entró sin incidencia. */
+  marca_admision?: string | null
+  /** VIGENTE, SUSTITUIDA o HISTORICA. */
+  estado_version?: string
+  /** Dónde quedó la copia normalizada, relativa a la raíz de expedientes. */
+  ruta_expediente?: string | null
   id: string
   codigo_alumno: string
   ciclo: string
@@ -460,6 +466,9 @@ export interface PeticionRevision {
 /** Las seis comunidades del documento de arquitectura. */
 export const COMUNIDADES = ["AND", "MAD", "CAN", "MUR", "ARA", "EXT"] as const
 
+/** Los tres ciclos, en el mismo vocabulario que `config/estructura_expedientes.yaml`. */
+export const CICLOS = ["MYP", "CIN", "AYF"] as const
+
 export interface ListadoDisponible {
   nombre: string
   tamano_kb: number
@@ -477,4 +486,70 @@ export interface ResultadoDeImportacion {
   nuevas: number
   actualizadas: number
   pendientes: FilaPendienteExpuesta[]
+}
+
+
+// --- El informe por centro (punto 7) ---------------------------------------
+
+export interface FiltroInformeCentro {
+  ccaa: string | null
+  centro: string | null
+  ciclo: string | null
+  curso: string | null
+  fase: string | null
+}
+
+export interface CoberturaDeFase {
+  fase: string
+  entregados: number
+  sin_entregar: number
+  /**
+   * Los identificadores de quien no ha entregado. `null` cuando el grupo es
+   * pequeño: por debajo de diez matriculados, una lista de códigos permite
+   * deducir de quién se habla a cualquiera que reciba el informe, y un
+   * recuento suelto no. Ver D-032.
+   */
+  sin_entregar_codigos: string[] | null
+}
+
+export interface Cobertura {
+  matriculados: number
+  bajas_o_traslados: number
+  por_fase: CoberturaDeFase[]
+  aviso_grupo_pequeno: string | null
+}
+
+export interface EstadoDelProceso {
+  por_estado: Record<string, number>
+}
+
+export interface DistribucionSemaforos {
+  propuestos: Record<string, number>
+  confirmados_por_docente: Record<string, number>
+  pendientes_de_confirmar: number
+}
+
+export interface InformeDeCoste {
+  modelos: Record<string, number>
+  tokens_entrada: number
+  tokens_salida: number
+  tokens_entrada_cacheados: number
+  coste_total_usd: number
+  coste_medio_analisis_principal_usd: number | null
+  coste_medio_verificacion_usd: number | null
+  coste_medio_reanalisis_usd: number | null
+  promedio_por_fase_usd: Record<string, number>
+  proyeccion_mensual_usd: number | null
+  proyeccion_anual_usd: number | null
+  ejecuciones_sin_coste_calculable: number
+  periodo_observado_dias: number | null
+  notas: string[]
+}
+
+export interface InformeCentro {
+  filtro: FiltroInformeCentro
+  cobertura: Cobertura
+  proceso: EstadoDelProceso
+  semaforos: DistribucionSemaforos
+  coste: InformeDeCoste
 }

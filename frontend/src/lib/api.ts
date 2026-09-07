@@ -2,7 +2,7 @@ import type {
   ArchivoVisto, CambioDeValor, Confirmacion, Documento, EntregaRegistrada,
   Entorno, EstadoGobernanza, FichaDeLectura, Pendiente, PeticionRevision,
   Propuesta, ResultadoAnalisis, Resultado, Seccion, CriterioDerivado,
-  ListadoDisponible, ResultadoDeImportacion,
+  ListadoDisponible, ResultadoDeImportacion, InformeCentro,
 } from "./tipos"
 
 const BASE = "/api"
@@ -72,6 +72,20 @@ export const api = {
   entorno: () => pedir<Entorno>("/entorno"),
 
   listados: () => pedir<ListadoDisponible[]>("/alumnos/listados"),
+
+  informeDeCentro: (filtros: Record<string, string>) => {
+    const partes = Object.entries(filtros).filter(([, v]) => v)
+    const consulta = new URLSearchParams(partes).toString()
+    return pedir<InformeCentro>(`/informes/centro${consulta ? `?${consulta}` : ""}`)
+  },
+
+  /**
+   * El docente elige qué versión de una fase vale. Las otras pasan a
+   * sustituidas; ninguna se elimina. Es lo que desbloquea el análisis de una
+   * entrega marcada con conflicto de versión.
+   */
+  elegirVersion: (id: string) =>
+    pedir<EntregaRegistrada>(`/entregas/${id}/version-elegida`, { method: "POST" }),
 
   importarListado: (datos: {
     nombre_archivo: string; ccaa_code: string; curso: string

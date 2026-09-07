@@ -66,6 +66,8 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
   const [ficha, setFicha] = useState<FichaDeLectura | null>(inicial ?? null)
   const [error, setError] = useState("")
   const [analizando, setAnalizando] = useState(false)
+  const [eligiendo, setEligiendo] = useState(false)
+  const [errorVersion, setErrorVersion] = useState("")
   // Solo para poder decir con qué motor se está analizando. Si falla, no se
   // avisa de nada: el análisis no depende de esto y un fallo aquí no debe
   // impedir corregir.
@@ -131,7 +133,14 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
   // cambiara. Una entrega ANALIZADO no vuelve a ofrecerlo: pedirlo dos
   // veces vuelve a llamar al motor y a costar dinero, y esta pantalla no
   // abre un camino para eso.
-  const puedeAnalizar = entrega.estado === "RECIBIDO" && !entrega.motivo_bloqueo
+  // Un conflicto de versión detiene el análisis hasta que el docente elija
+  // cuál vale (D-031). Sin este botón, esa entrega se quedaba muerta: el
+  // backend la bloqueaba correctamente y no había forma de desbloquearla
+  // desde la pantalla.
+  const hayConflictoDeVersion = entrega.marca_admision === "VERSION_CONFLICT"
+  const puedeAnalizar =
+    entrega.estado === "RECIBIDO" && !entrega.motivo_bloqueo &&
+    !hayConflictoDeVersion
   // ANALIZADO es el único estado con una revisión guardada que consultar:
   // RECIBIDO no la tiene todavía, y BLOQUEADO nunca llegó a analizarse.
   const puedeVerRevision = entrega.estado === "ANALIZADO"
@@ -139,6 +148,22 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
   // `confirmoDatosReales` solo llega a `true` cuando el docente pulsa el
   // botón de la pregunta de abajo, nunca por omisión: la primera llamada,
   // la del botón «Analizar», siempre sale sin confirmar.
+  async function elegirVersion() {
+    if (eligiendo) return
+    setEligiendo(true)
+    setErrorVersion("")
+    try {
+      const elegida = await api.elegirVersion(id)
+      // Se refresca la ficha entera con la entrega ya sin marca: así el
+      // botón de analizar aparece sin que haya que recargar la pantalla.
+      setFicha((antes) => (antes ? { ...antes, entrega: elegida } : antes))
+    } catch (fallo) {
+      setErrorVersion(fallo instanceof Error ? fallo.message : String(fallo))
+    } finally {
+      setEligiendo(false)
+    }
+  }
+
   async function analizar(confirmoDatosReales = false) {
     if (analizando) return
     setErrorAnalisis("")
@@ -198,6 +223,30 @@ export function Ficha({ id, inicial, alVolver, alAbrirRevision }: Props) {
       </p>
 
       <RailDeProceso estado={entrega.estado} />
+
+      {hayConflictoDeVersion && (
+        <div className="mb-10 max-w-lectura">
+          <p className="mb-4 text-[13px] senal">
+            Hay más de una versión de esta entrega y el análisis está detenido
+            hasta que elijas cuál vale. Analizar la que luego descartes cuesta
+            dinero y produce un informe que habría que tirar.
+          </p>
+          <p className="mb-4 text-[13px] text-gris">
+            Ninguna versión se elimina. La que no elijas queda guardada como
+            sustituida.
+          </p>
+          <button
+            onClick={() => void elegirVersion()}
+            disabled={eligiendo}
+            className="px-4 py-2 text-[13px] bg-tinta text-papel disabled:opacity-30"
+          >
+            {eligiendo ? "Guardando…" : "Esta es la versión que vale"}
+          </button>
+          {errorVersion && (
+            <p className="mt-3 text-[13px] text-tinta">{errorVersion}</p>
+          )}
+        </div>
+      )}
 
       {puedeAnalizar && (
         <div className="mb-10">

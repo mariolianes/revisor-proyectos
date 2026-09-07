@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { Ficha } from "./Ficha"
@@ -493,5 +494,67 @@ describe("Ficha", () => {
       expect(mensaje).toBeInTheDocument()
       expect(mensaje).not.toHaveClass("senal")
     })
+  })
+})
+
+describe("el conflicto de versión", () => {
+  const CON_CONFLICTO: FichaDeLectura = {
+    ...COMPLETA,
+    entrega: { ...COMPLETA.entrega, marca_admision: "VERSION_CONFLICT" },
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.entorno).mockResolvedValue({
+      hay_carpeta: true, carpeta: "/entregas", persistencia_duradera: true,
+      version_criterios: "v2026-2027", motor: "simulado", avisos: [],
+    })
+  })
+
+  it("no ofrece analizar mientras haya conflicto", async () => {
+    vi.mocked(api.ficha).mockResolvedValue(CON_CONFLICTO)
+
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+
+    expect(await screen.findByText(/el análisis está detenido/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Analizar" })).not.toBeInTheDocument()
+  })
+
+  it("dice que ninguna versión se elimina", async () => {
+    // Es la regla del docente -«nunca se eliminan»- y lo que le permite
+    // elegir sin miedo a perder la otra.
+    vi.mocked(api.ficha).mockResolvedValue(CON_CONFLICTO)
+
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+
+    expect(
+      await screen.findByText(/Ninguna versión se elimina/)
+    ).toBeInTheDocument()
+  })
+
+  it("al elegir la versión, vuelve a ofrecer analizar sin recargar", async () => {
+    vi.mocked(api.ficha).mockResolvedValue(CON_CONFLICTO)
+    vi.mocked(api.elegirVersion).mockResolvedValue({
+      ...COMPLETA.entrega, marca_admision: null, estado_version: "VIGENTE",
+    })
+
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Esta es la versión que vale/ })
+    )
+
+    expect(api.elegirVersion).toHaveBeenCalledWith("id-1")
+    expect(await screen.findByRole("button", { name: "Analizar" })).toBeInTheDocument()
+  })
+
+  it("un fallo al elegir se enseña con su mensaje", async () => {
+    vi.mocked(api.ficha).mockResolvedValue(CON_CONFLICTO)
+    vi.mocked(api.elegirVersion).mockRejectedValue(new Error("No existe esa entrega."))
+
+    render(<Ficha id="id-1" alVolver={vi.fn()} alAbrirRevision={vi.fn()} />)
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Esta es la versión que vale/ })
+    )
+
+    expect(await screen.findByText("No existe esa entrega.")).toBeInTheDocument()
   })
 })
