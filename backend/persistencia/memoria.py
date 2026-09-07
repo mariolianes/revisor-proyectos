@@ -27,6 +27,7 @@ from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     Correccion,
+    SemaforoDeEntrega,
     validar_textos_acotados,
 )
 from backend.persistencia.modelos import (
@@ -234,16 +235,37 @@ class AlmacenEnMemoria:
     def registrar_consumo(self, registro: RegistroDeConsumo) -> None:
         """Añade el registro a la lista de esta sesión. No es duradero -se
         pierde al cerrar, igual que el resto de este almacén (`es_duradero`
-        es `False`)-."""
-        self._consumos.append(registro)
+        es `False`)-.
+
+        `id` y `creada_en` los asigna este método, nunca quien llama -mismo
+        criterio que `registrar` con `EntregaRegistrada.id` y
+        `recibida_en`-: un registro que ya trajera los suyos propios se
+        sustituye, para que `consumos()` devuelva siempre datos que asignó
+        el almacén y no el que los pidió guardar.
+        """
+        self._consumos.append(
+            registro.model_copy(update={
+                "id": str(uuid.uuid4()), "creada_en": datetime.now(),
+            })
+        )
 
     def consumos(self) -> list[RegistroDeConsumo]:
-        """Lo registrado en esta sesión. No forma parte del `Protocol`
-        `Almacen` -solo lo usan las pruebas, para comprobar qué se ha
-        guardado-; `AlmacenSupabase` no lo implementa porque leer el
-        histórico completo desde la base de datos es un consumo aparte que
-        nadie ha pedido todavía."""
+        """Lo registrado en esta sesión. Ver el docstring de `Almacen.
+        consumos` (`backend/persistencia/modelos.py`) para por qué ahora es
+        obligatorio: hasta la tarea del informe por centro, este método
+        existía aquí y no en `AlmacenSupabase`, y este mismo docstring decía
+        que nadie lo había pedido -ya no es cierto-."""
         return list(self._consumos)
+
+    def listar_semaforos(self) -> list[SemaforoDeEntrega]:
+        return [
+            SemaforoDeEntrega(
+                entrega_id=entrega_id,
+                semaforo_propuesto=correccion.informe.semaforo_propuesto,
+                semaforo_aprobado=correccion.informe.semaforo_final_docente,
+            )
+            for entrega_id, correccion in self._correcciones.items()
+        ]
 
     def dar_de_alta_alumno(self, alumno: AlumnoNuevo) -> AlumnoRegistrado:
         validar_alumno(alumno)

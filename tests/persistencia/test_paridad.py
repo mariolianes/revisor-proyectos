@@ -32,6 +32,7 @@ import pytest
 from backend.analisis.contrato import Evidencia
 from backend.analisis.verificacion import ValoracionVerificada
 from backend.persistencia.alumnos import AlumnoNuevo, AlumnoRegistrado
+from backend.persistencia.consumo import RegistroDeConsumo
 from backend.persistencia.memoria import AlmacenEnMemoria
 from backend.persistencia.modelos import EntregaNueva, EntregaRegistrada
 from backend.persistencia.supabase import (
@@ -1121,3 +1122,154 @@ def test_un_detalle_con_prosa_larga_se_rechaza() -> None:
 
     with pytest.raises(ValidationError, match="nunca texto del trabajo"):
         Anotacion(accion=ENTREGA_REGISTRADA, detalle={"texto": "x" * 1200})
+
+
+# --- consumos / listar_semaforos --------------------------------------------
+#
+# Punto 7 del orden de implantación: el informe por centro necesita leer de
+# vuelta lo que ya escriben `registrar_consumo` y `guardar_correccion`.
+# `consumos()` no existía en `AlmacenSupabase` hasta esta tarea -memoria lo
+# tenía, sin estar en el `Protocol`, con un comentario que decía que nadie lo
+# había pedido todavía-; `listar_semaforos()` es enteramente nuevo en los
+# dos. Ninguna de las dos lecturas tenía test de paridad, así que se añaden
+# aquí.
+
+
+def _registro_de_consumo(**cambios) -> RegistroDeConsumo:
+    datos = dict(
+        entrega_id="se-sustituye-antes-de-usar",
+        modelo="openai:gpt-4.1",
+        tokens_entrada=10290,
+        tokens_salida=2054,
+        tokens_entrada_cacheados=0,
+        coste_estimado_usd=0.037012,
+        tarifa_aplicada="gpt-4.1@2026-08-30",
+        duracion_ms=4200,
+        estado="OK",
+        intentos=1,
+        causa_error=None,
+        paginas=22,
+        caracteres_texto=32000,
+        reutilizado=False,
+    )
+    datos.update(cambios)
+    return RegistroDeConsumo(**datos)
+
+
+def _sin_id_ni_reloj(registro: RegistroDeConsumo) -> dict:
+    """Lo comparable de un `RegistroDeConsumo` leído: todo menos `id`,
+    `creada_en` y `entrega_id`. Los dos primeros los asigna cada almacén
+    por su cuenta -mismo motivo que `_sin_id` para `Correccion`, y que la
+    nota del docstring del módulo sobre `recibida_en`-; `entrega_id` es,
+    aquí, el id de una `EntregaRegistrada` que también genera cada almacén
+    por su cuenta (el mismo uuid4-en-memoria-o-la-base-de-datos-en-Supabase
+    de siempre), así que tampoco puede coincidir entre los dos aunque se
+    refiera «a la misma» entrega dentro de cada guión."""
+    return registro.model_dump(
+        mode="json", exclude={"id", "creada_en", "entrega_id"}
+    )
+
+
+def test_consumos_vacio_es_lista_vacia_en_los_dos(dos_almacenes) -> None:
+    memoria, supabase = dos_almacenes
+    assert memoria.consumos() == []
+    assert supabase.consumos() == []
+
+
+def test_registrar_consumo_y_releerlo_da_lo_mismo_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.registrar_consumo(_registro_de_consumo(entrega_id=entrega.id))
+        guardados = almacen.consumos()
+        assert len(guardados) == 1
+        # El propio almacén asigna `id` y `creada_en`: ninguno de los dos
+        # se queda en blanco, aunque quien registró el consumo no los trajo.
+        assert guardados[0].id is not None
+        assert guardados[0].creada_en is not None
+        assert guardados[0].entrega_id == entrega.id
+        return _sin_id_ni_reloj(guardados[0])
+
+    memoria, supabase = dos_almacenes
+    resultado_memoria = guion(memoria)
+    resultado_supabase = guion(supabase)
+
+    assert resultado_memoria == resultado_supabase
+    assert resultado_memoria["tokens_entrada"] == 10290
+    assert resultado_memoria["coste_estimado_usd"] == 0.037012
+
+
+def test_varias_ejecuciones_de_la_misma_entrega_se_conservan_todas_en_los_dos(
+    dos_almacenes,
+) -> None:
+    """Un reanálisis no tapa el gasto del intento anterior: los dos se
+    conservan, porque el coste ya se produjo aunque el resultado se
+    sustituya (`guardar_correccion` sí sustituye; `registrar_consumo`,
+    nunca)."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.registrar_consumo(_registro_de_consumo(
+            entrega_id=entrega.id, estado="ERROR", causa_error="sin red",
+            coste_estimado_usd=None, tarifa_aplicada=None,
+        ))
+        almacen.registrar_consumo(_registro_de_consumo(entrega_id=entrega.id))
+        return sorted(
+            (_sin_id_ni_reloj(r) for r in almacen.consumos()), key=str,
+        )
+
+    memoria, supabase = dos_almacenes
+    resultado_memoria = guion(memoria)
+    resultado_supabase = guion(supabase)
+
+    assert resultado_memoria == resultado_supabase
+    assert len(resultado_memoria) == 2
+
+
+def test_listar_semaforos_vacio_es_lista_vacia_en_los_dos(dos_almacenes) -> None:
+    memoria, supabase = dos_almacenes
+    assert memoria.listar_semaforos() == []
+    assert supabase.listar_semaforos() == []
+
+
+def test_listar_semaforos_trae_propuesto_y_aprobado_igual_en_los_dos(
+    dos_almacenes,
+) -> None:
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(
+            entrega.id, _informe(semaforo_propuesto="ROJO"), None, "simulado",
+        )
+        semaforos = almacen.listar_semaforos()
+        assert len(semaforos) == 1
+        assert semaforos[0].entrega_id == entrega.id
+        return (semaforos[0].semaforo_propuesto, semaforos[0].semaforo_aprobado)
+
+    memoria, supabase = dos_almacenes
+    resultado_memoria = guion(memoria)
+    resultado_supabase = guion(supabase)
+
+    assert resultado_memoria == resultado_supabase == ("ROJO", None)
+
+
+def test_listar_semaforos_no_confunde_sin_revisar_con_ningun_color(
+    dos_almacenes,
+) -> None:
+    """`semaforo_aprobado` es `None` mientras el docente no confirme
+    (§13): un informe agregado que lo tratara como un color más -o que lo
+    descartara en silencio- contaría mal cuántas entregas siguen
+    pendientes de que él las revise."""
+    def guion(almacen):
+        entrega = almacen.registrar(_entrega("E2"))
+        almacen.guardar_correccion(
+            entrega.id,
+            _informe(semaforo_propuesto="AMBAR", semaforo_final_docente="VERDE"),
+            None, "simulado",
+        )
+        semaforo = almacen.listar_semaforos()[0]
+        return (semaforo.semaforo_propuesto, semaforo.semaforo_aprobado)
+
+    memoria, supabase = dos_almacenes
+
+    assert guion(memoria) == ("AMBAR", "VERDE")
+    assert guion(supabase) == ("AMBAR", "VERDE")

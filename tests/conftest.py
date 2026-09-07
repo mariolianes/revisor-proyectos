@@ -739,6 +739,14 @@ class PostgrestSimulado:
             # inicial desde el primer día y aquí faltaba, así que ninguna
             # prueba podía ver que nadie lo escribía.
             "registro": [],
+            # El registro de consumo (§13, punto 7 del orden de
+            # implantación): hasta ahora este servidor de mentira solo veía
+            # la escritura de `ejecucion_motor` -con un mock hecho a mano en
+            # `tests/persistencia/test_consumo.py`-, nunca la lectura. Sin
+            # esta tabla aquí, `AlmacenSupabase.consumos()` respondería 404
+            # en cualquier prueba de paridad, como cualquier tabla que este
+            # servidor no reconoce.
+            "ejecucion_motor": [],
         }
         self.peticiones: list[str] = []
 
@@ -904,6 +912,13 @@ class PostgrestSimulado:
             fila = {
                 "id": str(_uuid.uuid4()),
                 "recibida_en": _datetime.now().isoformat(),
+                # `default now()` de `ejecucion_motor.creada_en`
+                # (`ejecucion_motor.creada_en`): igual que `recibida_en`, se
+                # aplica sin condicionar por tabla -una clave que la tabla no
+                # tiene es inofensiva, la ignora quien lee-, para no tener
+                # que enseñarle a este servidor de mentira qué tablas llevan
+                # qué columna con reloj.
+                "creada_en": _datetime.now().isoformat(),
                 **VALORES_POR_OMISION.get(tabla, {}),
                 **datos,
             }

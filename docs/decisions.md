@@ -1569,3 +1569,132 @@ su huella y su motivo. Las filas de esa sonda se retiraron después.
 `backend/persistencia/modelos.py` (el `Protocol` gana `anotar` y
 `listar_registro`), `tests/conftest.py` (el simulador conoce la tabla) y
 `tests/persistencia/test_paridad.py`.
+
+## D-031 · El informe por centro: sin nombre por diseño, y un umbral que oculta la lista nominal en un grupo pequeño
+
+**Fecha:** 2026-09-07 · **Estado:** Provisional (el umbral, a confirmar por
+Marcos) · **Responsable:** Colaborador técnico
+
+Punto 7 del orden de implantación: `03_INFORMES_CENTROS` — «resultados por
+evaluación, comunidad, centro y ciclo». `backend/servicios/informe_centro.py`
+compone, para una comunidad, un centro, un ciclo, un curso y una fase
+-cualquier combinación, todos opcionales-, la cobertura de matrícula, el
+estado del proceso, la distribución de semáforos y el coste, y
+`backend/api/informes.py` lo sirve en `GET /api/informes/centro`.
+
+**El coste, punto por punto de `decisiones#13-estabilidad`.** El docente
+pidió, antes de concluir que el coste no es un problema: «modelo exacto,
+tokens, coste por análisis principal, coste por verificación, coste de un
+segundo análisis, promedio por fase y proyección mensual y anual». Dos de
+esas siete cosas no tienen hoy una fuente de datos limpia, y se devuelven
+como `None` explícito -nunca una cifra inventada, la misma regla que ya
+sigue `backend/analisis/precios.py` cuando un modelo no tiene tarifa-:
+
+- **Coste por verificación**, siempre `None`: la verificación de hoy
+  (`backend/analisis/verificacion.py`) es código determinista -siete
+  defensas contra el motor, ninguna es una llamada al motor-, así que no
+  genera ningún gasto que `ejecucion_motor` pueda registrar.
+- **Coste de un segundo análisis** se aproxima con el promedio de toda
+  ejecución que no es la primera guardada para su entrega, ordenadas por
+  `creada_en` -un reanálisis, o un segundo intento tras un fallo-: es lo que
+  el sistema puede distinguir hoy. No es necesariamente lo mismo que «un
+  segundo análisis completo para comparar con el primero» de la estrategia
+  acordada, que todavía no es una operación propia del sistema -no hay un
+  botón «vuelve a analizar y compara»-, y el informe lo dice con esas
+  palabras en `InformeDeCoste.notas`, no en silencio.
+
+La proyección mensual y anual es una extrapolación lineal del gasto
+observado en el propio ámbito filtrado -coste total con fecha conocida entre
+el número de días que separan la primera y la última ejecución-, nunca del
+calendario oficial: `programacion_didactica` sigue en
+`docs/PENDIENTE_OFICIAL.md`, así que no hay fechas de entrega ni número de
+entregas restantes con las que construir una proyección de capacidad. Con
+menos de dos ejecuciones con coste calculable en fechas distintas, la
+proyección es `None` con una nota que lo explica, no un cero que se leería
+como «no cuesta nada».
+
+**Modelo exacto, tokens, coste por análisis principal y promedio por fase**
+sí tienen una fuente limpia y se leen tal cual de `ejecucion_motor`, ahora
+accesible entero a través de `Almacen.consumos()` -antes solo existía en
+`AlmacenEnMemoria`, sin estar en el `Protocol`, con un comentario que decía
+que nadie había pedido leerlo de vuelta desde Supabase: ese «nadie» ya no es
+cierto-. `Almacen` gana también `listar_semaforos()`, una lectura lean de
+`correccion.semaforo_propuesto`/`semaforo_aprobado` sin `informe` ni
+`devolucion`, para que un recuento agregado no tenga que pedir cada
+corrección entera -con sus citas- entrega por entrega. Las dos son lecturas
+nuevas, sin equivalente de escritura que cambie: `registrar_consumo` y
+`guardar_correccion` siguen igual.
+
+**Cómo se ve un listado de quién no ha entregado, si la base de datos no
+sabe nombres.** Es la misma pregunta que ya resolvió D-025, y la misma
+respuesta: `Cobertura.por_fase[].sin_entregar_codigos` es una lista de
+`student_id`, nunca de nombres -este módulo no recibe `ListadoLocal` como
+dependencia, así que no hay ningún camino por el que un nombre pudiera
+llegar hasta aquí, ni siquiera por accidente-. Si Marcos necesita nombres
+para escribir un correo, los resuelve en su equipo después de leer el
+informe, con `ListadoLocal.nombre_de`, nunca al revés.
+
+**Lo que D-025 no llegó a plantear: un grupo pequeño identifica sin
+nombre.** Si un ciclo tiene tres matriculados y el informe dice que uno está
+en rojo, Marcos sabe quién es -es su trabajo, y el sistema no se lo puede ni
+se lo debe ocultar a él-, pero cualquiera que reciba este informe después de
+él también podría deducirlo, sin que haga falta ningún nombre: el propio
+`student_id`, en una lista de tres, es la clave que permite señalar cuál de
+los tres es. Por debajo de `UMBRAL_GRUPO_PEQUENO` (10) alumnos
+matriculados-activos en el ámbito filtrado, `sin_entregar_codigos` se
+sustituye por `None` y `Cobertura.aviso_grupo_pequeno` explica por qué, en
+el mismo texto que lee Marcos.
+
+**Lo que no se oculta, ni siquiera en un grupo de tres.** Los recuentos
+-cuántos matriculados, cuántos han entregado, la distribución de semáforos,
+el coste- se muestran siempre, con cualquier tamaño de grupo. Un número
+solo, sin ningún identificador que lo acompañe, no permite señalar a una
+persona concreta del mismo modo que sí lo permite una lista con un
+`student_id` propio de cada una; y sin esos recuentos, un centro pequeño
+quedaría invisible para el propio mecanismo que existe para vigilar que
+nadie se quede sin corregir -exactamente lo contrario de lo que pidió el
+docente-. La frontera se traza en la lista nominal, no en la cifra.
+
+**`UMBRAL_GRUPO_PEQUENO = 10` es una propuesta de este módulo, no un dato
+del Documento Maestro ni una cifra que haya fijado el docente.** No va a
+`docs/PENDIENTE_OFICIAL.md` porque no es un criterio de corrección -no
+decide nada sobre el trabajo de un alumno-, es una salvaguarda de
+publicación de este informe, de la misma naturaleza que `LIMITE_DE_
+OBSERVACION` o los ±0,5 cm de tolerancia de márgenes: una cifra que alguien
+tuvo que elegir para que el mecanismo funcionara, y que se documenta como lo
+que es -una elección, no un hecho- para que Marcos la confirme o la ajuste.
+Diez es un punto de partida razonable para un umbral de confidencialidad
+estadística sobre grupos de un aula, no una cifra derivada de nada más
+preciso.
+
+**Ninguna migración.** Todo lo que este informe necesita ya existe tras el
+punto 2 (registro maestro de alumnos: `alumno.ccaa_code`, `centro_code`,
+`ciclo_code`, `curso`, `estado_matricula`) y el punto sobre el registro de
+consumo (`ejecucion_motor`, `correccion.semaforo_propuesto`/`semaforo_
+aprobado`). Se comprobó expresamente antes de escribir código: no hace
+falta ningún fichero nuevo en `supabase/migrations/`.
+
+**Roto a propósito, para comprobar que algo se entera:** un `+ 1` colado en
+el recuento de matriculados (`tests/servicios/test_informe_centro.py::
+test_mutacion_un_alumno_de_mas_en_matriculados_rompe_el_recuento`, que deja
+constancia de que el test de cobertura normal distingue el recuento real del
+mutado); un nombre en vez de un `student_id` intentando colarse en
+`AlumnoNuevo` (`test_ningun_codigo_de_alumno_es_un_nombre_de_persona`, que
+lo ve rechazado por `extra="forbid"` antes de que exista ocasión de
+guardarlo); y un `id`/`creada_en` mandados como `null` explícito en
+`registrar_consumo`, que sustituirían silenciosamente el `default` de
+Postgres por nada (`tests/persistencia/test_consumo.py::
+test_supabase_no_manda_id_ni_creada_en_como_nulos`).
+
+**Arrastra:** `backend/servicios/informe_centro.py` (nuevo),
+`backend/api/informes.py` (nuevo), `backend/app.py` (registra el router),
+`backend/persistencia/consumo.py` (`id`, `creada_en`,
+`CAMPOS_QUE_ASIGNA_EL_ALMACEN`), `backend/persistencia/correccion.py`
+(`SemaforoDeEntrega`, nuevo), `backend/persistencia/modelos.py` (el
+`Protocol` `Almacen` gana `consumos` y `listar_semaforos`),
+`backend/persistencia/memoria.py`, `backend/persistencia/supabase.py`,
+`tests/conftest.py` (el simulador conoce `ejecucion_motor` y aplica
+`creada_en` como `now()` genérico, igual que ya hacía con `recibida_en`),
+`tests/persistencia/test_paridad.py`, `tests/persistencia/test_consumo.py`,
+`tests/servicios/test_informe_centro.py` (nuevo),
+`tests/backend/test_api_informes.py` (nuevo).

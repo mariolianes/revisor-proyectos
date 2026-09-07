@@ -26,7 +26,8 @@ if TYPE_CHECKING:
     # cerraría un ciclo, porque `salidas/informe.py` importa
     # `EntregaRegistrada` de este mismo módulo.
     from backend.persistencia.alumnos import AlumnoNuevo, AlumnoRegistrado
-    from backend.persistencia.correccion import Correccion
+    from backend.persistencia.consumo import RegistroDeConsumo
+    from backend.persistencia.correccion import Correccion, SemaforoDeEntrega
     from backend.salidas.borrador import Devolucion
     from backend.salidas.informe import Informe
 
@@ -421,6 +422,55 @@ class Almacen(Protocol):
         `backend.servicios.importacion_alumnos` necesita para distinguir una
         reimportación del mismo curso -actualiza sin más- de un posible
         repetidor de un curso anterior -se detiene y lo pregunta, D-025-.
+        """
+        ...
+
+    def consumos(self) -> list[RegistroDeConsumo]:
+        """Todo lo registrado en `ejecucion_motor`, sin filtrar. Punto 7 del
+        orden de implantación: el informe por centro necesita poder leer
+        de vuelta lo que costó cada ejecución, no solo escribirlo.
+
+        Hasta esta tarea existía en `AlmacenEnMemoria` -bajo el nombre
+        `consumos`- pero no en el `Protocol`, con este comentario en su
+        docstring: «`AlmacenSupabase` no lo implementa porque leer el
+        histórico completo desde la base de datos es un consumo aparte que
+        nadie ha pedido todavía». El §13 de `decisiones#13-estabilidad` lo
+        pide expresamente -modelo exacto, tokens, coste por fase,
+        proyección-, así que ese «nadie» ya no es cierto: las dos
+        implementaciones existen y este método pasa a ser obligatorio.
+
+        `registrar_consumo`, en cambio, sigue siendo una capacidad opcional
+        -`backend/servicios/analisis_de_entrega.py` la busca con `getattr`
+        antes de llamarla, para no obligar a los dobles de prueba
+        existentes a aprender un método nuevo-. No hay el mismo motivo para
+        tratar la lectura como opcional: nada llama a `consumos()` en el
+        camino caliente de un análisis, solo un informe que se pide aparte,
+        así que exigirla no arriesga tumbar ningún flujo existente.
+
+        Cada fila trae `id` y `creada_en`, que `registrar_consumo` nunca
+        recibe del llamador -los asigna el propio almacén al guardar, el uno
+        con `uuid4()` en memoria y `gen_random_uuid()` en Supabase, el otro
+        con el reloj y con `now()`, respectivamente-. Sin orden garantizado:
+        quien necesite las ejecuciones de una entrega en el orden en que
+        ocurrieron -para distinguir el análisis principal de un reanálisis,
+        por ejemplo- las ordena por `creada_en` después de leerlas.
+        """
+        ...
+
+    def listar_semaforos(self) -> list[SemaforoDeEntrega]:
+        """El semáforo propuesto y el confirmado por el docente de cada
+        entrega con corrección guardada, sin el resto de `Correccion`.
+
+        Existe porque un informe agregado -cuántas entregas hay en cada
+        color, en un centro o un ciclo- no necesita el informe completo de
+        cada una, con sus citas y su prosa: solo dos columnas por fila. Pedir
+        `correccion_de` entrega por entrega para componer ese recuento
+        haría una petición a Supabase por cada entrega del ámbito; este
+        método hace una sola, sobre las dos columnas que hacen falta
+        (`correccion.semaforo_propuesto`, `correccion.semaforo_aprobado`),
+        sin tocar ni transferir la columna `informe` -que si acaso lleva
+        alguna cita larga, es exactamente el dato que D-001 no quiere ver
+        salir sin necesidad-.
         """
         ...
 

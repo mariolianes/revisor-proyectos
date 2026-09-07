@@ -31,10 +31,11 @@ from backend.persistencia.alumnos import (
     generar_student_id,
     validar_alumno,
 )
-from backend.persistencia.consumo import RegistroDeConsumo
+from backend.persistencia.consumo import CAMPOS_QUE_ASIGNA_EL_ALMACEN, RegistroDeConsumo
 from backend.persistencia.correccion import (
     LIMITE_DE_OBSERVACION,
     Correccion,
+    SemaforoDeEntrega,
     validar_textos_acotados,
 )
 from backend.persistencia.modelos import (
@@ -667,8 +668,79 @@ class AlmacenSupabase:
         `backend/servicios/analisis_de_entrega.py`, que la trata como
         telemetría best-effort y no deja que un fallo aquí tumbe un análisis
         que sí se completó-.
+
+        `id` y `creada_en` se excluyen del cuerpo -`exclude=CAMPOS_QUE_
+        ASIGNA_EL_ALMACEN`-, nunca se mandan como `null`: la columna tiene
+        `default gen_random_uuid()` y `default now()` respectivamente, y un
+        `null` explícito sobre una columna con `default` la sustituye por
+        `null` en vez de dejar que Postgres aplique el suyo. `registro` los
+        trae a `None` siempre que llega desde un análisis real -nadie los
+        rellena antes de guardar-, así que en la práctica esto nunca
+        descarta un valor que alguien quisiera de verdad; es la misma
+        garantía que ya cerró este mismo problema en otras escrituras del
+        esquema, ahora explícita aquí.
         """
-        self._pedir("POST", "ejecucion_motor", json=registro.model_dump(mode="json"))
+        self._pedir("POST", "ejecucion_motor", json=registro.model_dump(
+            mode="json", exclude=set(CAMPOS_QUE_ASIGNA_EL_ALMACEN),
+        ))
+
+    def consumos(self) -> list[RegistroDeConsumo]:
+        """Todo `ejecucion_motor`, en el orden en que se creó.
+
+        Ver el docstring de `Almacen.consumos`
+        (`backend/persistencia/modelos.py`) para por qué este método existe
+        ahora y no solo en `AlmacenEnMemoria`.
+
+        Se leen los campos uno a uno -no `RegistroDeConsumo(**fila)`-
+        porque el modelo declara `extra="forbid"`: una fila con alguna
+        columna que el modelo no conoce tumbaría la lectura entera en vez
+        de ignorarla. `RegistroDeConsumo` acepta explícitamente `**fila`
+        cuando la fila ya viene filtrada a las columnas que declara este
+        `select`; aquí se pide `select=*`, así que la fila puede traer
+        alguna clave de más el día que la tabla gane una columna que este
+        módulo no lea todavía.
+        """
+        filas = self._pedir("GET", "ejecucion_motor", parametros={
+            "select": "*", "order": "creada_en.asc",
+        })
+        return [
+            RegistroDeConsumo(
+                id=fila.get("id"),
+                creada_en=fila.get("creada_en"),
+                entrega_id=fila["entrega_id"],
+                modelo=fila["modelo"],
+                tokens_entrada=fila.get("tokens_entrada"),
+                tokens_salida=fila.get("tokens_salida"),
+                tokens_entrada_cacheados=fila.get("tokens_entrada_cacheados"),
+                coste_estimado_usd=fila.get("coste_estimado_usd"),
+                tarifa_aplicada=fila.get("tarifa_aplicada"),
+                duracion_ms=fila["duracion_ms"],
+                estado=fila["estado"],
+                intentos=fila["intentos"],
+                causa_error=fila.get("causa_error"),
+                paginas=fila.get("paginas"),
+                caracteres_texto=fila.get("caracteres_texto"),
+                reutilizado=fila.get("reutilizado", False),
+            )
+            for fila in filas
+        ]
+
+    def listar_semaforos(self) -> list[SemaforoDeEntrega]:
+        """Solo `entrega_id`, `semaforo_propuesto` y `semaforo_aprobado` de
+        `correccion` -nunca `informe` ni `devolucion`-. Ver el docstring de
+        `Almacen.listar_semaforos` (`backend/persistencia/modelos.py`).
+        """
+        filas = self._pedir("GET", "correccion", parametros={
+            "select": "entrega_id,semaforo_propuesto,semaforo_aprobado",
+        })
+        return [
+            SemaforoDeEntrega(
+                entrega_id=fila["entrega_id"],
+                semaforo_propuesto=fila["semaforo_propuesto"],
+                semaforo_aprobado=fila.get("semaforo_aprobado"),
+            )
+            for fila in filas
+        ]
 
     def _componer_alumno(self, fila: dict) -> AlumnoRegistrado:
         """Una fila de `alumno` tal como la usa el registro maestro.
