@@ -47,9 +47,14 @@ ESTADO_INICIAL = "RECIBIDO"
 # Se enumera aquí y no en cada consumidor para que una marca inventada no
 # parta el histórico en dos vocabularios, igual que con las acciones del
 # registro de auditoría.
-MARCAS_DE_ADMISION: tuple[str, ...] = ("DUPLICATE_EXACT", "VERSION_CONFLICT")
-ESTADOS_DE_VERSION: tuple[str, ...] = ("VIGENTE", "SUSTITUIDA", "HISTORICA")
-ESTADO_DE_VERSION_INICIAL = "VIGENTE"
+DUPLICADO_EXACTO = "DUPLICATE_EXACT"
+CONFLICTO_DE_VERSION = "VERSION_CONFLICT"
+MARCAS_DE_ADMISION: tuple[str, ...] = (DUPLICADO_EXACTO, CONFLICTO_DE_VERSION)
+
+VIGENTE = "VIGENTE"
+SUSTITUIDA = "SUSTITUIDA"
+ESTADOS_DE_VERSION: tuple[str, ...] = (VIGENTE, SUSTITUIDA, "HISTORICA")
+ESTADO_DE_VERSION_INICIAL = VIGENTE
 BLOQUEADO = "BLOQUEADO"
 
 
@@ -305,6 +310,17 @@ class Almacen(Protocol):
     def registrar(self, entrega: EntregaNueva) -> EntregaRegistrada: ...
 
     def listar(self) -> list[EntregaRegistrada]: ...
+
+    def elegir_version(self, identificador: str) -> "EntregaRegistrada | None":
+        """El docente elige qué versión de una fase vale.
+
+        Las demás versiones de ese alumno y esa fase pasan a SUSTITUIDA, y
+        ninguna se elimina: `decisiones#7-versiones` lo dice expresamente.
+        Borra la marca de conflicto en todas -la marca ES la decisión
+        pendiente, y ya está tomada-, que es lo que vuelve a permitir
+        analizar. Devuelve `None` si no existe esa entrega.
+        """
+        ...
 
     def anotar(self, anotacion) -> None:
         """Escribe una línea en el registro de auditoría del §19.1.

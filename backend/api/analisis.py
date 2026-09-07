@@ -151,6 +151,7 @@ from backend.salidas.informe import (
     semaforo_por_valoraciones,
 )
 from backend.salidas.seleccion import SeleccionDePrioridades
+from backend.persistencia.modelos import CONFLICTO_DE_VERSION
 from backend.servicios.analisis_de_entrega import InformeSinBorrador, analizar_entrega
 from tools.calibrar import proteccion_datos_pendiente
 
@@ -565,6 +566,23 @@ def analizar(
         raise HTTPException(
             status_code=409, detail="No hay carpeta de entregas configurada."
         )
+    # El §7 del docente, literal: «marcar VERSION_CONFLICT y detener el
+    # análisis nuevo hasta que Marcos elija la versión válida». Va aquí,
+    # antes del candado y antes de llamar al motor, porque es una decisión
+    # sobre si se puede analizar en absoluto -y porque analizar la versión
+    # equivocada cuesta dinero y produce un informe que habría que tirar-.
+    #
+    # La marca ES la decisión pendiente: `elegir_version` la borra al
+    # resolverla, así que no hace falta un segundo campo que diga si ya se
+    # eligió. Ver `decisiones#7-versiones` y D-031.
+    if entrega.marca_admision == CONFLICTO_DE_VERSION:
+        raise HTTPException(status_code=409, detail=(
+            f"Hay más de una versión de la {entrega.fase} de este alumno y "
+            "todavía no has elegido cuál vale. Elígela antes de analizar: "
+            "analizar la que no es cuesta dinero y produce un informe que "
+            "habría que descartar. Ninguna versión se elimina; la que no "
+            "elijas queda como sustituida."
+        ))
 
     # La misma guarda que ya protege al desarrollador en
     # `tools/calibrar.py` -reutilizando la misma función,

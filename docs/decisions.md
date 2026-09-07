@@ -1569,3 +1569,34 @@ su huella y su motivo. Las filas de esa sonda se retiraron después.
 `backend/persistencia/modelos.py` (el `Protocol` gana `anotar` y
 `listar_registro`), `tests/conftest.py` (el simulador conoce la tabla) y
 `tests/persistencia/test_paridad.py`.
+
+## D-031 · Un conflicto de versión detiene el análisis, y la marca es la decisión pendiente
+
+**Fecha:** 2026-09-07 · **Estado:** Firme · **Responsable:** Marcos
+
+`decisiones#7-versiones`, literal: «marcar VERSION_CONFLICT y detener el
+análisis nuevo hasta que Marcos elija la versión válida».
+
+**Dónde va la guarda, y por qué ahí.** Antes del candado y antes de llamar al
+motor. No es una validación más: analizar la versión que luego se descarta
+**cuesta dinero y produce un informe que hay que tirar**. Un test comprueba
+que el proveedor no llega a recibir ninguna llamada.
+
+**La marca ES la decisión pendiente.** No hace falta un segundo campo que
+diga si ya se eligió: `elegir_version` borra la marca al resolver, y eso es
+lo que vuelve a permitir analizar. Un campo aparte podría desincronizarse de
+la marca y dejar una entrega bloqueada sin que nada explicara por qué.
+
+**Elegir no borra nada.** Las otras versiones pasan a SUSTITUIDA. Él lo dijo
+con todas las letras -«nunca se eliminan»- y por eso la operación no tiene
+ningún DELETE, en ninguno de los dos almacenes.
+
+**Es una decisión suya, no del sistema.** Por eso es una operación explícita
+-`POST /api/entregas/{id}/version-elegida`- y no algo que se resuelva solo al
+detectar el conflicto: elegir entre dos entregas de un alumno es exactamente
+lo que el §13 le reserva.
+
+**Arrastra:** `backend/api/analisis.py` (la guarda),
+`backend/api/entregas.py` (el endpoint), `backend/persistencia/memoria.py`,
+`backend/persistencia/supabase.py`, `backend/persistencia/modelos.py`,
+`tests/persistencia/test_paridad.py`, `tests/backend/test_api_analisis.py`.

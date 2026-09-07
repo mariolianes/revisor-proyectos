@@ -1664,3 +1664,61 @@ def test_una_observacion_del_informe_demasiado_larga_si_tira_todo(
 
     assert r.status_code == 503
     assert c.get(f"/api/entregas/{ident}").json()["entrega"]["estado"] == "RECIBIDO"
+
+
+def test_un_conflicto_de_version_detiene_el_analisis(
+    criterios_de_analisis: Path, entregas: Path, escribir_pdf
+) -> None:
+    """El §7 del docente, literal: «marcar VERSION_CONFLICT y detener el
+    análisis nuevo hasta que Marcos elija la versión válida».
+
+    Importa que la guarda esté ANTES de llamar al motor: analizar la versión
+    que luego se descarta cuesta dinero y produce un informe que hay que
+    tirar."""
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+    c.app.state.almacen.cambiar_estado(ident, "RECIBIDO", None)
+    entrega = c.app.state.almacen.por_id(ident)
+    c.app.state.almacen._entregas[ident] = entrega.model_copy(
+        update={"marca_admision": "VERSION_CONFLICT"}
+    )
+
+    r = c.post(f"/api/entregas/{ident}/analisis", json={"confirmo_datos_reales": True})
+
+    assert r.status_code == 409
+    detalle = r.json()["detail"]
+    assert "elegir" in detalle.lower() or "elígela" in detalle.lower()
+    assert "cuesta dinero" in detalle.lower()
+    assert _sin_jerga(detalle)
+    # Y lo que de verdad importa: no se ha llamado al motor.
+    assert proveedor.llamadas == []
+
+
+def test_elegida_la_version_el_analisis_vuelve_a_estar_disponible(
+    criterios_de_analisis: Path, entregas: Path, escribir_pdf
+) -> None:
+    """La marca es la decisión pendiente: al resolverla, se borra."""
+    escribir_pdf(entregas / "AF023_DAM_E2_20260115_v1.pdf", [[
+        "1. Introduccion", "El proyecto describe un sistema de reservas.",
+        "5. Presupuesto", f"{CITA} en total.",
+    ]])
+    proveedor = ProveedorSimulado(respuestas=[_analisis(), _devolucion()])
+    c = _crear_cliente(criterios_de_analisis, entregas, proveedor)
+    ident = _confirmar(c)
+    entrega = c.app.state.almacen.por_id(ident)
+    c.app.state.almacen._entregas[ident] = entrega.model_copy(
+        update={"marca_admision": "VERSION_CONFLICT"}
+    )
+
+    elegida = c.post(f"/api/entregas/{ident}/version-elegida")
+    assert elegida.status_code == 200
+    assert elegida.json()["marca_admision"] is None
+    assert elegida.json()["estado_version"] == "VIGENTE"
+
+    r = c.post(f"/api/entregas/{ident}/analisis", json={"confirmo_datos_reales": True})
+    assert r.status_code == 200

@@ -1121,3 +1121,61 @@ def test_un_detalle_con_prosa_larga_se_rechaza() -> None:
 
     with pytest.raises(ValidationError, match="nunca texto del trabajo"):
         Anotacion(accion=ENTREGA_REGISTRADA, detalle={"texto": "x" * 1200})
+
+
+# --- Elegir versión (decisiones#7-versiones) --------------------------------
+
+
+def test_elegir_una_version_sustituye_las_otras_sin_borrar_ninguna(
+    dos_almacenes,
+) -> None:
+    """«Marcarla como vigente. Las anteriores pasan a sustituida o histórica,
+    pero nunca se eliminan.» Lo que se comprueba aquí es sobre todo lo
+    último: después de elegir, siguen estando las dos."""
+    def guion(almacen):
+        primera = almacen.registrar(_entrega(
+            "E2", 1, huella="v1".ljust(64, "0"),
+            marca_admision="VERSION_CONFLICT",
+        ))
+        segunda = almacen.registrar(_entrega(
+            "E2", 2, huella="v2".ljust(64, "0"),
+            marca_admision="VERSION_CONFLICT",
+        ))
+        almacen.elegir_version(segunda.id)
+        return json.dumps(
+            sorted(
+                (e.version, e.estado_version, e.marca_admision)
+                for e in almacen.listar()
+            ),
+            ensure_ascii=False,
+        )
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase
+    assert json.loads(memoria) == [
+        [1, "SUSTITUIDA", None],
+        [2, "VIGENTE", None],
+    ]
+
+
+def test_elegir_version_no_toca_otra_fase_del_mismo_alumno(dos_almacenes) -> None:
+    """El límite: elegir la versión de la segunda entrega no puede degradar
+    la tercera."""
+    def guion(almacen):
+        otra_fase = almacen.registrar(_entrega("E3", 1, huella="e3".ljust(64, "0")))
+        elegida = almacen.registrar(_entrega("E2", 1, huella="e2".ljust(64, "0")))
+        almacen.elegir_version(elegida.id)
+        return almacen.por_id(otra_fase.id).estado_version
+
+    memoria, supabase = _los_dos(dos_almacenes, guion)
+
+    assert memoria == supabase == "VIGENTE"
+
+
+def test_elegir_una_version_que_no_existe_no_revienta(dos_almacenes) -> None:
+    memoria, supabase = _los_dos(
+        dos_almacenes, lambda a: a.elegir_version(UUID_INEXISTENTE)
+    )
+
+    assert memoria == supabase is None

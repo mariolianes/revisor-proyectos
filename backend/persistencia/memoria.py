@@ -30,6 +30,8 @@ from backend.persistencia.correccion import (
     validar_textos_acotados,
 )
 from backend.persistencia.modelos import (
+    SUSTITUIDA,
+    VIGENTE,
     ESTADO_INICIAL,
     EntregaNueva,
     EntregaRegistrada,
@@ -221,6 +223,24 @@ class AlmacenEnMemoria:
         )
         self.anotar(de_correccion(entrega_id, informe, motor))
         return identificador
+
+    def elegir_version(self, identificador: str) -> EntregaRegistrada | None:
+        elegida = self._entregas.get(identificador)
+        if elegida is None:
+            return None
+        for clave, otra in list(self._entregas.items()):
+            if clave == identificador:
+                continue
+            if (otra.codigo_alumno, otra.fase) != (elegida.codigo_alumno, elegida.fase):
+                continue
+            self._entregas[clave] = otra.model_copy(
+                update={"estado_version": SUSTITUIDA, "marca_admision": None}
+            )
+        elegida = elegida.model_copy(
+            update={"estado_version": VIGENTE, "marca_admision": None}
+        )
+        self._entregas[identificador] = elegida
+        return elegida
 
     def correccion_de(self, entrega_id: str) -> Correccion | None:
         return self._correcciones.get(entrega_id)

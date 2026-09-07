@@ -315,3 +315,22 @@ def cambiar_estado(
     if cambiada is None:
         raise HTTPException(status_code=404, detail="No existe esa entrega.")
     return cambiada
+
+
+@router.post("/entregas/{identificador}/version-elegida")
+def elegir_version(identificador: str, peticion: Request) -> EntregaRegistrada:
+    """El docente elige qué versión de una fase vale.
+
+    Es una de las decisiones que el §13 le reserva, y por eso es una
+    operación explícita suya y no algo que el sistema resuelva al detectar
+    el conflicto: cuando llegan dos archivos para la misma fase, la
+    admisión los conserva los dos, marca el conflicto y **detiene el
+    análisis** hasta que él pulse aquí. Ver `decisiones#7-versiones`.
+
+    Las otras versiones pasan a sustituidas. Ninguna se elimina: «nunca se
+    eliminan», dice él, y por eso esta operación no borra nada.
+    """
+    elegida = _almacen(peticion).elegir_version(identificador)
+    if elegida is None:
+        raise HTTPException(status_code=404, detail="No existe esa entrega.")
+    return elegida

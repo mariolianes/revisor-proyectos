@@ -39,6 +39,8 @@ from backend.persistencia.correccion import (
 )
 from backend.persistencia.modelos import (
     ESTADO_DE_VERSION_INICIAL,
+    SUSTITUIDA,
+    VIGENTE,
     EntregaNueva,
     EntregaRegistrada,
     choca_con_lo_declarado,
@@ -619,6 +621,38 @@ class AlmacenSupabase:
             motor=informe.motor,
             aviso=fila.get("aviso"),
         )
+
+    def elegir_version(self, identificador: str) -> EntregaRegistrada | None:
+        """El docente elige qué versión vale de una fase con varias.
+
+        Las otras pasan a SUSTITUIDA. **Ninguna se elimina**: él lo dijo con
+        todas las letras, y por eso aquí no hay ningún DELETE.
+
+        La marca de conflicto se borra en las dos, elegida y sustituidas: la
+        marca es la decisión pendiente, y ya está tomada. Es lo que vuelve a
+        permitir analizar -ver la guarda de `analizar()`-.
+        """
+        if not _es_uuid(identificador):
+            return None
+        elegida = self.por_id(identificador)
+        if elegida is None:
+            return None
+        hermanas = [
+            e for e in self.listar()
+            if e.id != identificador
+            and (e.codigo_alumno, e.fase) == (elegida.codigo_alumno, elegida.fase)
+        ]
+        for otra in hermanas:
+            self._pedir(
+                "PATCH", "entrega", parametros={"id": f"eq.{otra.id}"},
+                json={"estado_version": SUSTITUIDA, "marca_admision": None},
+            )
+        filas = self._pedir(
+            "PATCH", "entrega",
+            parametros={"id": f"eq.{identificador}", "select": self.SELECCION_AL_ESCRIBIR},
+            json={"estado_version": VIGENTE, "marca_admision": None},
+        )
+        return self._componer(self._aplanar(filas[0])) if filas else None
 
     def anotar(self, anotacion: Anotacion) -> None:
         """Escribe una línea en el registro de auditoría del §19.1.
