@@ -19,3 +19,8 @@ dist/
 # Configuracion temporal de vite, para levantar el front en otro puerto
 # cuando el 8000 lo ocupa otro proyecto. Vive en el equipo, no en el repo.
 frontend/vite.config.temporal.ts
+
+# Lo que produce tools/empaquetar.py: el ejecutable de la beta y los
+# temporales de PyInstaller. Se construye, no se versiona.
+/dist/
+/build/

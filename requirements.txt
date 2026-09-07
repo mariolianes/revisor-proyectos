@@ -1,0 +1,16 @@
+# Lo que el programa necesita para funcionar. Nada de herramientas de
+# desarrollo: `requirements-dev.txt` las añade encima de estas.
+#
+# Existe separado desde 2026-09-07, para la beta: hasta entonces solo había
+# `requirements-dev.txt`, con pytest y pyinstaller dentro. Instalar eso en el
+# equipo del docente le habría metido medio entorno de desarrollo para
+# ejecutar un programa que no lo usa.
+pyyaml==6.0.2
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+httpx==0.28.1
+ruamel.yaml==0.18.10
+pymupdf==1.28.2
+openai==3.5.0
+openpyxl==3.1.5

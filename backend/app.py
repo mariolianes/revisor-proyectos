@@ -24,6 +24,7 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
     from backend.analisis import crear_proveedor
     from backend.api import analisis, documentos, edicion, entregas, estado
     from backend.configuracion import cargar
+    from backend.empaquetado import raiz_de_recursos
     from backend.persistencia import crear_almacen
     from backend.persistencia.supabase import ChoqueDeAlmacen, ErrorDeAlmacen
 
@@ -105,7 +106,9 @@ def crear_app(raiz: Path, configuracion=None, almacen=None, proveedor=None) -> F
 
     # El front compilado se sirve desde el propio backend: una sola pieza
     # que arrancar, no dos.
-    dist = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+    # `raiz_de_recursos` y no la raíz del repositorio: empaquetado, el
+    # frontend compilado viaja dentro del ejecutable, no al lado del .py.
+    dist = raiz_de_recursos() / "frontend" / "dist"
     if dist.is_dir():
         from fastapi.staticfiles import StaticFiles
         app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")

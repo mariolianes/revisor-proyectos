@@ -98,8 +98,17 @@ def revisar_carpeta(raiz: Path, carpeta: Path) -> ProblemaDeCarpeta | None:
 
 
 def _leer_env(raiz: Path) -> dict[str, str]:
-    """Pares clave=valor del fichero .env de la raíz, si lo hay."""
-    fichero = raiz / ".env"
+    """Pares clave=valor del fichero .env, si lo hay.
+
+    Empaquetado, el `.env` **no** está en `raiz`: `raiz` es entonces la
+    carpeta temporal donde PyInstaller desempaqueta el programa, y lo que
+    hubiera dentro se perdería al cerrar. El del docente vive al lado del
+    ejecutable, para sobrevivir a una actualización. Ver
+    `backend/empaquetado.py`.
+    """
+    from backend.empaquetado import carpeta_de_trabajo, empaquetado
+
+    fichero = (carpeta_de_trabajo() if empaquetado() else raiz) / ".env"
     if not fichero.is_file():
         return {}
     leido: dict[str, str] = {}
